@@ -16,3 +16,4 @@ Requires a `.env.local` with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABAS
 
 ## Stack
 Next.js (App Router) · React · Tailwind CSS v4 · Supabase (Postgres / Auth / Storage / Edge Functions) · Resend · jsPDF.
+# betterservice-app
