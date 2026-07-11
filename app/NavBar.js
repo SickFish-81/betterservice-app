@@ -8,6 +8,8 @@ import { supabase } from "../lib/supabaseClient";
 const links = [
   { href: "/jobs", label: "Job cards" },
   { href: "/invoices", label: "Invoices" },
+  { href: "/credit-notes", label: "Credit notes" },
+  { href: "/accounting", label: "Accounting" },
   { href: "/due", label: "Due" },
   { href: "/parts", label: "Parts" },
   { href: "/customers", label: "Customers" },

@@ -16,6 +16,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const { to, customerName, invoiceNumber, total, pdfBase64, accessToken } = body;
+    const invNo = String(invoiceNumber ?? "").padStart(5, "0");
     if (!pdfBase64) return json({ error: "No PDF was provided to file." }, 400);
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -51,14 +52,14 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           from: "Betterservice Tepuke <accounts@betterservice.co.nz>",
           to: [to],
-          subject: `Your invoice #${invoiceNumber} — Betterservice Tepuke`,
+          subject: `Your invoice #${invNo} — Betterservice Tepuke`,
           html:
             `<p>Hi ${esc(customerName) || "there"},</p>` +
-            `<p>Thanks for choosing Betterservice Tepuke. Your invoice <strong>#${esc(invoiceNumber)}</strong> ` +
+            `<p>Thanks for choosing Betterservice Tepuke. Your invoice <strong>#${esc(invNo)}</strong> ` +
             `for <strong>$${Number(total || 0).toFixed(2)}</strong> is attached as a PDF.</p>` +
             `<p>Any questions, just reply to this email or call Craig on 021 08327787.</p>` +
             `<p>Cheers,<br/>Betterservice Tepuke</p>`,
-          attachments: [{ filename: `Invoice-${invoiceNumber}.pdf`, content: pdfBase64 }],
+          attachments: [{ filename: `Invoice-${invNo}.pdf`, content: pdfBase64 }],
         }),
       });
       const data = await r.json();

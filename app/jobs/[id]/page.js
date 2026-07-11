@@ -15,6 +15,7 @@ const STATUS_STYLES = {
   "Paid": "bg-emerald-50 text-emerald-700",
 };
 const money = (n) => "$" + Number(n || 0).toFixed(2);
+const invNo = (n) => String(n ?? 0).padStart(5, "0");
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 
 export default function JobDetailPage() {
@@ -223,7 +224,7 @@ export default function JobDetailPage() {
     if (settings?.address) { doc.text(settings.address, 20, y); y += 5; }
     if (settings?.phone) { doc.text("Ph: " + settings.phone, 20, y); y += 5; }
     doc.text(["GST #: " + (settings?.gst_number || "-"), settings?.bank_account ? "Bank: " + settings.bank_account : ""].filter(Boolean).join("    "), 20, y); y += 12;
-    doc.setFontSize(14); doc.text("TAX INVOICE  #" + invoice.invoice_number, 20, y); y += 8;
+    doc.setFontSize(14); doc.text("TAX INVOICE  #" + invNo(invoice.invoice_number), 20, y); y += 8;
     doc.setFontSize(10);
     doc.text("Date: " + new Date().toLocaleDateString("en-NZ"), 20, y); y += 6;
     doc.text("Customer: " + (job.customers?.name || ""), 20, y); y += 5;
@@ -240,7 +241,7 @@ export default function JobDetailPage() {
     doc.text("GST 15%", 120, y); doc.text("$" + gst.toFixed(2), 190, y, { align: "right" }); y += 6;
     doc.setFontSize(12); doc.text("Total", 120, y); doc.text("$" + total.toFixed(2), 190, y, { align: "right" });
 
-    doc.save("Invoice-" + invoice.invoice_number + ".pdf");
+    doc.save("Invoice-" + invNo(invoice.invoice_number) + ".pdf");
     const pdfBase64 = doc.output("datauristring").split("base64,")[1];
     // Pass our login token in the body so the function can file the PDF as a signed-in staff member.
     const { data: { session } } = await supabase.auth.getSession();
@@ -390,7 +391,7 @@ export default function JobDetailPage() {
         </div>
       </div>
 
-      {invoice && <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white p-3 text-xs text-zinc-500">Invoice #{invoice.invoice_number} generated — labour &amp; parts are locked{invoice.sent ? "." : "; use Discard below to edit."}</p>}
+      {invoice && <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white p-3 text-xs text-zinc-500">Invoice #{invNo(invoice.invoice_number)} generated — labour &amp; parts are locked{invoice.sent ? "." : "; use Discard below to edit."}</p>}
       <form onSubmit={addLabour} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="min-w-[8rem] flex-1">
           <label className="block text-xs font-medium text-zinc-500">Labour</label>
@@ -445,13 +446,13 @@ export default function JobDetailPage() {
         </button>
       ) : invoice.sent ? (
         <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm">
-          <p className="font-semibold text-emerald-800">Invoice #{invoice.invoice_number} sent ✓</p>
+          <p className="font-semibold text-emerald-800">Invoice #{invNo(invoice.invoice_number)} sent ✓</p>
           <p className="mt-0.5 text-emerald-700">By {staffName(invoice.sent_by) || "—"} on {new Date(invoice.sent_at).toLocaleDateString("en-NZ")} · Total {money(invoice.total)}</p>
           {invoice.pdf_url && <button onClick={() => openPdf(invoice.pdf_url)} className="mt-1 inline-block font-medium text-emerald-700 underline">View filed PDF →</button>}
         </div>
       ) : (
         <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
-          <p className="font-semibold text-amber-900">Invoice #{invoice.invoice_number} — draft, awaiting owner approval</p>
+          <p className="font-semibold text-amber-900">Invoice #{invNo(invoice.invoice_number)} — draft, awaiting owner approval</p>
           <p className="mt-0.5 text-amber-800">Total {money(invoice.total)}</p>
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="flex flex-col">

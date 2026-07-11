@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
+const invNo = (n) => String(n ?? 0).padStart(5, "0");
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState([]);
@@ -79,7 +80,7 @@ export default function InvoicesPage() {
             return (
               <li key={inv.id} className="flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
-                  <p className="font-medium text-zinc-900">Invoice #{inv.invoice_number} <span className="text-sm font-normal text-zinc-500">· {money(inv.total)}</span></p>
+                  <p className="font-medium text-zinc-900">Invoice #{invNo(inv.invoice_number)} <span className="text-sm font-normal text-zinc-500">· {money(inv.total)}</span></p>
                   <p className="truncate text-sm text-zinc-500">
                     {inv.job?.customers?.name || "—"}
                     {inv.job?.job_number ? " · Job #" + inv.job.job_number : ""}
