@@ -36,6 +36,15 @@ export default function InvoicesPage() {
     load();
   }
 
+  async function openPdf(p) {
+    setError(null);
+    if (!p) return;
+    if (p.startsWith("http")) { window.open(p, "_blank"); return; }
+    const { data, error } = await supabase.storage.from("invoices").createSignedUrl(p, 60);
+    if (error) { setError("Couldn\u2019t open PDF: " + error.message); return; }
+    window.open(data.signedUrl, "_blank");
+  }
+
   const shown = filter === "unpaid" ? invoices.filter((i) => i.status !== "Paid") : invoices;
   const outstanding = invoices.filter((i) => i.status !== "Paid").reduce((s, i) => s + Number(i.total || 0), 0);
 
@@ -78,7 +87,7 @@ export default function InvoicesPage() {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  {inv.pdf_url && <a href={inv.pdf_url} target="_blank" rel="noreferrer" className="text-xs font-medium text-zinc-500 hover:text-zinc-800">PDF</a>}
+                  {inv.pdf_url && <button onClick={() => openPdf(inv.pdf_url)} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">PDF</button>}
                   {paid ? (
                     <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">Paid</span>
                   ) : (

@@ -43,7 +43,7 @@ export default function NavBar({ email }) {
 
         {/* Desktop right cluster */}
         <div className="ml-auto hidden items-center gap-2 text-sm sm:flex">
-          <Link href="/" className="text-zinc-400 hover:text-zinc-700">View site ↗</Link>
+          <Link href="/" className="text-zinc-500 hover:text-zinc-700">View site ↗</Link>
           <button onClick={() => supabase.auth.signOut()} className="rounded-md px-2 py-1 font-medium text-red-600 hover:bg-red-50">Sign out</button>
         </div>
 
@@ -64,7 +64,7 @@ export default function NavBar({ email }) {
             <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className={cls(l.href)}>{l.label}</Link>
           ))}
           <div className="mt-1 flex items-center justify-between border-t border-zinc-100 pt-2">
-            {email && <span className="truncate text-xs text-zinc-400">{email}</span>}
+            {email && <span className="truncate text-xs text-zinc-500">{email}</span>}
             <div className="flex shrink-0 items-center gap-3">
               <Link href="/" onClick={() => setOpen(false)} className="text-zinc-500 hover:text-zinc-800">View site ↗</Link>
               <button onClick={() => { setOpen(false); supabase.auth.signOut(); }} className="font-medium text-red-600 hover:text-red-700">Sign out</button>

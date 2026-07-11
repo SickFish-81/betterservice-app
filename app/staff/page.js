@@ -71,7 +71,7 @@ export default function StaffPage() {
               <li key={s.id} className="flex items-center justify-between gap-3 p-4">
                 <span>
                   <span className="font-medium text-zinc-900">{s.name}</span>
-                  {s.email && <span className="ml-2 text-sm text-zinc-400">{s.email}</span>}
+                  {s.email && <span className="ml-2 text-sm text-zinc-500">{s.email}</span>}
                 </span>
                 <span className="flex items-center gap-2 text-sm text-zinc-500">
                   <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium capitalize text-zinc-600">{s.role}</span>

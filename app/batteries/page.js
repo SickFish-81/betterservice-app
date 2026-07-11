@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-const PRODUCT_IMG = "https://www.betterservice.co.nz/resources/Neuton/IMG_4047.png";
+const PRODUCT_IMG = "/battery.jpg";
 
 const categories = [
   {

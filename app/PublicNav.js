@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-const LOGO = "https://betterservice.co.nz/resources/559D2769-CC7C-41DB-A685-26CD27C5EFCB.png";
+const LOGO = "/logo.png";
 
 export default function PublicNav() {
   return (

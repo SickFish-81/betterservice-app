@@ -61,8 +61,9 @@ export default function DuePage() {
     if (!email) { setError("No email on file for this customer — call or text them, then hit “Mark done”."); return; }
     setError(null); setSendingId(m.id);
     const machineLabel = [m.type, m.make, m.model].filter(Boolean).join(" ");
+    const { data: { session } } = await supabase.auth.getSession();
     const { data: res, error: fErr } = await supabase.functions.invoke("send-reminder", {
-      body: { to: email, customerName: m.customers?.name, machineLabel },
+      body: { to: email, customerName: m.customers?.name, machineLabel, accessToken: session?.access_token || null },
     });
     if (fErr || res?.error) {
       let detail = res?.error || (fErr && fErr.message) || "Unknown error";
@@ -122,10 +123,10 @@ export default function DuePage() {
                           <a href={`sms:${digits}`} className="rounded-md bg-zinc-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-zinc-700">Text</a>
                         </>
                       ) : (
-                        <span className="text-xs text-zinc-400">no contact details</span>
+                        <span className="text-xs text-zinc-500">no contact details</span>
                       )}
                       <button onClick={() => markReminded(m.id)} className="rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50">Mark done</button>
-                      <button onClick={() => dontRemind(m)} className="ml-auto text-xs font-medium text-zinc-400 hover:text-red-600">Don&apos;t remind</button>
+                      <button onClick={() => dontRemind(m)} className="ml-auto text-xs font-medium text-zinc-500 hover:text-red-600">Don&apos;t remind</button>
                     </div>
                   )}
                 </li>

@@ -71,8 +71,8 @@ export default function CustomersPage() {
 
       <form onSubmit={addCustomer} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className={input} />
-        <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone" className={input} />
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className={input} />
+        <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" placeholder="Phone" className={input} />
+        <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email" className={input} />
         <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (for pickup / delivery)" className={input} />
         <button type="submit" className={btn}>Add customer</button>
       </form>
@@ -94,8 +94,8 @@ export default function CustomersPage() {
                 {editingId === c.id ? (
                   <div className="flex flex-col gap-2">
                     <input value={ev.name} onChange={(e) => setEv({ ...ev, name: e.target.value })} placeholder="Name" className={input} />
-                    <input value={ev.phone} onChange={(e) => setEv({ ...ev, phone: e.target.value })} placeholder="Phone" className={input} />
-                    <input value={ev.email} onChange={(e) => setEv({ ...ev, email: e.target.value })} placeholder="Email" className={input} />
+                    <input value={ev.phone} onChange={(e) => setEv({ ...ev, phone: e.target.value })} type="tel" placeholder="Phone" className={input} />
+                    <input value={ev.email} onChange={(e) => setEv({ ...ev, email: e.target.value })} type="email" placeholder="Email" className={input} />
                     <input value={ev.address} onChange={(e) => setEv({ ...ev, address: e.target.value })} placeholder="Address (for pickup / delivery)" className={input} />
                     <label className="flex items-center gap-2 py-1 text-sm text-zinc-700"><input type="checkbox" checked={!ev.no_reminders} onChange={(e) => setEv({ ...ev, no_reminders: !e.target.checked })} className="h-4 w-4 rounded border-zinc-300 accent-red-600" /> Send service reminders</label>
                     <div className="flex gap-2">
@@ -113,7 +113,7 @@ export default function CustomersPage() {
                     </div>
                     <div className="flex shrink-0 gap-3 text-sm">
                       <button onClick={() => startEdit(c)} className="font-medium text-red-600 hover:text-red-700">Edit</button>
-                      <button onClick={() => removeCustomer(c)} className="text-zinc-400 hover:text-red-600">Remove</button>
+                      <button onClick={() => removeCustomer(c)} className="text-zinc-500 hover:text-red-600">Remove</button>
                     </div>
                   </div>
                 )}

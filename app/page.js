@@ -1,12 +1,12 @@
 import Link from "next/link";
 
-const LOGO = "https://betterservice.co.nz/resources/559D2769-CC7C-41DB-A685-26CD27C5EFCB.png";
-const HERO = "https://images.pexels.com/photos/5252118/pexels-photo-5252118.jpeg?auto=compress&cs=tinysrgb&w=1600";
-const ATV = "https://images.pexels.com/photos/15920488/pexels-photo-15920488/free-photo-of-quads-parked-in-shadow.jpeg?auto=compress&cs=tinysrgb&w=1000";
+const LOGO = "/logo.png";
+const HERO = "/hero.jpg";
+const ATV = "/atv.jpg";
 const SHOP = [
-  "https://images.pexels.com/photos/11536993/pexels-photo-11536993.jpeg?auto=compress&cs=tinysrgb&w=700",
-  "https://images.pexels.com/photos/3817919/pexels-photo-3817919.jpeg?auto=compress&cs=tinysrgb&w=700",
-  "https://images.pexels.com/photos/29409960/pexels-photo-29409960/free-photo-of-motorcycle-repair-workshop-with-tools-and-posters.jpeg?auto=compress&cs=tinysrgb&w=700",
+  "/workshop-1.jpg",
+  "/workshop-2.jpg",
+  "/workshop-3.jpg",
 ];
 
 function Svg({ children }) {
@@ -97,7 +97,7 @@ export default function Home() {
             <p className="mt-3 text-sm text-zinc-500">Off-road motorcycle &amp; ATV specialists — servicing, repairs, used ATV sales, parts &amp; accessories.</p>
           </div>
         </div>
-        <div className="border-t border-zinc-100 py-6 text-center text-xs text-zinc-400">© Betterservice Tepuke</div>
+        <div className="border-t border-zinc-100 py-6 text-center text-xs text-zinc-500">© Betterservice Tepuke</div>
       </section>
     </main>
   );

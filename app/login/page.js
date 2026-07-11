@@ -9,7 +9,6 @@ const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState(null);
@@ -22,16 +21,9 @@ export default function LoginPage() {
   async function submit(e) {
     e.preventDefault();
     setBusy(true); setMsg(null);
-    if (mode === "signin") {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setMsg(error.message);
-      else router.replace("/dashboard");
-    } else {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) setMsg(error.message);
-      else if (data.session) router.replace("/dashboard");
-      else setMsg("Account created — check your email to confirm, then sign in. (Or turn off 'Confirm email' in Supabase to skip this.)");
-    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setMsg(error.message);
+    else router.replace("/dashboard");
     setBusy(false);
   }
 
@@ -40,21 +32,25 @@ export default function LoginPage() {
       <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-zinc-900">
         <span className="inline-block h-5 w-5 rounded bg-red-600" /> Betterservice
       </div>
-      <h1 className="mt-6 text-2xl font-bold tracking-tight text-zinc-900">{mode === "signin" ? "Staff sign in" : "Create your login"}</h1>
-      <p className="mt-1 text-sm text-zinc-600">{mode === "signin" ? "The shop's back office." : "Set up a staff login."}</p>
+      <h1 className="mt-6 text-2xl font-bold tracking-tight text-zinc-900">Staff sign in</h1>
+      <p className="mt-1 text-sm text-zinc-600">The shop&apos;s back office.</p>
 
-      <form onSubmit={submit} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email" autoComplete="email" className={input} />
-        <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" autoComplete={mode === "signin" ? "current-password" : "new-password"} className={input} />
-        <button disabled={busy} className={btn}>{busy ? "…" : mode === "signin" ? "Sign in" : "Create account"}</button>
+      <form onSubmit={submit} className="mt-6 flex flex-col gap-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div>
+          <label htmlFor="email" className="mb-1 block text-sm font-medium text-zinc-700">Email</label>
+          <input id="email" value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="you@betterservice.co.nz" autoComplete="email" className={input} />
+        </div>
+        <div>
+          <label htmlFor="password" className="mb-1 block text-sm font-medium text-zinc-700">Password</label>
+          <input id="password" value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" autoComplete="current-password" className={input} />
+        </div>
+        <button disabled={busy} className={btn}>{busy ? "Signing in…" : "Sign in"}</button>
       </form>
 
-      {msg && <p className="mt-3 text-sm text-zinc-700">{msg}</p>}
+      {msg && <p className="mt-3 text-sm text-red-600" role="alert">{msg}</p>}
 
-      <button onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setMsg(null); }} className="mt-4 text-sm font-medium text-red-600 hover:text-red-700">
-        {mode === "signin" ? "Need a login? Create account" : "Have a login? Sign in"}
-      </button>
-      <p className="mt-6 text-sm"><a href="/" className="text-zinc-400 hover:text-zinc-700">← Back to site</a></p>
+      <p className="mt-4 text-sm text-zinc-600">Need a login? Ask Craig to set one up for you.</p>
+      <p className="mt-6 text-sm"><a href="/" className="text-zinc-500 hover:text-zinc-800">← Back to site</a></p>
     </main>
   );
 }

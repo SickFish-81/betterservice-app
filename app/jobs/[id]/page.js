@@ -113,7 +113,8 @@ export default function JobDetailPage() {
 
   async function addLabour(e) {
     e.preventDefault();
-    const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Number(hours), unit_price: 115 });
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Math.max(0, Number(hours) || 0), unit_price: 115 });
     if (error) { setError(error.message); return; }
     setLabourDesc(""); setHours("1"); load();
   }
@@ -121,9 +122,10 @@ export default function JobDetailPage() {
   // Add a part FROM inventory, drawing it down from stock.
   async function addPart(e) {
     e.preventDefault();
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
     const part = parts.find((p) => p.id === partId);
     if (!part) { setError("Pick a part from inventory."); return; }
-    const q = Number(partQty) || 1;
+    const q = Math.max(1, Number(partQty) || 1);
     const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "part", part_id: part.id, description: part.name, quantity: q, unit_price: part.unit_price });
     if (error) { setError(error.message); return; }
     await supabase.from("parts").update({ qty_on_hand: Number(part.qty_on_hand) - q }).eq("id", part.id);
@@ -132,6 +134,7 @@ export default function JobDetailPage() {
 
   // Removing a stocked part puts it back on the shelf.
   async function removeItem(it) {
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
     const { error } = await supabase.from("job_line_items").delete().eq("id", it.id);
     if (error) { setError("Couldn't remove item: " + error.message); return; }
     if (it.kind === "part" && it.part_id) {
@@ -192,6 +195,23 @@ export default function JobDetailPage() {
     load();
   }
 
+  async function discardInvoice() {
+    if (!invoice || invoice.sent) return;
+    if (!window.confirm("Discard this draft invoice so you can edit labour & parts again?")) return;
+    await supabase.from("invoices").delete().eq("id", invoice.id);
+    if (job.status === "Invoiced") await supabase.from("job_cards").update({ status: "In progress" }).eq("id", id);
+    load();
+  }
+
+  async function openPdf(p) {
+    setError(null);
+    if (!p) return;
+    if (p.startsWith("http")) { window.open(p, "_blank"); return; }
+    const { data, error } = await supabase.storage.from("invoices").createSignedUrl(p, 60);
+    if (error) { setError("Couldn\u2019t open PDF: " + error.message); return; }
+    window.open(data.signedUrl, "_blank");
+  }
+
   async function approveAndSend() {
     if (!senderId) { setError("Choose who's sending — must be an owner who can send invoices."); return; }
     setError(null);
@@ -233,7 +253,7 @@ export default function JobDetailPage() {
       setError("Couldn't file the invoice: " + detail);
       return;
     }
-    await supabase.from("invoices").update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfUrl }).eq("id", invoice.id);
+    await supabase.from("invoices").update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath, subtotal, gst, total }).eq("id", invoice.id);
     if (job.machine_id) {
       const todayNZ = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" });
       await supabase.from("machines").update({ last_service_date: todayNZ }).eq("id", job.machine_id);
@@ -330,7 +350,7 @@ export default function JobDetailPage() {
             {checklist.map((it) => (
               <li key={it.id} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={it.done} onChange={() => toggleTask(it)} className="h-4 w-4 rounded border-zinc-300 accent-red-600" />
-                <span className={it.done ? "flex-1 text-zinc-400 line-through" : "flex-1 text-zinc-800"}>{it.label}</span>
+                <span className={it.done ? "flex-1 text-zinc-500 line-through" : "flex-1 text-zinc-800"}>{it.label}</span>
                 <button onClick={() => removeTask(it.id)} className="text-xs text-red-500 hover:underline">remove</button>
               </li>
             ))}
@@ -353,11 +373,11 @@ export default function JobDetailPage() {
                 <span className="text-zinc-800">
                   <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-medium uppercase text-zinc-500">{it.kind}</span>
                   <span className="ml-2 font-medium text-zinc-900">{it.description}</span>
-                  <span className="ml-2 text-zinc-400">{it.quantity} × {money(it.unit_price)}</span>
+                  <span className="ml-2 text-zinc-500">{it.quantity} × {money(it.unit_price)}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   <span className="font-semibold text-zinc-900">{money(it.amount)}</span>
-                  <button onClick={() => removeItem(it)} className="text-xs text-red-500 hover:underline">remove</button>
+                  {!invoice && <button onClick={() => removeItem(it)} className="text-xs text-red-500 hover:underline">remove</button>}
                 </span>
               </li>
             ))}
@@ -370,6 +390,7 @@ export default function JobDetailPage() {
         </div>
       </div>
 
+      {invoice && <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white p-3 text-xs text-zinc-500">Invoice #{invoice.invoice_number} generated — labour &amp; parts are locked{invoice.sent ? "." : "; use Discard below to edit."}</p>}
       <form onSubmit={addLabour} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="min-w-[8rem] flex-1">
           <label className="block text-xs font-medium text-zinc-500">Labour</label>
@@ -377,10 +398,10 @@ export default function JobDetailPage() {
         </div>
         <div className="w-20">
           <label className="block text-xs font-medium text-zinc-500">Hours</label>
-          <input value={hours} onChange={(e) => setHours(e.target.value)} type="number" step="0.25" className={input} />
+          <input value={hours} onChange={(e) => setHours(e.target.value)} type="number" min="0" step="0.25" className={input} />
         </div>
-        <div className="pb-2 text-xs text-zinc-400">@ $115/hr</div>
-        <button className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700">Add labour</button>
+        <div className="pb-2 text-xs text-zinc-500">@ $115/hr</div>
+        <button disabled={!!invoice} className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">Add labour</button>
       </form>
 
       <form onSubmit={addPart} className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
@@ -393,9 +414,9 @@ export default function JobDetailPage() {
         </div>
         <div className="w-16">
           <label className="block text-xs font-medium text-zinc-500">Qty</label>
-          <input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" className={input} />
+          <input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min="1" className={input} />
         </div>
-        <button className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50" disabled={parts.length === 0}>Add part</button>
+        <button className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50" disabled={parts.length === 0 || !!invoice}>Add part</button>
         {parts.length === 0 && <p className="w-full text-xs text-amber-600">No parts in inventory yet — add some on the Parts page.</p>}
       </form>
 
@@ -426,7 +447,7 @@ export default function JobDetailPage() {
         <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm">
           <p className="font-semibold text-emerald-800">Invoice #{invoice.invoice_number} sent ✓</p>
           <p className="mt-0.5 text-emerald-700">By {staffName(invoice.sent_by) || "—"} on {new Date(invoice.sent_at).toLocaleDateString("en-NZ")} · Total {money(invoice.total)}</p>
-          {invoice.pdf_url && <a href={invoice.pdf_url} target="_blank" rel="noreferrer" className="mt-1 inline-block font-medium text-emerald-700 underline">View filed PDF →</a>}
+          {invoice.pdf_url && <button onClick={() => openPdf(invoice.pdf_url)} className="mt-1 inline-block font-medium text-emerald-700 underline">View filed PDF →</button>}
         </div>
       ) : (
         <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
@@ -441,6 +462,7 @@ export default function JobDetailPage() {
               </select>
             </label>
             <button onClick={approveAndSend} disabled={!senderId} className="rounded-lg bg-amber-600 px-3 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50">Approve &amp; send</button>
+            <button onClick={discardInvoice} className="rounded-lg border border-amber-300 bg-white px-3 py-2 font-medium text-amber-800 hover:bg-amber-100">Discard</button>
           </div>
           {senders.length === 0 && <p className="mt-2 text-xs text-amber-800">No one can send yet — mark Craig as “can send invoices” on the Staff page.</p>}
         </div>

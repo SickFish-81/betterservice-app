@@ -75,7 +75,7 @@ export default function ForSalePage() {
                     <img src={cover.url} alt={listing.title} className="h-48 w-full object-cover" />
                   ) : (
                     <div className="flex h-48 w-full items-center justify-center bg-zinc-100">
-                      <span className="text-sm text-zinc-400">No photo</span>
+                      <span className="text-sm text-zinc-500">No photo</span>
                     </div>
                   )}
                   <div className="p-4">

@@ -66,9 +66,9 @@ export default function PartsPage() {
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Part name (e.g. Oil filter)" className={input} />
         <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU / code (optional)" className={input} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" step="0.01" placeholder="Price each" className={input} />
-          <input value={qty} onChange={(e) => setQty(e.target.value)} type="number" placeholder="Qty on hand" className={input} />
-          <input value={minStock} onChange={(e) => setMinStock(e.target.value)} type="number" placeholder="Low-stock at" className={input} />
+          <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Price each" className={input} />
+          <input value={qty} onChange={(e) => setQty(e.target.value)} type="number" min="0" placeholder="Qty on hand" className={input} />
+          <input value={minStock} onChange={(e) => setMinStock(e.target.value)} type="number" min="0" placeholder="Low-stock at" className={input} />
         </div>
         <button type="submit" className={btn}>Add part</button>
       </form>
@@ -90,14 +90,14 @@ export default function PartsPage() {
               return (
                 <li key={p.id} className="flex items-center justify-between gap-3 p-4">
                   <div className="min-w-0">
-                    <p className="font-medium text-zinc-900">{p.name} {p.sku && <span className="text-sm font-normal text-zinc-400">· {p.sku}</span>}</p>
+                    <p className="font-medium text-zinc-900">{p.name} {p.sku && <span className="text-sm font-normal text-zinc-500">· {p.sku}</span>}</p>
                     <p className="text-sm text-zinc-500">{money(p.unit_price)} each · low-stock at {p.min_stock}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     {low && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">LOW</span>}
                     <label className="flex items-center gap-1 text-sm text-zinc-600">
                       <span className="hidden sm:inline">in stock</span>
-                      <input type="number" defaultValue={p.qty_on_hand} onBlur={(e) => setStock(p.id, e.target.value)} className="w-16 rounded-lg border border-zinc-300 px-2 py-1 text-right text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+                      <input type="number" min="0" defaultValue={p.qty_on_hand} onBlur={(e) => setStock(p.id, e.target.value)} className="w-16 rounded-lg border border-zinc-300 px-2 py-1 text-right text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
                     </label>
                     <button onClick={() => removePart(p.id)} className="text-xs text-red-500 hover:underline">remove</button>
                   </div>

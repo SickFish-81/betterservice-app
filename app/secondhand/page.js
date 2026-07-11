@@ -99,7 +99,7 @@ export default function SecondhandPage() {
       <form onSubmit={addListing} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (e.g. 2018 Honda CRF250L)" className={input} />
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Description" className={input} />
-        <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" step="0.01" placeholder="Price" className={input} />
+        <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Price" className={input} />
         <button type="submit" className={btn}>Add listing</button>
       </form>
 
