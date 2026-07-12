@@ -35,7 +35,9 @@ Deno.serve(async (req) => {
 
     // File the PDF as the caller (matches the 'authenticated' storage policy).
     const bytes = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0));
-    const path = `invoice-${invoiceNumber}-${Date.now()}.pdf`;
+    const _now = new Date();
+    const _month = `${_now.getUTCFullYear()}-${String(_now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const path = `invoices/${_month}/invoice-${invoiceNumber}-${Date.now()}.pdf`;
     const up = await fetch(`${SUPABASE_URL}/storage/v1/object/invoices/${path}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, apikey: ANON_KEY, "Content-Type": "application/pdf" },
