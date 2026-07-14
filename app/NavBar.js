@@ -14,6 +14,8 @@ const links = [
   { href: "/expenses", label: "Expenses" },
   { href: "/due", label: "Due" },
   { href: "/parts", label: "Parts" },
+  { href: "/stocktake", label: "Stock take" },
+  { href: "/suppliers", label: "Suppliers" },
   { href: "/customers", label: "Customers" },
   { href: "/machines", label: "Machines" },
   { href: "/secondhand", label: "For sale" },
