@@ -20,7 +20,8 @@ export default function ExpensesPage() {
   const [error, setError] = useState(null);
   const [ok, setOk] = useState(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Default to today's date in NZ time (not UTC) so a morning entry doesn't land on yesterday.
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
   const emptyForm = {
     expense_date: today,
     supplier: '',
@@ -45,20 +46,23 @@ export default function ExpensesPage() {
 
   async function loadAll() {
     setLoading(true);
-    const { data: acc } = await supabase
+    setError(null);
+    const { data: acc, error: accErr } = await supabase
       .from('accounts')
       .select('id, code, name, type')
       .eq('type', 'expense')
       .order('code');
+    if (accErr) { setError('Could not load categories: ' + accErr.message); setLoading(false); return; }
     setAccounts(acc || []);
 
-    const { data: exp } = await supabase
+    const { data: exp, error: expErr } = await supabase
       .from('expenses')
       .select(
         'id, expense_number, expense_date, supplier, description, amount_ex_gst, gst, total, paid_on_account, status, account:accounts(code, name)'
       )
       .order('created_at', { ascending: false })
       .limit(50);
+    if (expErr) { setError('Could not load expenses: ' + expErr.message); setLoading(false); return; }
     setExpenses(exp || []);
     setLoading(false);
   }
