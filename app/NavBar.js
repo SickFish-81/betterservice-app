@@ -10,6 +10,7 @@ const links = [
   { href: "/invoices", label: "Invoices" },
   { href: "/credit-notes", label: "Credit notes" },
   { href: "/accounting", label: "Accounting" },
+  { href: "/expenses", label: "Expenses" },
   { href: "/due", label: "Due" },
   { href: "/parts", label: "Parts" },
   { href: "/customers", label: "Customers" },
