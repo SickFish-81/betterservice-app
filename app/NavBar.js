@@ -12,6 +12,7 @@ const links = [
   { href: "/accounting", label: "Accounting" },
   { href: "/reports", label: "Reports" },
   { href: "/expenses", label: "Expenses" },
+  { href: "/bills", label: "Bills" },
   { href: "/due", label: "Due" },
   { href: "/parts", label: "Parts" },
   { href: "/stocktake", label: "Stock take" },
