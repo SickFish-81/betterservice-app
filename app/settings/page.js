@@ -68,7 +68,7 @@ export default function SettingsPage() {
 
   return (
     <main className="mx-auto max-w-xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Shop settings</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Shop Settings</h1>
       <p className="mt-1 text-zinc-600">Your business details (these print on invoice PDFs) and the emails sent to customers and suppliers. Owners can edit.</p>
 
       {loading ? (

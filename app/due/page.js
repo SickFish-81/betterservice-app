@@ -83,7 +83,7 @@ export default function DuePage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Due for service</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Due For Service</h1>
       <p className="mt-1 text-zinc-600">Service falls due 12 months after the last invoice. Your chase list: the {LIMIT} most overdue, {MIN_MONTHS}&ndash;{MAX_MONTHS} months on.</p>
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}

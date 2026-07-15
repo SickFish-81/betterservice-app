@@ -31,8 +31,8 @@ export default function Home() {
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-zinc-950/92 via-zinc-950/75 to-zinc-900/45" />
         <div className="mx-auto max-w-5xl px-4 py-24 sm:py-32">
           <p className="text-sm font-semibold uppercase tracking-wider text-red-400">Te Puke · 25+ years</p>
-          <h1 className="mt-3 max-w-2xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">Honest, reliable ATV &amp; motorcycle service.</h1>
-          <p className="mt-4 max-w-xl text-lg text-zinc-200">Servicing, repairs and quality used ATVs from Craig at Betterservice Tepuke. Better price, better advice, better bikes.</p>
+          <h1 className="mt-3 max-w-2xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">Honest, Reliable ATV &amp; Motorcycle Service</h1>
+          <p className="mt-4 max-w-xl text-lg text-zinc-200">Servicing, Repairs and Quality Used ATVs from Craig at Betterservice Te Puke. Better Price, Better Advice, Better Bikes.</p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a href="tel:02108327787" className="rounded-lg bg-red-600 px-5 py-3 font-semibold text-white shadow-sm hover:bg-red-700">Call or text · 021 08327787</a>
             <Link href="/for-sale" className="rounded-lg border border-white/40 bg-white/5 px-5 py-3 font-semibold text-white backdrop-blur hover:bg-white/15">View used ATVs →</Link>
@@ -54,18 +54,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Used ATVs band */}
-      <section className="bg-red-50">
-        <div className="mx-auto grid max-w-5xl items-center gap-8 px-4 py-14 sm:grid-cols-2">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight text-zinc-900">Quality used ATVs, ready to ride</h2>
-            <p className="mt-2 text-zinc-700">Checked over and work-ready. MTF finance arranged and trades welcome — come and have a look.</p>
-            <Link href="/for-sale" className="mt-5 inline-block rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700">See what&apos;s for sale →</Link>
-          </div>
-          <img src={ATV} alt="Used ATVs for sale at Betterservice Tepuke" className="h-64 w-full rounded-xl object-cover shadow-md" />
-        </div>
-      </section>
-
       {/* Workshop strip */}
       <section className="mx-auto max-w-5xl px-4 py-16">
         <h2 className="text-2xl font-bold tracking-tight text-zinc-900">In the workshop</h2>
@@ -74,15 +62,6 @@ export default function Home() {
           {SHOP.map((src, i) => (
             <img key={i} src={src} alt="Betterservice workshop" className="h-28 w-full rounded-lg object-cover sm:h-48" />
           ))}
-        </div>
-      </section>
-
-      {/* Book */}
-      <section id="book" className="bg-zinc-900">
-        <div className="mx-auto max-w-5xl px-4 py-14">
-          <h2 className="text-2xl font-bold tracking-tight text-white">Book a service</h2>
-          <p className="mt-2 max-w-xl text-zinc-300">Bike or ATV due for a service, or playing up? Give Craig a call or text and we&apos;ll book you in.</p>
-          <a href="tel:02108327787" className="mt-5 inline-block rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700">Call or text · 021 08327787</a>
         </div>
       </section>
 

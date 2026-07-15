@@ -64,7 +64,7 @@ export default function BillsPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Bills to pay</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Bills To Pay</h1>
       <p className="mt-1 text-zinc-600">Money you owe suppliers — from on-account expenses and received purchase orders. Recording a payment settles it in your books.</p>
 
       <div className="mt-5 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">

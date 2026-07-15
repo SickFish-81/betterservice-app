@@ -40,7 +40,7 @@ export default function TemplatesPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Checklist templates</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Checklist Templates</h1>
       <p className="mt-1 text-zinc-600">Standard task lists (e.g. "Full ATV service") to drop onto a job so nothing gets missed.</p>
 
       <form onSubmit={addTemplate} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">

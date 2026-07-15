@@ -15,7 +15,7 @@ export default function PublicNav() {
         <nav className="flex flex-wrap items-center gap-4 text-sm font-medium text-zinc-600">
           <Link href="/for-sale" className="hover:text-zinc-900">Used ATVs</Link>
           <Link href="/batteries" className="hover:text-zinc-900">Batteries</Link>
-          <a href="/#book" className="hover:text-zinc-900">Book a service</a>
+          <a href="/#contact" className="hover:text-zinc-900">Book a service</a>
         </nav>
         <div className="ml-auto">
           <Link href="/dashboard" className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50">Staff login</Link>

@@ -83,7 +83,7 @@ export default function PartsPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Parts &amp; inventory</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Parts &amp; Inventory</h1>
       <p className="mt-1 text-zinc-600">Stock the shop sells or fits. Parts added to a job draw down from here; count and correct on the Stock take page.</p>
 
       {low.length > 0 && (

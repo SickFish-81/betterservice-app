@@ -32,7 +32,7 @@ export default function LoginPage() {
       <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-zinc-900">
         <span className="inline-block h-5 w-5 rounded bg-red-600" /> Betterservice
       </div>
-      <h1 className="mt-6 text-2xl font-bold tracking-tight text-zinc-900">Staff sign in</h1>
+      <h1 className="mt-6 text-2xl font-bold tracking-tight text-zinc-900">Staff Sign In</h1>
       <p className="mt-1 text-sm text-zinc-600">The shop&apos;s back office.</p>
 
       <form onSubmit={submit} className="mt-6 flex flex-col gap-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">

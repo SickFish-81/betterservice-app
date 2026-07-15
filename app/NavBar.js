@@ -10,7 +10,7 @@ const groups = [
     label: "Accounting",
     items: [
       { href: "/invoices", label: "Invoices" },
-      { href: "/credit-notes", label: "Credit notes" },
+      { href: "/credit-notes", label: "Credit Notes" },
       { href: "/bills", label: "Bills" },
       { href: "/expenses", label: "Expenses" },
       { href: "/accounting", label: "Overview" },
@@ -21,7 +21,7 @@ const groups = [
     label: "Inventory",
     items: [
       { href: "/parts", label: "Parts" },
-      { href: "/stocktake", label: "Stock take" },
+      { href: "/stocktake", label: "Stock Take" },
       { href: "/suppliers", label: "Suppliers" },
       { href: "/purchase-orders", label: "Orders" },
     ],
@@ -37,7 +37,7 @@ const groups = [
   {
     label: "Admin",
     items: [
-      { href: "/secondhand", label: "For sale" },
+      { href: "/secondhand", label: "For Sale" },
       { href: "/staff", label: "Staff" },
       { href: "/settings", label: "Settings" },
     ],
@@ -81,7 +81,7 @@ export default function NavBar({ email }) {
 
         {/* Desktop nav */}
         <nav className="ml-2 hidden items-center gap-1 text-sm sm:flex">
-          <Link href="/jobs" className={triggerCls(isActive("/jobs"))}>Job cards</Link>
+          <Link href="/jobs" className={triggerCls(isActive("/jobs"))}>Job Cards</Link>
           {groups.map((g) => (
             <div key={g.label} className="relative">
               <button

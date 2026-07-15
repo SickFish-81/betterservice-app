@@ -71,7 +71,7 @@ export default function PurchaseOrdersPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Purchase orders</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Purchase Orders</h1>
       <p className="mt-1 text-zinc-600">Order parts from a supplier, then receive them to add stock and record the bill in your books.</p>
 
       <form onSubmit={create} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">

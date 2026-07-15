@@ -104,7 +104,7 @@ export default function CreditNotesPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Credit notes</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Credit Notes</h1>
       <p className="mt-1 text-zinc-600">Credit an invoice (full or partial) or issue a standalone credit. Each one reverses Sales &amp; GST in your books automatically.</p>
 
       {error && <p className="mt-3 text-sm text-red-600" role="alert">{error}</p>}

@@ -93,7 +93,7 @@ export default function SecondhandPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">For sale</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">For Sale</h1>
       <p className="mt-1 text-zinc-600">Second-hand machines for sale — photos and details for the website showcase.</p>
 
       <form onSubmit={addListing} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
