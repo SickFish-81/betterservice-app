@@ -42,7 +42,7 @@ export default function StaffPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Staff</h1>
-      <p className="mt-1 text-zinc-600">Add Craig as <span className="font-semibold text-zinc-800">Owner</span> with <span className="font-semibold text-zinc-800">can send invoices</span> ticked. The email must match the login they'll use.</p>
+      <p className="mt-1 text-zinc-600">Team members who can log in. <span className="font-semibold text-zinc-800">Owners</span> can send invoices and manage staff — each person's email must match the login they use.</p>
 
       <form onSubmit={addStaff} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className={input} />

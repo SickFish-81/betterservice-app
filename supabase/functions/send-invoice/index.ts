@@ -1,4 +1,4 @@
-// send-invoice: authorize caller (owner who can send), file the PDF, email via Resend.
+// send-invoice: authorize caller (owner who can send), file the PDF, email via Resend using the editable Settings template.
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -10,6 +10,14 @@ function json(obj: unknown, status = 200) {
 function esc(s: unknown) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 }
+function applyTemplate(tpl: unknown, vars: Record<string, unknown>) {
+  return String(tpl ?? "").replace(/\{(\w+)\}/g, (_m, k) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k] ?? "") : `{${k}}`));
+}
+function toHtml(text: string) {
+  return String(text ?? "").split(/\n{2,}/).map((p) => `<p>${esc(p).replace(/\n/g, "<br/>")}</p>`).join("");
+}
+const DEFAULT_SUBJECT = "Your invoice #{number} — {business}";
+const DEFAULT_BODY = "Hi {customer},\n\nThanks for choosing {business}. Your invoice #{number} for ${total} is attached as a PDF.\n\nAny questions, just reply to this email or call Craig on {phone}.\n\nCheers,\n{business}";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -44,6 +52,17 @@ Deno.serve(async (req) => {
       body: bytes,
     });
     if (!up.ok) return json({ error: `Storage upload failed (${up.status}): ${await up.text()}` }, 400);
+
+    // Load the editable template + business details from Settings.
+    const sres = await fetch(`${SUPABASE_URL}/rest/v1/shop_settings?id=eq.1&select=*`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: ANON_KEY },
+    });
+    const st = (sres.ok ? (await sres.json())[0] : null) || {};
+    const business = st.business_name || "Betterservice Tepuke";
+    const vars = { customer: customerName, number: invNo, total: Number(total || 0).toFixed(2), business, phone: st.phone || "021 08327787" };
+    const subject = applyTemplate(st.invoice_email_subject || DEFAULT_SUBJECT, vars);
+    const html = toHtml(applyTemplate(st.invoice_email_body || DEFAULT_BODY, vars));
+
     let emailId: string | null = null;
     let emailError: string | null = null;
     const apiKey = Deno.env.get("RESEND_API_KEY");
@@ -52,15 +71,10 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: "Betterservice Tepuke <accounts@betterservice.co.nz>",
+          from: `${business} <accounts@betterservice.co.nz>`,
           to: [to],
-          subject: `Your invoice #${invNo} — Betterservice Tepuke`,
-          html:
-            `<p>Hi ${esc(customerName) || "there"},</p>` +
-            `<p>Thanks for choosing Betterservice Tepuke. Your invoice <strong>#${esc(invNo)}</strong> ` +
-            `for <strong>$${Number(total || 0).toFixed(2)}</strong> is attached as a PDF.</p>` +
-            `<p>Any questions, just reply to this email or call Craig on 021 08327787.</p>` +
-            `<p>Cheers,<br/>Betterservice Tepuke</p>`,
+          subject,
+          html,
           attachments: [{ filename: `Invoice-${invNo}.pdf`, content: pdfBase64 }],
         }),
       });

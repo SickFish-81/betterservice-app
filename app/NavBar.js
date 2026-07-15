@@ -1,52 +1,104 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 
-const links = [
-  { href: "/jobs", label: "Job cards" },
-  { href: "/invoices", label: "Invoices" },
-  { href: "/credit-notes", label: "Credit notes" },
-  { href: "/accounting", label: "Accounting" },
-  { href: "/reports", label: "Reports" },
-  { href: "/expenses", label: "Expenses" },
-  { href: "/bills", label: "Bills" },
-  { href: "/due", label: "Due" },
-  { href: "/parts", label: "Parts" },
-  { href: "/stocktake", label: "Stock take" },
-  { href: "/suppliers", label: "Suppliers" },
-  { href: "/purchase-orders", label: "Orders" },
-  { href: "/customers", label: "Customers" },
-  { href: "/machines", label: "Machines" },
-  { href: "/secondhand", label: "For sale" },
-  { href: "/staff", label: "Staff" },
-  { href: "/settings", label: "Settings" },
+const groups = [
+  {
+    label: "Accounting",
+    items: [
+      { href: "/invoices", label: "Invoices" },
+      { href: "/credit-notes", label: "Credit notes" },
+      { href: "/bills", label: "Bills" },
+      { href: "/expenses", label: "Expenses" },
+      { href: "/accounting", label: "Overview" },
+      { href: "/reports", label: "Reports" },
+    ],
+  },
+  {
+    label: "Inventory",
+    items: [
+      { href: "/parts", label: "Parts" },
+      { href: "/stocktake", label: "Stock take" },
+      { href: "/suppliers", label: "Suppliers" },
+      { href: "/purchase-orders", label: "Orders" },
+    ],
+  },
+  {
+    label: "People",
+    items: [
+      { href: "/customers", label: "Customers" },
+      { href: "/machines", label: "Machines" },
+      { href: "/due", label: "Due" },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { href: "/secondhand", label: "For sale" },
+      { href: "/staff", label: "Staff" },
+      { href: "/settings", label: "Settings" },
+    ],
+  },
 ];
 
 export default function NavBar({ email }) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false); // mobile sheet
+  const [menu, setMenu] = useState(null);  // open desktop dropdown label
 
-  const cls = (href) => {
-    const active = pathname === href || pathname.startsWith(href + "/");
-    return active
-      ? "rounded-md bg-red-50 px-3 py-1.5 font-semibold text-red-700"
-      : "rounded-md px-3 py-1.5 font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900";
-  };
+  // Close an open dropdown on any outside click.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [menu]);
+
+  // The dashboard is the back-office launcher (its large tiles are the nav there),
+  // so hide the top bar on that page only.
+  if (pathname === "/dashboard") return null;
+
+  const isActive = (href) => pathname === href || pathname.startsWith(href + "/");
+  const groupActive = (g) => g.items.some((i) => isActive(i.href));
+
+  const triggerCls = (active) =>
+    "rounded-md px-3 py-1.5 text-sm font-medium " +
+    (active ? "bg-red-50 text-red-700" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900");
+  const itemCls = (active) =>
+    "block rounded-md px-3 py-2 text-sm " +
+    (active ? "bg-red-50 font-semibold text-red-700" : "text-zinc-700 hover:bg-zinc-100");
 
   return (
-    <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
+    <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/90 backdrop-blur">
+      <div className="mx-auto flex max-w-4xl items-center gap-2 px-4 py-3">
         <Link href="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-2 text-lg font-bold tracking-tight text-zinc-900">
           <span className="inline-block h-5 w-5 rounded bg-red-600" />
           Betterservice
         </Link>
 
-        {/* Desktop links */}
-        <nav className="hidden flex-wrap gap-1 text-sm sm:flex">
-          {links.map((l) => (<Link key={l.href} href={l.href} className={cls(l.href)}>{l.label}</Link>))}
+        {/* Desktop nav */}
+        <nav className="ml-2 hidden items-center gap-1 text-sm sm:flex">
+          <Link href="/jobs" className={triggerCls(isActive("/jobs"))}>Job cards</Link>
+          {groups.map((g) => (
+            <div key={g.label} className="relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setMenu(menu === g.label ? null : g.label); }}
+                className={triggerCls(groupActive(g) || menu === g.label)}
+              >
+                {g.label} <span className="text-xs">▾</span>
+              </button>
+              {menu === g.label && (
+                <div onClick={(e) => e.stopPropagation()} className="absolute left-0 top-full z-30 mt-1 w-48 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg">
+                  {g.items.map((i) => (
+                    <Link key={i.href} href={i.href} onClick={() => setMenu(null)} className={itemCls(isActive(i.href))}>{i.label}</Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </nav>
 
         {/* Desktop right cluster */}
@@ -55,7 +107,7 @@ export default function NavBar({ email }) {
           <button onClick={() => supabase.auth.signOut()} className="rounded-md px-2 py-1 font-medium text-red-600 hover:bg-red-50">Sign out</button>
         </div>
 
-        {/* Mobile menu toggle */}
+        {/* Mobile toggle */}
         <button onClick={() => setOpen((o) => !o)} aria-label="Menu" className="ml-auto rounded-md p-2 text-zinc-700 hover:bg-zinc-100 sm:hidden">
           {open ? (
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -65,13 +117,19 @@ export default function NavBar({ email }) {
         </button>
       </div>
 
-      {/* Mobile dropdown */}
+      {/* Mobile sheet */}
       {open && (
-        <nav className="mx-auto flex max-w-3xl flex-col gap-1 border-t border-zinc-100 px-4 py-2 text-sm sm:hidden">
-          {links.map((l) => (
-            <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className={cls(l.href)}>{l.label}</Link>
+        <nav className="mx-auto max-w-4xl border-t border-zinc-100 px-4 py-2 text-sm sm:hidden">
+          <Link href="/jobs" onClick={() => setOpen(false)} className={itemCls(isActive("/jobs"))}>Job cards</Link>
+          {groups.map((g) => (
+            <div key={g.label} className="mt-2">
+              <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{g.label}</p>
+              {g.items.map((i) => (
+                <Link key={i.href} href={i.href} onClick={() => setOpen(false)} className={itemCls(isActive(i.href))}>{i.label}</Link>
+              ))}
+            </div>
           ))}
-          <div className="mt-1 flex items-center justify-between border-t border-zinc-100 pt-2">
+          <div className="mt-3 flex items-center justify-between border-t border-zinc-100 pt-2">
             {email && <span className="truncate text-xs text-zinc-500">{email}</span>}
             <div className="flex shrink-0 items-center gap-3">
               <Link href="/" onClick={() => setOpen(false)} className="text-zinc-500 hover:text-zinc-800">View site ↗</Link>

@@ -1,4 +1,4 @@
-// send-reminder: authorize caller (approved staff), email a service reminder via Resend using the editable Settings template.
+// send-purchase-order: authorize caller (approved staff), email the PO PDF to the supplier via Resend using the editable Settings template.
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -16,14 +16,17 @@ function applyTemplate(tpl: unknown, vars: Record<string, unknown>) {
 function toHtml(text: string) {
   return String(text ?? "").split(/\n{2,}/).map((p) => `<p>${esc(p).replace(/\n/g, "<br/>")}</p>`).join("");
 }
-const DEFAULT_SUBJECT = "Time for a service — {business}";
-const DEFAULT_BODY = "Hi {customer},\n\nIt's Craig at {business}. Our records show your {machine} is about due for its service — it's been roughly a year since the last one.\n\nA regular service keeps it running sweet, safe and reliable. Give me a call or text on {phone} to book it in.\n\nCheers,\nCraig · {business}";
+const DEFAULT_SUBJECT = "Purchase order #{number} — {business}";
+const DEFAULT_BODY = "Hi {supplier},\n\nPlease find our purchase order #{number} attached as a PDF.\n\nAny questions, just reply to this email or call Craig on {phone}.\n\nCheers,\n{business}";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { to, customerName, machineLabel, accessToken } = await req.json().catch(() => ({}));
-    if (!to) return json({ error: "No email on file for this customer." }, 400);
+    const body = await req.json().catch(() => ({}));
+    const { to, supplierName, poNumber, pdfBase64, accessToken } = body;
+    const no = String(poNumber ?? "").padStart(5, "0");
+    if (!pdfBase64) return json({ error: "No PDF was provided." }, 400);
+    if (!to) return json({ error: "This supplier has no email address on file." }, 400);
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
@@ -37,10 +40,10 @@ Deno.serve(async (req) => {
       body: "{}",
     });
     const ok = chk.ok ? await chk.json() : false;
-    if (ok !== true) return json({ error: "Not authorised." }, 403);
+    if (ok !== true) return json({ error: "Not authorised — sign in as approved staff." }, 403);
 
     const apiKey = Deno.env.get("RESEND_API_KEY");
-    if (!apiKey) return json({ error: "RESEND_API_KEY is not set." }, 500);
+    if (!apiKey) return json({ error: "RESEND_API_KEY is not set." }, 400);
 
     // Load the editable template + business details from Settings.
     const sres = await fetch(`${SUPABASE_URL}/rest/v1/shop_settings?id=eq.1&select=*`, {
@@ -48,18 +51,24 @@ Deno.serve(async (req) => {
     });
     const st = (sres.ok ? (await sres.json())[0] : null) || {};
     const business = st.business_name || "Betterservice Tepuke";
-    const vars = { customer: customerName, machine: machineLabel || "bike", business, phone: st.phone || "021 08327787" };
-    const subject = applyTemplate(st.reminder_email_subject || DEFAULT_SUBJECT, vars);
-    const html = toHtml(applyTemplate(st.reminder_email_body || DEFAULT_BODY, vars));
+    const vars = { supplier: supplierName, number: no, business, phone: st.phone || "021 08327787" };
+    const subject = applyTemplate(st.po_email_subject || DEFAULT_SUBJECT, vars);
+    const html = toHtml(applyTemplate(st.po_email_body || DEFAULT_BODY, vars));
 
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: `${business} <accounts@betterservice.co.nz>`, to: [to], subject, html }),
+      body: JSON.stringify({
+        from: `${business} <accounts@betterservice.co.nz>`,
+        to: [to],
+        subject,
+        html,
+        attachments: [{ filename: `PurchaseOrder-${no}.pdf`, content: pdfBase64 }],
+      }),
     });
     const data = await r.json();
     if (!r.ok) return json({ error: data?.message || "Resend rejected the send." }, 400);
-    return json({ ok: true, emailId: data.id });
+    return json({ ok: true, emailId: data.id, emailed: true });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }

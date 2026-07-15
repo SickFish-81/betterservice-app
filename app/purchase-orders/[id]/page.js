@@ -25,10 +25,12 @@ export default function PurchaseOrderDetail() {
   const [po, setPo] = useState(null);
   const [items, setItems] = useState([]);
   const [recv, setRecv] = useState({});
+  const [settings, setSettings] = useState(null);
   const [gst, setGst] = useState("");
   const [gstAuto, setGstAuto] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [emailing, setEmailing] = useState(false);
   const [error, setError] = useState(null);
   const [ok, setOk] = useState(null);
 
@@ -36,7 +38,7 @@ export default function PurchaseOrderDetail() {
     setLoading(true);
     const { data, error } = await supabase
       .from("purchase_orders")
-      .select("*, suppliers(name), purchase_order_items(*, parts(name)), expenses(expense_number, amount_ex_gst, gst, total)")
+      .select("*, suppliers(name, email), purchase_order_items(*, parts(name)), expenses(expense_number, amount_ex_gst, gst, total)")
       .eq("id", id)
       .single();
     if (error) { setError(error.message); setLoading(false); return; }
@@ -46,6 +48,8 @@ export default function PurchaseOrderDetail() {
     const r = {};
     its.forEach((it) => { r[it.id] = { qty: String(it.qty_received || it.qty_ordered), cost: String(it.unit_cost) }; });
     setRecv(r);
+    const { data: st } = await supabase.from("shop_settings").select("*").eq("id", 1).single();
+    setSettings(st || null);
     setLoading(false);
   }
   useEffect(() => { if (id) load(); }, [id]);
@@ -54,11 +58,59 @@ export default function PurchaseOrderDetail() {
   const goods = Math.round(items.reduce((s, it) => s + (Number(recv[it.id]?.qty) || 0) * (Number(recv[it.id]?.cost) || 0), 0) * 100) / 100;
   const gstVal = gstAuto ? Math.round(goods * 0.15 * 100) / 100 : (Number(gst) || 0);
   const total = Math.round((goods + gstVal) * 100) / 100;
+  const orderTotal = Math.round(items.reduce((s, it) => s + Number(it.qty_ordered) * Number(it.unit_cost || 0), 0) * 100) / 100;
 
   async function markOrdered() { await supabase.from("purchase_orders").update({ status: "Ordered" }).eq("id", id); load(); }
   async function cancel() {
     if (!window.confirm("Cancel this order?")) return;
     await supabase.from("purchase_orders").update({ status: "Cancelled" }).eq("id", id); load();
+  }
+
+  async function emailPO() {
+    setError(null); setOk(null);
+    if (!po?.suppliers?.email) { setError("This supplier has no email on file — add one on the Suppliers page, then try again."); return; }
+    setEmailing(true);
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF();
+      let y = 20;
+      doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice Tepuke", 20, y); y += 7;
+      doc.setFontSize(10);
+      if (settings?.address) { doc.text(settings.address, 20, y); y += 5; }
+      if (settings?.phone) { doc.text("Ph: " + settings.phone, 20, y); y += 5; }
+      if (settings?.gst_number) { doc.text("GST #: " + settings.gst_number, 20, y); y += 5; }
+      y += 5;
+      doc.setFontSize(14); doc.text("PURCHASE ORDER  " + poNo(po.po_number), 20, y); y += 8;
+      doc.setFontSize(10);
+      doc.text("Date: " + (po.order_date || ""), 20, y); y += 6;
+      doc.text("Supplier: " + (po.suppliers?.name || ""), 20, y); y += 10;
+      doc.line(20, y, 190, y); y += 6;
+      items.forEach((it) => {
+        const desc = (it.parts?.name || it.description) + "  (" + it.qty_ordered + " x $" + Number(it.unit_cost).toFixed(2) + ")";
+        doc.text(String(desc).substring(0, 70), 20, y);
+        doc.text("$" + (Number(it.qty_ordered) * Number(it.unit_cost)).toFixed(2), 190, y, { align: "right" });
+        y += 6;
+      });
+      y += 2; doc.line(120, y, 190, y); y += 6;
+      doc.setFontSize(12); doc.text("Total (ex GST)", 110, y); doc.text("$" + orderTotal.toFixed(2), 190, y, { align: "right" });
+
+      const pdfBase64 = doc.output("datauristring").split("base64,")[1];
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data: res, error: fErr } = await supabase.functions.invoke("send-purchase-order", {
+        body: { to: po.suppliers.email, supplierName: po.suppliers.name, poNumber: po.po_number, pdfBase64, accessToken: session?.access_token || null },
+      });
+      if (fErr || res?.error) {
+        let detail = res?.error || (fErr && fErr.message) || "Unknown error";
+        try { if (fErr && fErr.context && fErr.context.json) { const b = await fErr.context.json(); if (b && b.error) detail = b.error; } } catch (_e) {}
+        setError("Couldn't email the order: " + detail); setEmailing(false); return;
+      }
+      if (po.status === "Draft") await supabase.from("purchase_orders").update({ status: "Ordered" }).eq("id", id);
+      setOk("Order emailed to " + (po.suppliers.name || "the supplier") + ".");
+      setEmailing(false);
+      load();
+    } catch (e) {
+      setError("Couldn't build the PDF: " + String(e)); setEmailing(false);
+    }
   }
 
   async function receive() {
@@ -126,8 +178,9 @@ export default function PurchaseOrderDetail() {
             <span>Total: <strong className="text-zinc-900">{money(total)}</strong></span>
           </div>
           <p className="mt-2 text-xs text-zinc-500">Enter what actually arrived — quantities, costs and GST are all editable. Receiving adds stock and records this as an on-account bill (Cost of Parts + GST, owed to the supplier).</p>
-          <div className="mt-3 flex items-center gap-4">
+          <div className="mt-3 flex flex-wrap items-center gap-4">
             <button onClick={receive} disabled={saving || goods <= 0} className={btn + " disabled:opacity-50"}>{saving ? "Receiving…" : "Receive & post"}</button>
+            <button onClick={emailPO} disabled={emailing} className="text-sm font-medium text-red-600 hover:underline disabled:opacity-50">{emailing ? "Emailing…" : "email to supplier"}</button>
             {po.status === "Draft" && <button onClick={markOrdered} className="text-sm text-zinc-600 hover:underline">mark as ordered</button>}
             <button onClick={cancel} className="ml-auto text-sm text-red-500 hover:underline">cancel order</button>
           </div>

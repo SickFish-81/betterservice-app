@@ -31,7 +31,7 @@ export default function Home() {
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-zinc-950/92 via-zinc-950/75 to-zinc-900/45" />
         <div className="mx-auto max-w-5xl px-4 py-24 sm:py-32">
           <p className="text-sm font-semibold uppercase tracking-wider text-red-400">Te Puke · 25+ years</p>
-          <h1 className="mt-3 max-w-2xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">Honest, reliable motorcycle &amp; ATV service.</h1>
+          <h1 className="mt-3 max-w-2xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">Honest, reliable ATV &amp; motorcycle service.</h1>
           <p className="mt-4 max-w-xl text-lg text-zinc-200">Servicing, repairs and quality used ATVs from Craig at Betterservice Tepuke. Better price, better advice, better bikes.</p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a href="tel:02108327787" className="rounded-lg bg-red-600 px-5 py-3 font-semibold text-white shadow-sm hover:bg-red-700">Call or text · 021 08327787</a>
