@@ -94,7 +94,7 @@ export default function PurchaseOrdersPage() {
           <button type="button" onClick={addLine} className="self-start text-sm font-medium text-red-600 hover:underline">+ add line</button>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-zinc-500">Order value (ex GST): <strong className="text-zinc-800">{money(orderTotal)}</strong></span>
+          <span className="text-sm text-zinc-500">Order value (excl. GST): <strong className="text-zinc-800">{money(orderTotal)}</strong></span>
           <button type="submit" disabled={saving} className={btn + " disabled:opacity-50"}>{saving ? "Creating…" : "Create order"}</button>
         </div>
       </form>

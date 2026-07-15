@@ -77,7 +77,7 @@ export default function SettingsPage() {
         <p className="mt-6 text-sm text-red-600">{error || "Couldn't load settings."}</p>
       ) : (
         <form onSubmit={save} className="mt-6 flex flex-col gap-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <Field label="Business name" value={s.business_name} onChange={(e) => set("business_name", e.target.value)} placeholder="Betterservice Tepuke" />
+          <Field label="Business name" value={s.business_name} onChange={(e) => set("business_name", e.target.value)} placeholder="Betterservice Te Puke" />
           <Field label="Address" value={s.address} onChange={(e) => set("address", e.target.value)} placeholder="556 Te Puke Highway, Te Puke" />
           <Field label="Phone" value={s.phone} onChange={(e) => set("phone", e.target.value)} placeholder="021 08327787" />
           <Field label="GST number" value={s.gst_number} onChange={(e) => set("gst_number", e.target.value)} placeholder="e.g. 123-456-789" />

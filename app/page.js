@@ -68,7 +68,7 @@ export default function Home() {
       {/* Contact */}
       <section id="contact" className="border-t border-zinc-200 bg-white">
         <div className="mx-auto grid max-w-5xl items-center gap-6 px-4 py-12 sm:grid-cols-[auto,1fr]">
-          <img src={LOGO} alt="Betterservice Tepuke" className="h-24 w-auto" />
+          <img src={LOGO} alt="Betterservice Te Puke" className="h-24 w-auto" />
           <div>
             <p className="text-zinc-700">556 Te Puke Highway, Te Puke</p>
             <p className="text-zinc-700">Phone / text: <a href="tel:02108327787" className="font-medium text-red-600 hover:underline">021 08327787</a></p>
@@ -76,7 +76,7 @@ export default function Home() {
             <p className="mt-3 text-sm text-zinc-500">Off-road motorcycle &amp; ATV specialists — servicing, repairs, used ATV sales, parts &amp; accessories.</p>
           </div>
         </div>
-        <div className="border-t border-zinc-100 py-6 text-center text-xs text-zinc-500">© Betterservice Tepuke</div>
+        <div className="border-t border-zinc-100 py-6 text-center text-xs text-zinc-500">© Betterservice Te Puke</div>
       </section>
     </main>
   );

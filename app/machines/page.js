@@ -132,8 +132,8 @@ export default function MachinesPage() {
                       <p className="truncate text-sm text-zinc-500">{[m.rego, m.customers?.name].filter(Boolean).join(" · ")}</p>
                     </div>
                     <div className="flex shrink-0 gap-3 text-sm">
-                      <button onClick={() => startEdit(m)} className="font-medium text-red-600 hover:text-red-700">Edit</button>
-                      <button onClick={() => removeMachine(m)} className="text-zinc-500 hover:text-red-600">Remove</button>
+                      <button onClick={() => startEdit(m)} className="font-medium text-red-600 hover:text-red-700">edit</button>
+                      <button onClick={() => removeMachine(m)} className="text-zinc-500 hover:text-red-600">remove</button>
                     </div>
                   </div>
                 )}

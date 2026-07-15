@@ -219,7 +219,7 @@ export default function JobDetailPage() {
     const { jsPDF } = await import("jspdf");
     const doc = new jsPDF();
     let y = 20;
-    doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice Tepuke", 20, y); y += 7;
+    doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice Te Puke", 20, y); y += 7;
     doc.setFontSize(10);
     if (settings?.address) { doc.text(settings.address, 20, y); y += 5; }
     if (settings?.phone) { doc.text("Ph: " + settings.phone, 20, y); y += 5; }
@@ -273,7 +273,7 @@ export default function JobDetailPage() {
   if (loading) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
   if (!job) return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <Link href="/jobs" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">← Job cards</Link>
+      <Link href="/jobs" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">← Job Cards</Link>
       <p className="mt-4 text-red-600">Job not found.</p>
     </main>
   );
@@ -290,7 +290,7 @@ export default function JobDetailPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <Link href="/jobs" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">← Job cards</Link>
+      <Link href="/jobs" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">← Job Cards</Link>
 
       <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">

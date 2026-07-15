@@ -74,7 +74,7 @@ export default function PurchaseOrderDetail() {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF();
       let y = 20;
-      doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice Tepuke", 20, y); y += 7;
+      doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice Te Puke", 20, y); y += 7;
       doc.setFontSize(10);
       if (settings?.address) { doc.text(settings.address, 20, y); y += 5; }
       if (settings?.phone) { doc.text("Ph: " + settings.phone, 20, y); y += 5; }
@@ -92,7 +92,7 @@ export default function PurchaseOrderDetail() {
         y += 6;
       });
       y += 2; doc.line(120, y, 190, y); y += 6;
-      doc.setFontSize(12); doc.text("Total (ex GST)", 110, y); doc.text("$" + orderTotal.toFixed(2), 190, y, { align: "right" });
+      doc.setFontSize(12); doc.text("Total (excl. GST)", 110, y); doc.text("$" + orderTotal.toFixed(2), 190, y, { align: "right" });
 
       const pdfBase64 = doc.output("datauristring").split("base64,")[1];
       const { data: { session } } = await supabase.auth.getSession();
@@ -135,7 +135,7 @@ export default function PurchaseOrderDetail() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <Link href="/purchase-orders" className="text-sm text-zinc-500 hover:underline">← Purchase orders</Link>
+      <Link href="/purchase-orders" className="text-sm text-zinc-500 hover:underline">← Purchase Orders</Link>
       <div className="mt-2 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900">{poNo(po.po_number)}</h1>
         <span className={"rounded-full px-2 py-0.5 text-xs font-semibold " + (STATUS_STYLES[po.status] || "bg-zinc-100 text-zinc-700")}>{po.status}</span>

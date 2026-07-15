@@ -50,7 +50,7 @@ export default function CreditNotesPage() {
   function buildPdf(note, customerName) {
     const doc = new jsPDF();
     let y = 20;
-    doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice Tepuke", 20, y); y += 7;
+    doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice Te Puke", 20, y); y += 7;
     doc.setFontSize(10); doc.setTextColor(110);
     if (settings?.address) { doc.text(String(settings.address), 20, y); y += 5; }
     if (settings?.phone) { doc.text(String(settings.phone), 20, y); y += 5; }

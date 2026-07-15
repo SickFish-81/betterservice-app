@@ -37,7 +37,7 @@ export default function Batteries() {
         <div className="mx-auto max-w-5xl px-4 py-16">
           <p className="text-sm font-semibold uppercase tracking-wider text-red-400">In stock now</p>
           <h1 className="mt-2 text-4xl font-bold tracking-tight sm:text-5xl">Neuton Power Batteries</h1>
-          <p className="mt-4 max-w-2xl text-lg text-zinc-300">Cheap, quality AGM &amp; lithium batteries — ATVs, side-by-sides, motorcycles, mowers, cars, 4x4s, tractors and marine. Ready to go at Betterservice Tepuke.</p>
+          <p className="mt-4 max-w-2xl text-lg text-zinc-300">Cheap, quality AGM &amp; lithium batteries — ATVs, side-by-sides, motorcycles, mowers, cars, 4x4s, tractors and marine. Ready to go at Betterservice Te Puke.</p>
           <a href="tel:02108327787" className="mt-7 inline-block rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700">Call or text · 021 08327787</a>
         </div>
       </section>

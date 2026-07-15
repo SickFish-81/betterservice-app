@@ -17,7 +17,7 @@ export default function Dashboard() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Shop Dashboard</h1>
-      <p className="mt-2 text-zinc-600">Betterservice Tepuke — back office.</p>
+      <p className="mt-2 text-zinc-600">Betterservice Te Puke — back office.</p>
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
         {cards.map((c) => (
           <Link key={c.href} href={c.href} className="group rounded-xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:border-red-300 hover:shadow-md">

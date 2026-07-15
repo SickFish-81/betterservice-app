@@ -45,7 +45,7 @@ export default function ForSalePage() {
     <main className="mx-auto max-w-5xl px-4 py-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900">Used ATVs for sale</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900">Used ATVs For Sale</h1>
           <p className="mt-2 text-zinc-600">Quality-checked and work-ready. MTF finance and trades welcome.</p>
         </div>
         <a

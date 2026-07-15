@@ -70,7 +70,7 @@ export default function StocktakePage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Stock Take</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Stocktake</h1>
       <p className="mt-1 text-zinc-600">Count what's on the shelf and enter it. Only parts whose count differs are adjusted — every change is logged below and can be re-corrected any time.</p>
 
       <div className="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">

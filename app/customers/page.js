@@ -112,8 +112,8 @@ export default function CustomersPage() {
                       {c.no_reminders && <p className="mt-0.5 text-xs font-medium text-amber-600">Reminders off</p>}
                     </div>
                     <div className="flex shrink-0 gap-3 text-sm">
-                      <button onClick={() => startEdit(c)} className="font-medium text-red-600 hover:text-red-700">Edit</button>
-                      <button onClick={() => removeCustomer(c)} className="text-zinc-500 hover:text-red-600">Remove</button>
+                      <button onClick={() => startEdit(c)} className="font-medium text-red-600 hover:text-red-700">edit</button>
+                      <button onClick={() => removeCustomer(c)} className="text-zinc-500 hover:text-red-600">remove</button>
                     </div>
                   </div>
                 )}

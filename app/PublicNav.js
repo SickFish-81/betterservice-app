@@ -9,8 +9,8 @@ export default function PublicNav() {
     <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5">
         <Link href="/" className="flex items-center">
-          <img src={LOGO} alt="Betterservice Tepuke" className="h-11 w-auto" />
-          <span className="sr-only">Betterservice Tepuke</span>
+          <img src={LOGO} alt="Betterservice Te Puke" className="h-11 w-auto" />
+          <span className="sr-only">Betterservice Te Puke</span>
         </Link>
         <nav className="flex flex-wrap items-center gap-4 text-sm font-medium text-zinc-600">
           <Link href="/for-sale" className="hover:text-zinc-900">Used ATVs</Link>

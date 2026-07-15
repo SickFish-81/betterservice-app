@@ -21,7 +21,7 @@ const groups = [
     label: "Inventory",
     items: [
       { href: "/parts", label: "Parts" },
-      { href: "/stocktake", label: "Stock Take" },
+      { href: "/stocktake", label: "Stocktake" },
       { href: "/suppliers", label: "Suppliers" },
       { href: "/purchase-orders", label: "Orders" },
     ],
@@ -120,7 +120,7 @@ export default function NavBar({ email }) {
       {/* Mobile sheet */}
       {open && (
         <nav className="mx-auto max-w-4xl border-t border-zinc-100 px-4 py-2 text-sm sm:hidden">
-          <Link href="/jobs" onClick={() => setOpen(false)} className={itemCls(isActive("/jobs"))}>Job cards</Link>
+          <Link href="/jobs" onClick={() => setOpen(false)} className={itemCls(isActive("/jobs"))}>Job Cards</Link>
           {groups.map((g) => (
             <div key={g.label} className="mt-2">
               <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{g.label}</p>

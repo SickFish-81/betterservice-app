@@ -6,8 +6,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata = {
-  title: "Betterservice Tepuke",
-  description: "Shop management",
+  title: "Betterservice Te Puke",
+  description: "Betterservice Te Puke — motorcycle & ATV servicing, repairs and used ATV sales.",
 };
 
 export default function RootLayout({ children }) {
