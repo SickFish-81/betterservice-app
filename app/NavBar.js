@@ -9,6 +9,7 @@ const groups = [
   {
     label: "Accounting",
     items: [
+      { href: "/counter-sales", label: "Counter Sale" },
       { href: "/invoices", label: "Invoices" },
       { href: "/credit-notes", label: "Credit Notes" },
       { href: "/bills", label: "Bills" },

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const cards = [
   { href: "/jobs", title: "Job Cards", desc: "Take a job from first contact to a filed invoice." },
+  { href: "/counter-sales", title: "Counter Sale", desc: "Sell parts & accessories over the counter, no job card." },
   { href: "/invoices", title: "Invoices", desc: "What\u2019s billed and what\u2019s still owing." },
   { href: "/due", title: "Due For Service", desc: "Machines overdue for a service — chase them to book work." },
   { href: "/parts", title: "Parts & Inventory", desc: "Stock levels, prices, and low-stock alerts." },
