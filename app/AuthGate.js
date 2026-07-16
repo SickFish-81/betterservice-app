@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 import NavBar from "./NavBar";
 import PublicNav from "./PublicNav";
+import AttentionBanner from "./AttentionBanner";
 
 const PUBLIC_EXACT = ["/", "/login", "/batteries"];
 function isPublic(p) {
@@ -69,5 +70,5 @@ export default function AuthGate({ children }) {
       </main>
     );
   }
-  return (<><NavBar email={session.user.email} />{children}</>);
+  return (<><NavBar email={session.user.email} /><AttentionBanner />{children}</>);
 }
