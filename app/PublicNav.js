@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-const LOGO = "/logo.png";
+const LOGO = "/logo-badge.png";
 
 export default function PublicNav() {
   return (
