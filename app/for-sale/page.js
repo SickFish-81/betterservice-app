@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
+const CATEGORY_ORDER = ["ATV / 4 Wheeler", "Side by Side", "2 Wheeler", "Other"];
 
 export default function ForSalePage() {
   const [listings, setListings] = useState([]);
@@ -22,7 +23,7 @@ export default function ForSalePage() {
       .from("secondhand_listings")
       .select("*")
       .eq("status", "Available")
-      .order("created_at", { ascending: false });
+      .order("price", { ascending: false });
     if (lErr) { setError(lErr.message); setLoading(false); return; }
 
     const { data: ph, error: pErr } = await supabase
@@ -41,11 +42,19 @@ export default function ForSalePage() {
 
   useEffect(() => { load(); }, []);
 
+  // Group listings into categories; anything without a known category falls under "Other".
+  const groups = {};
+  listings.forEach((l) => {
+    const cat = CATEGORY_ORDER.includes(l.category) ? l.category : "Other";
+    (groups[cat] = groups[cat] || []).push(l);
+  });
+  const sections = CATEGORY_ORDER.filter((c) => groups[c] && groups[c].length);
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900">Used ATVs For Sale</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900">Used Machines For Sale</h1>
           <p className="mt-2 text-zinc-600">Quality-checked and work-ready. MTF finance and trades welcome.</p>
         </div>
         <a
@@ -58,39 +67,47 @@ export default function ForSalePage() {
 
       {error && <p className="mt-6 text-sm text-red-600">Error: {error}</p>}
 
-      <div className="mt-8">
-        {loading ? (
-          <p className="text-zinc-500">Loading…</p>
-        ) : listings.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-zinc-300 bg-white p-10 text-center text-zinc-500">
-            No ATVs listed right now — check back soon, or call Craig on 021 08327787.
-          </div>
-        ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {listings.map((listing) => {
-              const cover = listing.photos[0];
-              return (
-                <div key={listing.id} className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-                  {cover ? (
-                    <img src={cover.url} alt={listing.title} className="h-48 w-full object-cover" />
-                  ) : (
-                    <div className="flex h-48 w-full items-center justify-center bg-zinc-100">
-                      <span className="text-sm text-zinc-500">No photo</span>
+      {loading ? (
+        <p className="mt-8 text-zinc-500">Loading…</p>
+      ) : listings.length === 0 ? (
+        <div className="mt-8 rounded-xl border border-dashed border-zinc-300 bg-white p-10 text-center text-zinc-500">
+          No machines listed right now — check back soon, or call Craig on 021 08327787.
+        </div>
+      ) : (
+        <div className="mt-8 flex flex-col gap-12">
+          {sections.map((cat) => (
+            <section key={cat}>
+              <h2 className="mb-4 text-xl font-bold tracking-tight text-zinc-900">
+                {cat}
+                <span className="ml-2 text-sm font-normal text-zinc-400">({groups[cat].length})</span>
+              </h2>
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {groups[cat].map((listing) => {
+                  const cover = listing.photos[0];
+                  return (
+                    <div key={listing.id} className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+                      {cover ? (
+                        <img src={cover.url} alt={listing.title} className="h-48 w-full object-cover" />
+                      ) : (
+                        <div className="flex h-48 w-full items-center justify-center bg-zinc-100">
+                          <span className="text-sm text-zinc-500">No photo</span>
+                        </div>
+                      )}
+                      <div className="p-4">
+                        <p className="font-semibold text-zinc-900">{listing.title}</p>
+                        <p className="mt-1 font-bold text-red-700">{money(listing.price)}</p>
+                        {listing.description && (
+                          <p className="mt-2 line-clamp-3 text-sm text-zinc-600">{listing.description}</p>
+                        )}
+                      </div>
                     </div>
-                  )}
-                  <div className="p-4">
-                    <p className="font-semibold text-zinc-900">{listing.title}</p>
-                    <p className="mt-1 font-bold text-red-700">{money(listing.price)}</p>
-                    {listing.description && (
-                      <p className="mt-2 line-clamp-3 text-sm text-zinc-600">{listing.description}</p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
     </main>
   );
 }

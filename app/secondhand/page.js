@@ -6,12 +6,14 @@ import { supabase } from "../../lib/supabaseClient";
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 const money = (n) => "$" + Number(n || 0).toFixed(2);
+const CATEGORIES = ["ATV / 4 Wheeler", "Side by Side", "2 Wheeler", "Other"];
 
 export default function SecondhandPage() {
   const [listings, setListings] = useState([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+  const [category, setCategory] = useState("ATV / 4 Wheeler");
   const [uploadingId, setUploadingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -50,7 +52,7 @@ export default function SecondhandPage() {
     e.preventDefault();
     if (!title.trim()) return;
     const { error } = await supabase.from("secondhand_listings").insert({
-      title, description: description || null, price: Number(price || 0), status: "Available",
+      title, description: description || null, price: Number(price || 0), status: "Available", category,
     });
     if (error) { setError(error.message); return; }
     setTitle(""); setDescription(""); setPrice(""); load();
@@ -59,6 +61,12 @@ export default function SecondhandPage() {
   async function toggleStatus(listing) {
     const next = listing.status === "Sold" ? "Available" : "Sold";
     const { error } = await supabase.from("secondhand_listings").update({ status: next }).eq("id", listing.id);
+    if (error) { setError(error.message); return; }
+    load();
+  }
+
+  async function updateCategory(listing, next) {
+    const { error } = await supabase.from("secondhand_listings").update({ category: next }).eq("id", listing.id);
     if (error) { setError(error.message); return; }
     load();
   }
@@ -100,6 +108,9 @@ export default function SecondhandPage() {
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (e.g. 2018 Honda CRF250L)" className={input} />
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Description" className={input} />
         <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Price" className={input} />
+        <select value={category} onChange={(e) => setCategory(e.target.value)} className={input}>
+          {CATEGORIES.map((c) => (<option key={c} value={c}>{c}</option>))}
+        </select>
         <button type="submit" className={btn}>Add listing</button>
       </form>
 
@@ -141,6 +152,9 @@ export default function SecondhandPage() {
                   {uploadingId === listing.id ? "Uploading…" : "Add photo"}
                   <input type="file" accept="image/*" capture="environment" onChange={(e) => uploadPhoto(listing, e)} className="hidden" disabled={uploadingId === listing.id} />
                 </label>
+                <select value={CATEGORIES.includes(listing.category) ? listing.category : "Other"} onChange={(e) => updateCategory(listing, e.target.value)} className="rounded-lg border border-zinc-300 px-2 py-1 text-xs text-zinc-700">
+                  {CATEGORIES.map((c) => (<option key={c} value={c}>{c}</option>))}
+                </select>
                 <button onClick={() => toggleStatus(listing)} className="text-xs font-medium text-zinc-600 hover:underline">
                   Mark as {listing.status === "Sold" ? "Available" : "Sold"}
                 </button>
