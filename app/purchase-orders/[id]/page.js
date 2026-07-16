@@ -38,7 +38,7 @@ export default function PurchaseOrderDetail() {
     setLoading(true);
     const { data, error } = await supabase
       .from("purchase_orders")
-      .select("*, suppliers(name, email), purchase_order_items(*, parts(name)), expenses(expense_number, amount_ex_gst, gst, total)")
+      .select("*, suppliers(name, email), purchase_order_items(*, parts(name), job_cards(job_number)), expenses(expense_number, amount_ex_gst, gst, total)")
       .eq("id", id)
       .single();
     if (error) { setError(error.message); setLoading(false); return; }
@@ -151,7 +151,7 @@ export default function PurchaseOrderDetail() {
         </div>
         {items.map((it) => (
           <div key={it.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm">
-            <span className="min-w-0 truncate text-zinc-800">{it.parts?.name || it.description}</span>
+            <span className="min-w-0 truncate text-zinc-800">{it.parts?.name || it.description}{it.job_cards && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">Job #{it.job_cards.job_number}</span>}</span>
             <span className="w-12 text-right text-zinc-500">{it.qty_ordered}</span>
             {canReceive ? (
               <input type="number" min="0" inputMode="numeric" value={recv[it.id]?.qty ?? ""} onChange={setR(it.id, "qty")} className="w-16 rounded border border-zinc-300 px-2 py-1 text-right" />

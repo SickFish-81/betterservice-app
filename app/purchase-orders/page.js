@@ -21,8 +21,9 @@ export default function PurchaseOrdersPage() {
   const [orders, setOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [parts, setParts] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [supplierId, setSupplierId] = useState("");
-  const [lines, setLines] = useState([{ part_id: "", qty: "1", cost: "" }]);
+  const [lines, setLines] = useState([{ part_id: "", qty: "1", cost: "", job_id: "" }]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -38,12 +39,14 @@ export default function PurchaseOrdersPage() {
     setSuppliers((sup || []).filter((s) => s.is_active));
     const { data: pr } = await supabase.from("parts").select("id, name").order("name");
     setParts(pr || []);
+    const { data: jb } = await supabase.from("job_cards").select("id, job_number, status, customers(name)").not("status", "in", "(Invoiced,Paid)").order("job_number", { ascending: false });
+    setJobs(jb || []);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
 
   const setLine = (i, k) => (e) => setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, [k]: e.target.value } : l)));
-  const addLine = () => setLines((ls) => [...ls, { part_id: "", qty: "1", cost: "" }]);
+  const addLine = () => setLines((ls) => [...ls, { part_id: "", qty: "1", cost: "", job_id: "" }]);
   const removeLine = (i) => setLines((ls) => (ls.length > 1 ? ls.filter((_, idx) => idx !== i) : ls));
 
   const validLines = lines.filter((l) => l.part_id && Number(l.qty) > 0);
@@ -59,12 +62,12 @@ export default function PurchaseOrdersPage() {
     if (poErr) { setError(poErr.message); setSaving(false); return; }
     const rows = validLines.map((l) => {
       const part = parts.find((p) => p.id === l.part_id);
-      return { po_id: po.id, part_id: l.part_id, description: part?.name || "Item", qty_ordered: Math.max(1, Math.round(Number(l.qty))), unit_cost: Number(l.cost || 0) };
+      return { po_id: po.id, part_id: l.part_id, description: part?.name || "Item", qty_ordered: Math.max(1, Math.round(Number(l.qty))), unit_cost: Number(l.cost || 0), job_card_id: l.job_id || null };
     });
     const { error: itErr } = await supabase.from("purchase_order_items").insert(rows);
     setSaving(false);
     if (itErr) { setError(itErr.message); return; }
-    setSupplierId(""); setLines([{ part_id: "", qty: "1", cost: "" }]); load();
+    setSupplierId(""); setLines([{ part_id: "", qty: "1", cost: "", job_id: "" }]); load();
   }
 
   const orderVal = (o) => (o.purchase_order_items || []).reduce((s, it) => s + Number(it.qty_ordered) * Number(it.unit_cost || 0), 0);
@@ -81,14 +84,23 @@ export default function PurchaseOrdersPage() {
         </select>
         <div className="flex flex-col gap-2">
           {lines.map((l, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <select value={l.part_id} onChange={setLine(i, "part_id")} className={input + " flex-1"}>
-                <option value="">Part…</option>
-                {parts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              <input value={l.qty} onChange={setLine(i, "qty")} type="number" min="1" placeholder="Qty" className="w-16 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
-              <input value={l.cost} onChange={setLine(i, "cost")} type="number" min="0" step="0.01" placeholder="Cost ea" className="w-24 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
-              <button type="button" onClick={() => removeLine(i)} aria-label="remove line" className="px-1 text-zinc-400 hover:text-red-500">✕</button>
+            <div key={i} className="rounded-lg border border-zinc-200 p-2">
+              <div className="flex items-center gap-2">
+                <select value={l.part_id} onChange={setLine(i, "part_id")} className={input + " flex-1"}>
+                  <option value="">Part…</option>
+                  {parts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <input value={l.qty} onChange={setLine(i, "qty")} type="number" min="1" placeholder="Qty" className="w-16 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
+                <input value={l.cost} onChange={setLine(i, "cost")} type="number" min="0" step="0.01" placeholder="Cost ea" className="w-24 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
+                <button type="button" onClick={() => removeLine(i)} aria-label="remove line" className="px-1 text-zinc-400 hover:text-red-500">✕</button>
+              </div>
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="whitespace-nowrap text-xs font-medium text-zinc-500">For job</span>
+                <select value={l.job_id} onChange={setLine(i, "job_id")} className="flex-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-700">
+                  <option value="">— stock (no job) —</option>
+                  {jobs.map((j) => <option key={j.id} value={j.id}>Job #{j.job_number} · {j.customers?.name || "—"}</option>)}
+                </select>
+              </div>
             </div>
           ))}
           <button type="button" onClick={addLine} className="self-start text-sm font-medium text-red-600 hover:underline">+ add line</button>

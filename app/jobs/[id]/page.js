@@ -47,6 +47,12 @@ export default function JobDetailPage() {
   const [timeHours, setTimeHours] = useState("");
   const [timeNote, setTimeNote] = useState("");
   const [nowTs, setNowTs] = useState(Date.now());
+  const [arrivedParts, setArrivedParts] = useState([]);
+  const [partRequests, setPartRequests] = useState([]);
+  const [reqPartId, setReqPartId] = useState("");
+  const [reqDesc, setReqDesc] = useState("");
+  const [reqQty, setReqQty] = useState("1");
+  const [reqNote, setReqNote] = useState("");
 
   const [editing, setEditing] = useState(false);
   const [eCustomer, setECustomer] = useState("");
@@ -71,6 +77,8 @@ export default function JobDetailPage() {
     const { data: cl } = await supabase.from("job_checklist_items").select("*").eq("job_card_id", id).order("position");
     const { data: ph } = await supabase.from("job_photos").select("*").eq("job_card_id", id).order("created_at");
     const { data: te } = await supabase.from("job_time_entries").select("*, staff(name)").eq("job_card_id", id).order("created_at");
+    const { data: ap } = await supabase.from("purchase_order_items").select("*, parts(name, unit_price), purchase_orders!inner(po_number, status)").eq("job_card_id", id).is("accepted_at", null).eq("purchase_orders.status", "Received").gt("qty_received", 0);
+    const { data: prq } = await supabase.from("part_requests").select("*, parts(name)").eq("job_card_id", id).order("created_at", { ascending: false });
     const { data: cust } = await supabase.from("customers").select("id, name").order("name");
     const { data: mach } = await supabase.from("machines").select("id, customer_id, type, make, model");
     const { data: st } = await supabase.from("shop_settings").select("*").eq("id", 1).single();
@@ -84,6 +92,8 @@ export default function JobDetailPage() {
     setChecklist(cl || []);
     setPhotos(ph || []);
     setTimeEntries(te || []);
+    setArrivedParts(ap || []);
+    setPartRequests(prq || []);
     setCustomers(cust || []);
     setMachines(mach || []);
     setSettings(st || null);
@@ -245,6 +255,30 @@ export default function JobDetailPage() {
 
   async function removeTime(entry) {
     await supabase.from("job_time_entries").delete().eq("id", entry.id);
+    load();
+  }
+
+  // Accept a part that was ordered for this job and has now arrived (received on its PO).
+  async function acceptPart(it) {
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    const { error } = await supabase.rpc("accept_po_item_to_job", { p_item_id: it.id });
+    if (error) { setError(error.message); return; }
+    load();
+  }
+
+  // Flag a part the job needs ordered — lands in Craig's Parts Requests queue.
+  async function requestPart(e) {
+    e.preventDefault();
+    const part = parts.find((p) => p.id === reqPartId);
+    const desc = part ? part.name : reqDesc.trim();
+    if (!desc) { setError("Pick a part or type what's needed."); return; }
+    const { error } = await supabase.from("part_requests").insert({ job_card_id: id, part_id: reqPartId || null, description: desc, quantity: Math.max(1, Number(reqQty) || 1), note: reqNote || null });
+    if (error) { setError(error.message); return; }
+    setReqPartId(""); setReqDesc(""); setReqQty("1"); setReqNote(""); load();
+  }
+
+  async function cancelRequest(r) {
+    await supabase.from("part_requests").update({ status: "Cancelled" }).eq("id", r.id);
     load();
   }
 
@@ -537,6 +571,56 @@ export default function JobDetailPage() {
         <button className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50" disabled={parts.length === 0 || !!invoice}>Add part</button>
         {parts.length === 0 && <p className="w-full text-xs text-amber-600">No parts in inventory yet — add some on the Parts page.</p>}
       </form>
+
+      {arrivedParts.length > 0 && (
+        <>
+          <h2 className="mt-6 text-lg font-semibold text-zinc-900">Parts arrived from orders</h2>
+          <div className="mt-2 overflow-hidden rounded-xl border border-amber-200 bg-amber-50 shadow-sm">
+            <ul className="divide-y divide-amber-100">
+              {arrivedParts.map((it) => (
+                <li key={it.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+                  <span className="min-w-0">
+                    <span className="font-medium text-zinc-900">{it.parts?.name || it.description}</span>
+                    <span className="ml-2 text-zinc-500">{it.qty_received} × {money(it.parts?.unit_price ?? 0)} · PO-{String(it.purchase_orders?.po_number ?? 0).padStart(5, "0")}</span>
+                  </span>
+                  <button onClick={() => acceptPart(it)} disabled={!!invoice} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">Accept</button>
+                </li>
+              ))}
+            </ul>
+            <p className="border-t border-amber-100 px-3 py-2 text-xs text-amber-700">Ordered for this job and now in stock. Accept to add it to the job at the sell price — it comes off the shelf.</p>
+          </div>
+        </>
+      )}
+
+      <h2 className="mt-6 text-lg font-semibold text-zinc-900">Request a part</h2>
+      <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        {partRequests.length > 0 && (
+          <ul className="mb-3 divide-y divide-zinc-100">
+            {partRequests.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                <span className="min-w-0"><span className="font-medium text-zinc-900">{r.description}</span><span className="ml-2 text-zinc-500">×{r.quantity}{r.note ? " · " + r.note : ""}</span></span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className={"rounded-full px-2 py-0.5 text-xs font-medium " + (r.status === "Requested" ? "bg-amber-50 text-amber-700" : r.status === "Ordered" ? "bg-blue-50 text-blue-700" : r.status === "Done" ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-500")}>{r.status}</span>
+                  {r.status === "Requested" && <button onClick={() => cancelRequest(r)} className="text-xs text-zinc-400 hover:text-red-600">cancel</button>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form onSubmit={requestPart} className="flex flex-col gap-2">
+          <select value={reqPartId} onChange={(e) => setReqPartId(e.target.value)} className={input}>
+            <option value="">Type a new item below…</option>
+            {parts.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+          </select>
+          {!reqPartId && <input value={reqDesc} onChange={(e) => setReqDesc(e.target.value)} placeholder="What's needed (e.g. front brake pads)" className={input} />}
+          <div className="flex gap-2">
+            <input value={reqQty} onChange={(e) => setReqQty(e.target.value)} type="number" min="1" aria-label="Quantity" className="w-20 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
+            <input value={reqNote} onChange={(e) => setReqNote(e.target.value)} placeholder="Note (optional)" className={`${input} flex-1`} />
+          </div>
+          <button className="self-start rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700">Request part</button>
+        </form>
+        <p className="mt-2 text-xs text-zinc-500">Sends it to Craig's Parts Requests queue on the dashboard.</p>
+      </div>
 
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Photos</h2>
       <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">

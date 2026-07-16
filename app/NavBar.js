@@ -25,6 +25,7 @@ const groups = [
       { href: "/stocktake", label: "Stocktake" },
       { href: "/suppliers", label: "Suppliers" },
       { href: "/purchase-orders", label: "Orders" },
+      { href: "/part-requests", label: "Requests" },
     ],
   },
   {
