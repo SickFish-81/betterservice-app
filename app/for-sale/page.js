@@ -81,7 +81,7 @@ export default function ForSalePage() {
                 {cat}
                 <span className="ml-2 text-sm font-normal text-zinc-400">({groups[cat].length})</span>
               </h2>
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-3">
                 {groups[cat].map((listing) => {
                   const cover = listing.photos[0];
                   return (
