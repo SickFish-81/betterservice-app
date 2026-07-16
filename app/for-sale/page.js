@@ -84,6 +84,11 @@ export default function ForSalePage() {
         </a>
       </div>
 
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-center">
+        <span className="text-sm font-medium text-zinc-600">Finance available with</span>
+        <img src="/mtf-finance.png" alt="MTF Finance" className="h-7 w-auto sm:h-8" />
+      </div>
+
       {error && <p className="mt-6 text-sm text-red-600">Error: {error}</p>}
 
       {loading ? (
