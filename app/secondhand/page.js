@@ -13,7 +13,7 @@ export default function SecondhandPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [category, setCategory] = useState("ATV / 4 Wheeler");
+  const [category, setCategory] = useState("");
   const [uploadingId, setUploadingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -51,11 +51,12 @@ export default function SecondhandPage() {
   async function addListing(e) {
     e.preventDefault();
     if (!title.trim()) return;
+    if (!category) { setError("Pick a category so it shows in the right For Sale section."); return; }
     const { error } = await supabase.from("secondhand_listings").insert({
       title, description: description || null, price: Number(price || 0), status: "Available", category,
     });
     if (error) { setError(error.message); return; }
-    setTitle(""); setDescription(""); setPrice(""); load();
+    setTitle(""); setDescription(""); setPrice(""); setCategory(""); load();
   }
 
   async function toggleStatus(listing) {
@@ -109,6 +110,7 @@ export default function SecondhandPage() {
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Description" className={input} />
         <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Price" className={input} />
         <select value={category} onChange={(e) => setCategory(e.target.value)} className={input}>
+          <option value="">— pick a category —</option>
           {CATEGORIES.map((c) => (<option key={c} value={c}>{c}</option>))}
         </select>
         <button type="submit" className={btn}>Add listing</button>
