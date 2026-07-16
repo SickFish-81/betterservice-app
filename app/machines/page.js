@@ -16,12 +16,13 @@ export default function MachinesPage() {
   const [type, setType] = useState("ATV");
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
-  const [rego, setRego] = useState("");
+  const [vin, setVin] = useState("");
+  const [keyNo, setKeyNo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const [editingId, setEditingId] = useState(null);
-  const [ev, setEv] = useState({ customer_id: "", type: "ATV", make: "", model: "", rego: "" });
+  const [ev, setEv] = useState({ customer_id: "", type: "ATV", make: "", model: "", vin: "", key_number: "" });
 
   async function loadData() {
     setLoading(true);
@@ -38,20 +39,20 @@ export default function MachinesPage() {
   async function addMachine(e) {
     e.preventDefault();
     if (!customerId) { setError("Pick a customer first."); return; }
-    const { error } = await supabase.from("machines").insert({ customer_id: customerId, type, make, model, rego });
+    const { error } = await supabase.from("machines").insert({ customer_id: customerId, type, make, model, vin: vin || null, key_number: keyNo || null });
     if (error) { setError(error.message); return; }
-    setMake(""); setModel(""); setRego(""); loadData();
+    setMake(""); setModel(""); setVin(""); setKeyNo(""); loadData();
   }
 
   function startEdit(m) {
     setEditingId(m.id);
-    setEv({ customer_id: m.customer_id || "", type: m.type || "ATV", make: m.make || "", model: m.model || "", rego: m.rego || "" });
+    setEv({ customer_id: m.customer_id || "", type: m.type || "ATV", make: m.make || "", model: m.model || "", vin: m.vin || "", key_number: m.key_number || "" });
     setError(null);
   }
 
   async function saveEdit(id) {
     if (!ev.customer_id) { setError("A machine needs an owner."); return; }
-    const { error } = await supabase.from("machines").update({ customer_id: ev.customer_id, type: ev.type, make: ev.make, model: ev.model, rego: ev.rego }).eq("id", id);
+    const { error } = await supabase.from("machines").update({ customer_id: ev.customer_id, type: ev.type, make: ev.make, model: ev.model, vin: ev.vin || null, key_number: ev.key_number || null }).eq("id", id);
     if (error) { setError(error.message); return; }
     setEditingId(null); loadData();
   }
@@ -65,16 +66,17 @@ export default function MachinesPage() {
 
   const term = q.trim().toLowerCase();
   const shown = term
-    ? machines.filter((m) => (m.type + " " + (m.make || "") + " " + (m.model || "") + " " + (m.rego || "") + " " + (m.customers?.name || "")).toLowerCase().includes(term))
+    ? machines.filter((m) => (m.type + " " + (m.make || "") + " " + (m.model || "") + " " + (m.vin || "") + " " + (m.key_number || "") + " " + (m.customers?.name || "")).toLowerCase().includes(term))
     : machines;
 
   const makeOptions = [...new Set(machines.map((m) => m.make).filter(Boolean))].sort();
   const modelOptions = [...new Set(machines.map((m) => m.model).filter(Boolean))].sort();
+  const idLine = (m) => [m.vin && "VIN " + m.vin, m.key_number && "Key " + m.key_number, m.customers?.name].filter(Boolean).join(" · ");
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Machines</h1>
-      <p className="mt-1 text-zinc-600">Bikes &amp; ATVs, each linked to a customer.</p>
+      <p className="mt-1 text-zinc-600">Bikes &amp; ATVs — identified by VIN or key number — each linked to a customer.</p>
 
       <form onSubmit={addMachine} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={input}>
@@ -88,14 +90,17 @@ export default function MachinesPage() {
         </select>
         <input value={make} onChange={(e) => setMake(e.target.value)} placeholder="Make (pick or type new)" list="make-options" className={input} />
         <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model (pick or type new)" list="model-options" className={input} />
-        <input value={rego} onChange={(e) => setRego(e.target.value)} placeholder="Rego / plate" className={input} />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <input value={vin} onChange={(e) => setVin(e.target.value)} placeholder="VIN (if any)" className={input} />
+          <input value={keyNo} onChange={(e) => setKeyNo(e.target.value)} placeholder="Key number (if any)" className={input} />
+        </div>
         <button type="submit" className={btn}>Add machine</button>
       </form>
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
       <div className="mt-6">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search machines by make, model, rego or owner…" className={input} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search machines by make, model, VIN, key or owner…" className={input} />
         {loading ? (
           <p className="mt-4 text-zinc-500">Loading…</p>
         ) : machines.length === 0 ? (
@@ -119,7 +124,10 @@ export default function MachinesPage() {
                     </select>
                     <input value={ev.make} onChange={(e) => setEv({ ...ev, make: e.target.value })} placeholder="Make" list="make-options" className={input} />
                     <input value={ev.model} onChange={(e) => setEv({ ...ev, model: e.target.value })} placeholder="Model" list="model-options" className={input} />
-                    <input value={ev.rego} onChange={(e) => setEv({ ...ev, rego: e.target.value })} placeholder="Rego / plate" className={input} />
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <input value={ev.vin} onChange={(e) => setEv({ ...ev, vin: e.target.value })} placeholder="VIN" className={input} />
+                      <input value={ev.key_number} onChange={(e) => setEv({ ...ev, key_number: e.target.value })} placeholder="Key number" className={input} />
+                    </div>
                     <div className="flex gap-2">
                       <button onClick={() => saveEdit(m.id)} className={saveBtn}>Save</button>
                       <button onClick={() => setEditingId(null)} className={cancelBtn}>Cancel</button>
@@ -129,7 +137,7 @@ export default function MachinesPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-medium text-zinc-900">{m.type} — {m.make} {m.model}</p>
-                      <p className="truncate text-sm text-zinc-500">{[m.rego, m.customers?.name].filter(Boolean).join(" · ")}</p>
+                      <p className="truncate text-sm text-zinc-500">{idLine(m) || "—"}</p>
                     </div>
                     <div className="flex shrink-0 gap-3 text-sm">
                       <button onClick={() => startEdit(m)} className="font-medium text-red-600 hover:text-red-700">edit</button>

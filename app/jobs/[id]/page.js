@@ -42,6 +42,12 @@ export default function JobDetailPage() {
   const [templateId, setTemplateId] = useState("");
   const [uploading, setUploading] = useState(false);
 
+  const [timeEntries, setTimeEntries] = useState([]);
+  const [timeStaffId, setTimeStaffId] = useState("");
+  const [timeHours, setTimeHours] = useState("");
+  const [timeNote, setTimeNote] = useState("");
+  const [nowTs, setNowTs] = useState(Date.now());
+
   const [editing, setEditing] = useState(false);
   const [eCustomer, setECustomer] = useState("");
   const [eMachine, setEMachine] = useState("");
@@ -55,7 +61,7 @@ export default function JobDetailPage() {
     setLoading(true);
     const { data: j, error: jErr } = await supabase
       .from("job_cards")
-      .select("*, customers(name, phone, email, address), machines(type, make, model, rego)")
+      .select("*, customers(name, phone, email, address), machines(type, make, model, vin, key_number)")
       .eq("id", id).single();
     const { data: li } = await supabase.from("job_line_items").select("*").eq("job_card_id", id).order("created_at");
     const { data: s } = await supabase.from("staff").select("id, name, can_send_invoices").order("name");
@@ -64,6 +70,7 @@ export default function JobDetailPage() {
     const { data: tpl } = await supabase.from("checklist_templates").select("*").order("name");
     const { data: cl } = await supabase.from("job_checklist_items").select("*").eq("job_card_id", id).order("position");
     const { data: ph } = await supabase.from("job_photos").select("*").eq("job_card_id", id).order("created_at");
+    const { data: te } = await supabase.from("job_time_entries").select("*, staff(name)").eq("job_card_id", id).order("created_at");
     const { data: cust } = await supabase.from("customers").select("id, name").order("name");
     const { data: mach } = await supabase.from("machines").select("id, customer_id, type, make, model");
     const { data: st } = await supabase.from("shop_settings").select("*").eq("id", 1).single();
@@ -76,6 +83,7 @@ export default function JobDetailPage() {
     setTemplates(tpl || []);
     setChecklist(cl || []);
     setPhotos(ph || []);
+    setTimeEntries(te || []);
     setCustomers(cust || []);
     setMachines(mach || []);
     setSettings(st || null);
@@ -84,7 +92,14 @@ export default function JobDetailPage() {
 
   useEffect(() => { if (id) load(); }, [id]);
 
+  // Keep running timers ticking on screen (updates every 30s).
+  useEffect(() => {
+    const t = setInterval(() => setNowTs(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
   const subtotal = items.reduce((s, it) => s + Number(it.amount), 0);
+  const totalHours = timeEntries.reduce((s, t) => s + Number(t.hours || 0), 0);
   const gst = subtotal * 0.15;
   const total = subtotal + gst;
   const senders = staff.filter((s) => s.can_send_invoices);
@@ -186,6 +201,50 @@ export default function JobDetailPage() {
   async function removePhoto(photo) {
     if (photo.path) await supabase.storage.from("job-photos").remove([photo.path]);
     await supabase.from("job_photos").delete().eq("id", photo.id);
+    load();
+  }
+
+  // ---- Time tracking (actual hours worked, for job costing) ----
+  async function startTimer() {
+    if (!timeStaffId) { setError("Pick who's working first."); return; }
+    const running = timeEntries.find((t) => t.staff_id === timeStaffId && t.started_at && !t.ended_at);
+    if (running) { setError("That person already has a timer running on this job."); return; }
+    const { error } = await supabase.from("job_time_entries").insert({ job_card_id: id, staff_id: timeStaffId, started_at: new Date().toISOString() });
+    if (error) { setError(error.message); return; }
+    load();
+  }
+
+  async function stopTimer(entry) {
+    const end = new Date();
+    const worked = Math.max(0, (end - new Date(entry.started_at)) / 3600000);
+    const { error } = await supabase.from("job_time_entries").update({ ended_at: end.toISOString(), hours: Math.round(worked * 100) / 100 }).eq("id", entry.id);
+    if (error) { setError(error.message); return; }
+    load();
+  }
+
+  async function addManualTime(e) {
+    e.preventDefault();
+    if (!timeStaffId) { setError("Pick who did the work."); return; }
+    const h = Number(timeHours);
+    if (!(h > 0)) { setError("Enter hours greater than zero."); return; }
+    const { error } = await supabase.from("job_time_entries").insert({ job_card_id: id, staff_id: timeStaffId, hours: h, note: timeNote || null });
+    if (error) { setError(error.message); return; }
+    setTimeHours(""); setTimeNote(""); load();
+  }
+
+  // Turn a logged time entry into a billable labour line ($115/hr).
+  async function billTime(entry) {
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    if (!entry.hours) { setError("Stop the timer first so it has hours."); return; }
+    const who = entry.staff?.name || staffName(entry.staff_id) || "Labour";
+    const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: entry.note || (who + " — labour"), quantity: entry.hours, unit_price: 115 });
+    if (error) { setError(error.message); return; }
+    await supabase.from("job_time_entries").update({ billed: true }).eq("id", entry.id);
+    load();
+  }
+
+  async function removeTime(entry) {
+    await supabase.from("job_time_entries").delete().eq("id", entry.id);
     load();
   }
 
@@ -320,7 +379,7 @@ export default function JobDetailPage() {
         ) : (
           <>
             <p className="mt-2 font-medium text-zinc-900">{job.customers?.name} <span className="font-normal text-zinc-500">· {job.customers?.phone}</span></p>
-            <p className="text-sm text-zinc-600">{job.machines?.type} {job.machines?.make} {job.machines?.model} {job.machines?.rego}</p>
+            <p className="text-sm text-zinc-600">{job.machines?.type} {job.machines?.make} {job.machines?.model}{job.machines?.vin ? " · VIN " + job.machines.vin : ""}{job.machines?.key_number ? " · Key " + job.machines.key_number : ""}</p>
             {job.customers?.address && <p className="mt-1 text-sm text-zinc-600"><span className="font-medium text-zinc-700">Address:</span> {job.customers.address}</p>}
             {job.reported_problem && <p className="mt-3 rounded-lg bg-zinc-50 p-3 text-sm text-zinc-700">{job.reported_problem}</p>}
             {job.notes && <p className="mt-2 text-sm text-zinc-600"><span className="font-medium text-zinc-700">Notes:</span> {job.notes}</p>}
@@ -361,6 +420,64 @@ export default function JobDetailPage() {
           <input value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder="Add a task…" className={input} />
           <button className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Add</button>
         </form>
+      </div>
+
+      <h2 className="mt-6 text-lg font-semibold text-zinc-900">Time on this job</h2>
+      <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        {timeEntries.length === 0 ? (
+          <p className="text-sm text-zinc-500">No time logged yet. Start a timer or add hours below.</p>
+        ) : (
+          <ul className="divide-y divide-zinc-100">
+            {timeEntries.map((t) => {
+              const running = t.started_at && !t.ended_at;
+              const elapsed = running ? (nowTs - new Date(t.started_at).getTime()) / 3600000 : 0;
+              return (
+                <li key={t.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span className="min-w-0">
+                    <span className="font-medium text-zinc-900">{t.staff?.name || "—"}</span>
+                    {running ? (
+                      <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">running · {elapsed.toFixed(2)} h</span>
+                    ) : (
+                      <span className="ml-2 text-zinc-600">{Number(t.hours || 0).toFixed(2)} h</span>
+                    )}
+                    {t.note && <span className="ml-2 text-zinc-500">— {t.note}</span>}
+                    {t.billed && <span className="ml-2 text-xs font-medium text-emerald-600">billed</span>}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3">
+                    {running && <button onClick={() => stopTimer(t)} className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">Stop</button>}
+                    {!running && !t.billed && !invoice && <button onClick={() => billTime(t)} className="text-xs font-medium text-red-600 hover:underline">bill as labour</button>}
+                    <button onClick={() => removeTime(t)} className="text-xs text-red-500 hover:underline">remove</button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="mt-2 border-t border-zinc-200 pt-2 text-sm font-medium text-zinc-700">Total logged: {totalHours.toFixed(2)} h</div>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="min-w-[9rem] flex-1">
+            <label className="block text-xs font-medium text-zinc-500">Who</label>
+            <select value={timeStaffId} onChange={(e) => setTimeStaffId(e.target.value)} className={input}>
+              <option value="">Select…</option>
+              {staff.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+            </select>
+          </div>
+          <button onClick={startTimer} type="button" className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700">Start timer</button>
+        </div>
+
+        <form onSubmit={addManualTime} className="mt-2 flex flex-wrap items-end gap-2 border-t border-zinc-100 pt-3">
+          <div className="w-24">
+            <label className="block text-xs font-medium text-zinc-500">Or add hours</label>
+            <input value={timeHours} onChange={(e) => setTimeHours(e.target.value)} type="number" min="0" step="0.25" placeholder="2.5" className={input} />
+          </div>
+          <div className="min-w-[8rem] flex-1">
+            <label className="block text-xs font-medium text-zinc-500">Note (optional)</label>
+            <input value={timeNote} onChange={(e) => setTimeNote(e.target.value)} placeholder="e.g. diagnostics" className={input} />
+          </div>
+          <button className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Add time</button>
+        </form>
+        {staff.length === 0 && <p className="mt-2 text-xs text-amber-600">Add people on the Staff page to log time.</p>}
       </div>
 
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Labour &amp; parts</h2>
