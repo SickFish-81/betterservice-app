@@ -10,7 +10,7 @@ import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
-const poNo = (n) => "PO-" + String(n ?? 0).padStart(5, "0");
+const poNo = (n) => "PO-" + String(n ?? 0).padStart(4, "0");
 const expNo = (n) => "EXP-" + String(n ?? 0).padStart(5, "0");
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 const STATUS_STYLES = {
@@ -118,7 +118,7 @@ export default function PurchaseOrderDetail() {
     setSaving(true);
     const lines = items.map((it) => ({
       item_id: it.id,
-      qty_received: Math.max(0, Math.round(Number(recv[it.id]?.qty) || 0)),
+      qty_received: Math.max(0, Number(recv[it.id]?.qty) || 0),
       unit_cost: Number(recv[it.id]?.cost) || 0,
     }));
     const { error } = await supabase.rpc("receive_purchase_order", { p_po_id: id, p_lines: lines, p_gst: gstAuto ? null : (Number(gst) || 0) });
@@ -154,7 +154,7 @@ export default function PurchaseOrderDetail() {
             <span className="min-w-0 truncate text-zinc-800">{it.parts?.name || it.description}{it.job_cards && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">Job #{it.job_cards.job_number}</span>}</span>
             <span className="w-12 text-right text-zinc-500">{it.qty_ordered}</span>
             {canReceive ? (
-              <input type="number" min="0" inputMode="numeric" value={recv[it.id]?.qty ?? ""} onChange={setR(it.id, "qty")} className="w-16 rounded border border-zinc-300 px-2 py-1 text-right" />
+              <input type="number" min="0" step="0.01" inputMode="decimal" value={recv[it.id]?.qty ?? ""} onChange={setR(it.id, "qty")} className="w-16 rounded border border-zinc-300 px-2 py-1 text-right" />
             ) : (
               <span className="w-16 text-right text-zinc-800">{it.qty_received}</span>
             )}

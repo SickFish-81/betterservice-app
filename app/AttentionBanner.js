@@ -7,20 +7,23 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
+import { useOwner } from "./RoleContext";
 
 const money = (n) => "$" + Math.round(Number(n || 0)).toLocaleString();
 
 export default function AttentionBanner() {
   const [s, setS] = useState(null);
+  const owner = useOwner();
 
   useEffect(() => {
+    if (!owner) return;
     (async () => {
       const { data } = await supabase.rpc("attention_summary");
       if (data && data.length) setS(data[0]);
     })();
-  }, []);
+  }, [owner]);
 
-  if (!s) return null;
+  if (!owner || !s) return null;
 
   const chips = [];
   const plural = (n) => (n > 1 ? "s" : "");

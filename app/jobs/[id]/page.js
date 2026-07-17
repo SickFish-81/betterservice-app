@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import { useOwner } from "../../RoleContext";
 
 const STATUSES = ["New", "In progress", "Awaiting parts", "Ready", "Invoiced", "Paid"];
 const STATUS_STYLES = {
@@ -15,12 +16,13 @@ const STATUS_STYLES = {
   "Paid": "bg-emerald-50 text-emerald-700",
 };
 const money = (n) => "$" + Number(n || 0).toFixed(2);
-const invNo = (n) => String(n ?? 0).padStart(5, "0");
+const invNo = (n) => String(n ?? 0).padStart(4, "0");
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 
 export default function JobDetailPage() {
   const { id } = useParams();
   const router = useRouter();
+  const owner = useOwner();
   const [job, setJob] = useState(null);
   const [items, setItems] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -151,7 +153,7 @@ export default function JobDetailPage() {
     if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
     const part = parts.find((p) => p.id === partId);
     if (!part) { setError("Pick a part from inventory."); return; }
-    const q = Math.max(1, Number(partQty) || 1);
+    const q = Math.max(0.01, Number(partQty) || 1);
     const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "part", part_id: part.id, description: part.name, quantity: q, unit_price: part.unit_price });
     if (error) { setError(error.message); return; }
     await supabase.from("parts").update({ qty_on_hand: Number(part.qty_on_hand) - q }).eq("id", part.id);
@@ -272,7 +274,7 @@ export default function JobDetailPage() {
     const part = parts.find((p) => p.id === reqPartId);
     const desc = part ? part.name : reqDesc.trim();
     if (!desc) { setError("Pick a part or type what's needed."); return; }
-    const { error } = await supabase.from("part_requests").insert({ job_card_id: id, part_id: reqPartId || null, description: desc, quantity: Math.max(1, Number(reqQty) || 1), note: reqNote || null });
+    const { error } = await supabase.from("part_requests").insert({ job_card_id: id, part_id: reqPartId || null, description: desc, quantity: Math.max(0.01, Number(reqQty) || 1), note: reqNote || null });
     if (error) { setError(error.message); return; }
     setReqPartId(""); setReqDesc(""); setReqQty("1"); setReqNote(""); load();
   }
@@ -479,7 +481,7 @@ export default function JobDetailPage() {
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
                     {running && <button onClick={() => stopTimer(t)} className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">Stop</button>}
-                    {!running && !t.billed && !invoice && <button onClick={() => billTime(t)} className="text-xs font-medium text-red-600 hover:underline">bill as labour</button>}
+                    {owner && !running && !t.billed && !invoice && <button onClick={() => billTime(t)} className="text-xs font-medium text-red-600 hover:underline">bill as labour</button>}
                     <button onClick={() => removeTime(t)} className="text-xs text-red-500 hover:underline">remove</button>
                   </span>
                 </li>
@@ -525,21 +527,23 @@ export default function JobDetailPage() {
                 <span className="text-zinc-800">
                   <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-medium uppercase text-zinc-500">{it.kind}</span>
                   <span className="ml-2 font-medium text-zinc-900">{it.description}</span>
-                  <span className="ml-2 text-zinc-500">{it.quantity} × {money(it.unit_price)}</span>
+                  <span className="ml-2 text-zinc-500">{owner ? `${it.quantity} × ${money(it.unit_price)}` : `×${it.quantity}`}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
-                  <span className="font-semibold text-zinc-900">{money(it.amount)}</span>
+                  {owner && <span className="font-semibold text-zinc-900">{money(it.amount)}</span>}
                   {!invoice && <button onClick={() => removeItem(it)} className="text-xs text-red-500 hover:underline">remove</button>}
                 </span>
               </li>
             ))}
           </ul>
         )}
-        <div className="border-t border-zinc-200 bg-zinc-50 p-4 text-sm">
-          <div className="flex justify-between text-zinc-600"><span>Subtotal</span><span>{money(subtotal)}</span></div>
-          <div className="flex justify-between text-zinc-600"><span>GST 15%</span><span>{money(gst)}</span></div>
-          <div className="mt-1 flex justify-between text-base font-bold text-zinc-900"><span>Total</span><span>{money(total)}</span></div>
-        </div>
+        {owner && (
+          <div className="border-t border-zinc-200 bg-zinc-50 p-4 text-sm">
+            <div className="flex justify-between text-zinc-600"><span>Subtotal</span><span>{money(subtotal)}</span></div>
+            <div className="flex justify-between text-zinc-600"><span>GST 15%</span><span>{money(gst)}</span></div>
+            <div className="mt-1 flex justify-between text-base font-bold text-zinc-900"><span>Total</span><span>{money(total)}</span></div>
+          </div>
+        )}
       </div>
 
       {invoice && <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white p-3 text-xs text-zinc-500">Invoice #{invNo(invoice.invoice_number)} generated — labour &amp; parts are locked{invoice.sent ? "." : "; use Discard below to edit."}</p>}
@@ -552,7 +556,7 @@ export default function JobDetailPage() {
           <label className="block text-xs font-medium text-zinc-500">Hours</label>
           <input value={hours} onChange={(e) => setHours(e.target.value)} type="number" min="0" step="0.25" className={input} />
         </div>
-        <div className="pb-2 text-xs text-zinc-500">@ $115/hr</div>
+        {owner && <div className="pb-2 text-xs text-zinc-500">@ $115/hr</div>}
         <button disabled={!!invoice} className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">Add labour</button>
       </form>
 
@@ -561,12 +565,12 @@ export default function JobDetailPage() {
           <label className="block text-xs font-medium text-zinc-500">Part (from inventory)</label>
           <select value={partId} onChange={(e) => setPartId(e.target.value)} className={input}>
             <option value="">Select a part…</option>
-            {parts.map((p) => (<option key={p.id} value={p.id}>{p.name} — {money(p.unit_price)} ({p.qty_on_hand} in stock)</option>))}
+            {parts.map((p) => (<option key={p.id} value={p.id}>{p.name}{owner ? ` — ${money(p.unit_price)}` : ""} ({p.qty_on_hand} in stock)</option>))}
           </select>
         </div>
         <div className="w-16">
           <label className="block text-xs font-medium text-zinc-500">Qty</label>
-          <input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min="1" className={input} />
+          <input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min="0" step="0.01" className={input} />
         </div>
         <button className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50" disabled={parts.length === 0 || !!invoice}>Add part</button>
         {parts.length === 0 && <p className="w-full text-xs text-amber-600">No parts in inventory yet — add some on the Parts page.</p>}
@@ -581,7 +585,7 @@ export default function JobDetailPage() {
                 <li key={it.id} className="flex items-center justify-between gap-3 p-3 text-sm">
                   <span className="min-w-0">
                     <span className="font-medium text-zinc-900">{it.parts?.name || it.description}</span>
-                    <span className="ml-2 text-zinc-500">{it.qty_received} × {money(it.parts?.unit_price ?? 0)} · PO-{String(it.purchase_orders?.po_number ?? 0).padStart(5, "0")}</span>
+                    <span className="ml-2 text-zinc-500">{it.qty_received}{owner ? ` × ${money(it.parts?.unit_price ?? 0)}` : ""} · PO-{String(it.purchase_orders?.po_number ?? 0).padStart(4, "0")}</span>
                   </span>
                   <button onClick={() => acceptPart(it)} disabled={!!invoice} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">Accept</button>
                 </li>
@@ -614,7 +618,7 @@ export default function JobDetailPage() {
           </select>
           {!reqPartId && <input value={reqDesc} onChange={(e) => setReqDesc(e.target.value)} placeholder="What's needed (e.g. front brake pads)" className={input} />}
           <div className="flex gap-2">
-            <input value={reqQty} onChange={(e) => setReqQty(e.target.value)} type="number" min="1" aria-label="Quantity" className="w-20 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
+            <input value={reqQty} onChange={(e) => setReqQty(e.target.value)} type="number" min="0" step="0.01" aria-label="Quantity" className="w-20 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
             <input value={reqNote} onChange={(e) => setReqNote(e.target.value)} placeholder="Note (optional)" className={`${input} flex-1`} />
           </div>
           <button className="self-start rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700">Request part</button>
@@ -640,6 +644,7 @@ export default function JobDetailPage() {
         </label>
       </div>
 
+      {owner && (<>
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Invoice</h2>
       {!invoice ? (
         <button onClick={generateInvoice} className="mt-2 w-full rounded-lg bg-emerald-600 px-4 py-2.5 font-medium text-white hover:bg-emerald-700">
@@ -669,6 +674,7 @@ export default function JobDetailPage() {
           {senders.length === 0 && <p className="mt-2 text-xs text-amber-800">No one can send yet — mark Craig as “can send invoices” on the Staff page.</p>}
         </div>
       )}
+      </>)}
 
       {error && <p className="mt-3 text-sm text-red-600">Error: {error}</p>}
 

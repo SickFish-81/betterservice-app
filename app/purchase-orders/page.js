@@ -9,7 +9,7 @@ import { supabase } from "../../lib/supabaseClient";
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 const money = (n) => "$" + Number(n || 0).toFixed(2);
-const poNo = (n) => "PO-" + String(n ?? 0).padStart(5, "0");
+const poNo = (n) => "PO-" + String(n ?? 0).padStart(4, "0");
 const STATUS_STYLES = {
   Draft: "bg-zinc-100 text-zinc-700",
   Ordered: "bg-amber-50 text-amber-700",
@@ -62,7 +62,7 @@ export default function PurchaseOrdersPage() {
     if (poErr) { setError(poErr.message); setSaving(false); return; }
     const rows = validLines.map((l) => {
       const part = parts.find((p) => p.id === l.part_id);
-      return { po_id: po.id, part_id: l.part_id, description: part?.name || "Item", qty_ordered: Math.max(1, Math.round(Number(l.qty))), unit_cost: Number(l.cost || 0), job_card_id: l.job_id || null };
+      return { po_id: po.id, part_id: l.part_id, description: part?.name || "Item", qty_ordered: Math.max(0.01, Number(l.qty)), unit_cost: Number(l.cost || 0), job_card_id: l.job_id || null };
     });
     const { error: itErr } = await supabase.from("purchase_order_items").insert(rows);
     setSaving(false);
@@ -90,7 +90,7 @@ export default function PurchaseOrdersPage() {
                   <option value="">Part…</option>
                   {parts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-                <input value={l.qty} onChange={setLine(i, "qty")} type="number" min="1" placeholder="Qty" className="w-16 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
+                  <input value={l.qty} onChange={setLine(i, "qty")} type="number" min="0" step="0.01" placeholder="Qty" className="w-16 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
                 <input value={l.cost} onChange={setLine(i, "cost")} type="number" min="0" step="0.01" placeholder="Cost ea" className="w-24 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
                 <button type="button" onClick={() => removeLine(i)} aria-label="remove line" className="px-1 text-zinc-400 hover:text-red-500">✕</button>
               </div>

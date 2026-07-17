@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { useOwner } from "../RoleContext";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 
 export default function PartsPage() {
+  const owner = useOwner();
   const [parts, setParts] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [q, setQ] = useState("");
@@ -47,7 +49,7 @@ export default function PartsPage() {
 
   // Manual stock edits are logged as an adjustment (reason "Correction") so on-hand + history stay in sync.
   async function setStock(id, value, current) {
-    const n = Math.round(Number(value));
+    const n = Number(value);
     if (Number.isNaN(n) || n < 0 || n === Number(current)) return;
     const { error } = await supabase.rpc("record_stock_adjustment", { p_part_id: id, p_new_qty: n, p_reason: "Correction", p_note: null });
     if (error) setError(error.message);
@@ -108,8 +110,8 @@ export default function PartsPage() {
         <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU / code (optional)" className={input} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Price each" className={input} />
-          <input value={qty} onChange={(e) => setQty(e.target.value)} type="number" min="0" placeholder="Qty on hand" className={input} />
-          <input value={minStock} onChange={(e) => setMinStock(e.target.value)} type="number" min="0" placeholder="Low-stock at" className={input} />
+          <input value={qty} onChange={(e) => setQty(e.target.value)} type="number" min="0" step="0.01" placeholder="Qty on hand" className={input} />
+          <input value={minStock} onChange={(e) => setMinStock(e.target.value)} type="number" min="0" step="0.01" placeholder="Low-stock at" className={input} />
         </div>
         <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className={input}>
           <option value="">Supplier (optional)</option>
@@ -141,7 +143,7 @@ export default function PartsPage() {
                 <li key={p.id} className="flex items-center justify-between gap-3 p-4">
                   <div className="min-w-0">
                     <p className="font-medium text-zinc-900">{p.name} {p.sku && <span className="text-sm font-normal text-zinc-500">· {p.sku}</span>}</p>
-                    <p className="text-sm text-zinc-500">{money(p.unit_price)} each · low-stock at {p.min_stock}</p>
+                    <p className="text-sm text-zinc-500">{owner ? money(p.unit_price) + " each · " : ""}low-stock at {p.min_stock}</p>
                     <select value={p.supplier_id || ""} onChange={(e) => setSupplier(p.id, e.target.value)} className="mt-1 rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 focus:border-red-500 focus:outline-none">
                       <option value="">No supplier</option>
                       {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -151,7 +153,7 @@ export default function PartsPage() {
                     {isLow && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">LOW</span>}
                     <label className="flex items-center gap-1 text-sm text-zinc-600">
                       <span className="hidden sm:inline">in stock</span>
-                      <input type="number" min="0" defaultValue={p.qty_on_hand} onBlur={(e) => setStock(p.id, e.target.value, p.qty_on_hand)} className="w-16 rounded-lg border border-zinc-300 px-2 py-1 text-right text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+                      <input type="number" min="0" step="0.01" defaultValue={p.qty_on_hand} onBlur={(e) => setStock(p.id, e.target.value, p.qty_on_hand)} className="w-16 rounded-lg border border-zinc-300 px-2 py-1 text-right text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
                     </label>
                     <button onClick={() => removePart(p.id)} className="text-xs text-red-500 hover:underline">remove</button>
                   </div>

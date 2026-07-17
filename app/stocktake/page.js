@@ -10,7 +10,7 @@ import { supabase } from "../../lib/supabaseClient";
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 const REASONS = ["Stocktake", "Correction", "Damaged", "Found", "Received", "Other"];
-const fmtDelta = (d) => (d > 0 ? "+" + d : String(d));
+const fmtDelta = (d) => { const r = Math.round(d * 100) / 100; return r > 0 ? "+" + r : String(r); };
 
 export default function StocktakePage() {
   const [parts, setParts] = useState([]);
@@ -55,7 +55,7 @@ export default function StocktakePage() {
     let done = 0, failed = 0;
     for (const p of pending) {
       const { error } = await supabase.rpc("record_stock_adjustment", {
-        p_part_id: p.id, p_new_qty: Math.round(Number(counts[p.id])), p_reason: reason, p_note: null,
+        p_part_id: p.id, p_new_qty: Number(counts[p.id]), p_reason: reason, p_note: null,
       });
       if (error) failed++; else done++;
     }
@@ -110,7 +110,7 @@ export default function StocktakePage() {
                   </div>
                   <span className="w-12 text-right text-zinc-700">{p.qty_on_hand}</span>
                   <div className="flex items-center gap-2">
-                    <input type="number" min="0" inputMode="numeric" value={v ?? ""} onChange={setCount(p.id)} placeholder="—"
+                    <input type="number" min="0" step="0.01" inputMode="decimal" value={v ?? ""} onChange={setCount(p.id)} placeholder="—"
                       className="w-16 rounded-lg border border-zinc-300 px-2 py-1 text-right text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
                     {diff !== null && diff !== 0 && (
                       <span className={"w-8 text-right text-xs font-semibold " + (diff > 0 ? "text-emerald-700" : "text-red-700")}>{fmtDelta(diff)}</span>

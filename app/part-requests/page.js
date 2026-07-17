@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 
-const poNo = (n) => "PO-" + String(n ?? 0).padStart(5, "0");
+const poNo = (n) => "PO-" + String(n ?? 0).padStart(4, "0");
 const STATUS = {
   Requested: "bg-amber-50 text-amber-700",
   Ordered: "bg-blue-50 text-blue-700",

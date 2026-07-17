@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
-const invNo = (n) => String(n ?? 0).padStart(5, "0");
+const invNo = (n) => String(n ?? 0).padStart(4, "0");
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState([]);

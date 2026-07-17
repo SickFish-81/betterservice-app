@@ -4,10 +4,12 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
+import { useOwner } from "./RoleContext";
 
 const groups = [
   {
     label: "Accounting",
+    ownerOnly: true,
     items: [
       { href: "/counter-sales", label: "Counter Sale" },
       { href: "/invoices", label: "Invoices" },
@@ -23,9 +25,9 @@ const groups = [
     items: [
       { href: "/parts", label: "Parts" },
       { href: "/stocktake", label: "Stocktake" },
-      { href: "/suppliers", label: "Suppliers" },
-      { href: "/purchase-orders", label: "Orders" },
-      { href: "/part-requests", label: "Requests" },
+      { href: "/suppliers", label: "Suppliers", ownerOnly: true },
+      { href: "/purchase-orders", label: "Orders", ownerOnly: true },
+      { href: "/part-requests", label: "Requests", ownerOnly: true },
     ],
   },
   {
@@ -38,6 +40,7 @@ const groups = [
   },
   {
     label: "Admin",
+    ownerOnly: true,
     items: [
       { href: "/secondhand", label: "For Sale" },
       { href: "/staff", label: "Staff" },
@@ -50,6 +53,7 @@ export default function NavBar({ email }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false); // mobile sheet
   const [menu, setMenu] = useState(null);  // open desktop dropdown label
+  const owner = useOwner();
 
   // Close an open dropdown on any outside click.
   useEffect(() => {
@@ -65,6 +69,10 @@ export default function NavBar({ email }) {
 
   const isActive = (href) => pathname === href || pathname.startsWith(href + "/");
   const groupActive = (g) => g.items.some((i) => isActive(i.href));
+  const visibleGroups = groups
+    .filter((g) => !g.ownerOnly || owner)
+    .map((g) => ({ ...g, items: g.items.filter((i) => !i.ownerOnly || owner) }))
+    .filter((g) => g.items.length);
 
   const triggerCls = (active) =>
     "rounded-md px-3 py-1.5 text-sm font-medium " +
@@ -84,7 +92,7 @@ export default function NavBar({ email }) {
         {/* Desktop nav */}
         <nav className="ml-2 hidden items-center gap-1 text-sm sm:flex">
           <Link href="/jobs" className={triggerCls(isActive("/jobs"))}>Job Cards</Link>
-          {groups.map((g) => (
+          {visibleGroups.map((g) => (
             <div key={g.label} className="relative">
               <button
                 onClick={(e) => { e.stopPropagation(); setMenu(menu === g.label ? null : g.label); }}
@@ -123,7 +131,7 @@ export default function NavBar({ email }) {
       {open && (
         <nav className="mx-auto max-w-4xl border-t border-zinc-100 px-4 py-2 text-sm sm:hidden">
           <Link href="/jobs" onClick={() => setOpen(false)} className={itemCls(isActive("/jobs"))}>Job Cards</Link>
-          {groups.map((g) => (
+          {visibleGroups.map((g) => (
             <div key={g.label} className="mt-2">
               <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{g.label}</p>
               {g.items.map((i) => (

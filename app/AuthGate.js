@@ -6,15 +6,23 @@ import { supabase } from "../lib/supabaseClient";
 import NavBar from "./NavBar";
 import PublicNav from "./PublicNav";
 import AttentionBanner from "./AttentionBanner";
+import { RoleContext } from "./RoleContext";
 
 const PUBLIC_EXACT = ["/", "/login", "/batteries"];
 function isPublic(p) {
   return PUBLIC_EXACT.includes(p) || p === "/for-sale" || p.startsWith("/for-sale/");
 }
 
+// Money / admin areas — owners only. Workshop logins get a friendly block.
+const OWNER_ONLY = ["/accounting", "/reports", "/invoices", "/credit-notes", "/bills", "/expenses", "/counter-sales", "/purchase-orders", "/suppliers", "/part-requests", "/settings", "/staff", "/secondhand"];
+function isOwnerOnly(p) {
+  return OWNER_ONLY.some((x) => p === x || p.startsWith(x + "/"));
+}
+
 export default function AuthGate({ children }) {
   const [session, setSession] = useState(undefined);
   const [approved, setApproved] = useState(undefined); // undefined = checking, true/false = known
+  const [owner, setOwner] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
 
@@ -31,8 +39,13 @@ export default function AuthGate({ children }) {
     if (session === undefined) return;
     if (!session) { setApproved(undefined); return; }
     setApproved(undefined);
-    supabase.from("staff").select("active").ilike("email", session.user.email).limit(1)
-      .then(({ data }) => { if (!cancelled) setApproved(!!(data && data.length && data[0].active !== false)); });
+    supabase.from("staff").select("active, role").ilike("email", session.user.email).limit(1)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const row = data && data[0];
+        setApproved(!!(row && row.active !== false));
+        setOwner(!!(row && row.role === "owner"));
+      });
     return () => { cancelled = true; };
   }, [session]);
 
@@ -70,5 +83,26 @@ export default function AuthGate({ children }) {
       </main>
     );
   }
-  return (<><NavBar email={session.user.email} /><AttentionBanner />{children}</>);
+  if (isOwnerOnly(pathname) && !owner) {
+    return (
+      <RoleContext.Provider value={{ owner }}>
+        <NavBar email={session.user.email} />
+        <main className="mx-auto max-w-md px-4 py-16 text-center">
+          <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h1 className="text-xl font-bold text-zinc-900">Owners only</h1>
+            <p className="mt-2 text-sm text-zinc-600">This area is limited to the shop owners. Everything you need is on the job cards.</p>
+            <a href="/jobs" className="mt-4 inline-block rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Go to Job Cards</a>
+          </div>
+        </main>
+      </RoleContext.Provider>
+    );
+  }
+
+  return (
+    <RoleContext.Provider value={{ owner }}>
+      <NavBar email={session.user.email} />
+      <AttentionBanner />
+      {children}
+    </RoleContext.Provider>
+  );
 }

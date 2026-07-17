@@ -6,7 +6,7 @@ import { supabase } from "../../lib/supabaseClient";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const cnNo = (n) => "CN-" + String(n ?? 0).padStart(5, "0");
-const invNo = (n) => "#" + String(n ?? 0).padStart(5, "0");
+const invNo = (n) => "#" + String(n ?? 0).padStart(4, "0");
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 
 export default function CreditNotesPage() {
