@@ -67,7 +67,7 @@ export default function CounterSalePage() {
     const items = valid.map((l) => ({
       part_id: l.part_id || null,
       description: l.description || parts.find((p) => p.id === l.part_id)?.name || "Item",
-      quantity: Math.max(1, Math.round(Number(l.qty))),
+      quantity: Math.max(0.01, round2(Number(l.qty))),
       unit_price: round2(l.price),
     }));
     const { data, error } = await supabase.rpc("create_counter_sale", { p_customer_id: customerId || null, p_items: items, p_method: method });
@@ -137,7 +137,7 @@ export default function CounterSalePage() {
                 {parts.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.qty_on_hand})</option>)}
               </select>
               <input value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} placeholder="Description" className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-2 py-2 text-sm" />
-              <input value={l.qty} onChange={(e) => setLine(i, { qty: e.target.value })} type="number" min="1" aria-label="Quantity" className="w-14 rounded-lg border border-zinc-300 px-2 py-2 text-right text-sm" />
+              <input value={l.qty} onChange={(e) => setLine(i, { qty: e.target.value })} type="number" min="0" step="0.01" aria-label="Quantity" className="w-14 rounded-lg border border-zinc-300 px-2 py-2 text-right text-sm" />
               <input value={l.price} onChange={(e) => setLine(i, { price: e.target.value })} type="number" min="0" step="0.01" placeholder="Price" aria-label="Unit price" className="w-20 rounded-lg border border-zinc-300 px-2 py-2 text-right text-sm" />
               <button type="button" onClick={() => removeLine(i)} aria-label="remove item" className="px-1 text-zinc-400 hover:text-red-500">✕</button>
             </div>

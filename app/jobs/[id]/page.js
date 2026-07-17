@@ -546,7 +546,7 @@ export default function JobDetailPage() {
         )}
       </div>
 
-      {invoice && <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white p-3 text-xs text-zinc-500">Invoice #{invNo(invoice.invoice_number)} generated — labour &amp; parts are locked{invoice.sent ? "." : "; use Discard below to edit."}</p>}
+      {invoice && <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white p-3 text-xs text-zinc-500">Invoice #{invNo(invoice.invoice_number)} generated — labour &amp; parts are locked{invoice.sent || !owner ? "." : "; use Discard below to edit."}</p>}
       <form onSubmit={addLabour} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="min-w-[8rem] flex-1">
           <label className="block text-xs font-medium text-zinc-500">Labour</label>
@@ -678,7 +678,7 @@ export default function JobDetailPage() {
 
       {error && <p className="mt-3 text-sm text-red-600">Error: {error}</p>}
 
-      <button onClick={deleteJob} className="mt-6 text-sm text-red-500 hover:underline">Delete this job card</button>
+      {owner && <button onClick={deleteJob} className="mt-6 text-sm text-red-500 hover:underline">Delete this job card</button>}
     </main>
   );
 }

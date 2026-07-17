@@ -109,7 +109,7 @@ export default function PartsPage() {
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Part name (e.g. Oil filter)" className={input} />
         <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU / code (optional)" className={input} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Price each" className={input} />
+          {owner && <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Price each" className={input} />}
           <input value={qty} onChange={(e) => setQty(e.target.value)} type="number" min="0" step="0.01" placeholder="Qty on hand" className={input} />
           <input value={minStock} onChange={(e) => setMinStock(e.target.value)} type="number" min="0" step="0.01" placeholder="Low-stock at" className={input} />
         </div>
