@@ -36,6 +36,7 @@ const groups = [
       { href: "/customers", label: "Customers" },
       { href: "/machines", label: "Machines" },
       { href: "/due", label: "Due" },
+      { href: "/timesheets", label: "Timesheets", ownerOnly: true },
     ],
   },
   {

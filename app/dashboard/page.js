@@ -18,6 +18,7 @@ const cards = [
   { href: "/secondhand", title: "For Sale (manage)", desc: "Add & manage second-hand listings + photos.", ownerOnly: true },
   { href: "/customers", title: "Customers", desc: "The people the shop serves." },
   { href: "/machines", title: "Machines", desc: "Bikes & ATVs, linked to their owner." },
+  { href: "/timesheets", title: "Timesheets", desc: "Hours worked per person, by week or month.", ownerOnly: true },
   { href: "/staff", title: "Staff", desc: "Who works on jobs, and who can send invoices.", ownerOnly: true },
   { href: "/templates", title: "Checklist Templates", desc: "Standard task lists to drop onto a job." },
   { href: "/settings", title: "Shop Settings", desc: "Business details, GST # & bank shown on invoices.", ownerOnly: true },
