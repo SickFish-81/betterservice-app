@@ -101,11 +101,19 @@ is a server secret and must never end up in the repo.
 
 ---
 
-## 4. Not wired yet (future)
+## 4. Automated SMS reminders — nearly there
 
-- **Automated SMS service reminders** need a scheduled `send-due-reminders` function
-  (built + scheduled via pg_cron) on top of Twilio. Right now only the **manual
-  pick-up text** (`send-sms`) is wired — the reminder automation is a later job.
+The `send-due-reminders` function is built and deployed. To switch it on:
+
+1. Set the **Twilio** secrets (section 1 above).
+2. **Schedule it daily** — in Supabase, add a Cron schedule that calls the
+   `send-due-reminders` function once a day (e.g. 9am) with the header
+   `x-cron-secret: <your CRON_SECRET>` (the same secret your statements job uses).
+
+It texts up to `reminders_per_day` (set in Settings) of the most-overdue machines —
+12–18 months since last service, with a phone, reminders not turned off — using the
+editable `sms_due_body` template, and stamps each one so no one's texted twice a
+cycle. The manual **pick-up text** (`send-sms`) is already wired on the job card.
 
 ---
 
