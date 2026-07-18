@@ -44,6 +44,16 @@ export default function JobDetailPage() {
   const [templateId, setTemplateId] = useState("");
   const [uploading, setUploading] = useState(false);
 
+  // Pick-up dispatch — text the person set as "Picked up by".
+  const [pickupAddr, setPickupAddr] = useState("");
+  const [pickupTime, setPickupTime] = useState("");
+  const [pickupNotes, setPickupNotes] = useState("");
+  const [pickupMsg, setPickupMsg] = useState(null);
+  const [pickupSending, setPickupSending] = useState(false);
+  useEffect(() => {
+    if (job?.customers?.address) setPickupAddr((a) => a || job.customers.address);
+  }, [job?.id]);
+
   const [timeEntries, setTimeEntries] = useState([]);
   const [timeStaffId, setTimeStaffId] = useState("");
   const [timeHours, setTimeHours] = useState("");
@@ -365,6 +375,34 @@ export default function JobDetailPage() {
     router.push("/jobs");
   }
 
+  // Text the assigned pick-up person the address, time and notes.
+  async function textPickup() {
+    setError(null); setPickupMsg(null);
+    const picker = staff.find((s) => s.id === job.picked_up_by);
+    if (!picker) { setError("Set who's picking it up first (the “Picked up by” dropdown)."); return; }
+    if (!picker.phone) { setError(`${picker.name} has no phone number — add one on the Staff page.`); return; }
+    const machine = [job.machines?.type, job.machines?.make, job.machines?.model].filter(Boolean).join(" ");
+    const message = [
+      `Pick-up — job #${job.job_number}: ${job.customers?.name || ""}${machine ? " — " + machine : ""}`,
+      pickupAddr ? `Address: ${pickupAddr}` : null,
+      pickupTime ? `Time: ${pickupTime}` : null,
+      pickupNotes ? `Notes: ${pickupNotes}` : null,
+    ].filter(Boolean).join("\n");
+    setPickupSending(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data: res, error: fErr } = await supabase.functions.invoke("send-sms", {
+      body: { to: picker.phone, body: message, customerId: job.customer_id, accessToken: session?.access_token || null },
+    });
+    setPickupSending(false);
+    if (fErr || res?.error) {
+      let detail = res?.error || (fErr && fErr.message) || "Unknown error";
+      try { if (fErr && fErr.context && fErr.context.json) { const b = await fErr.context.json(); if (b && b.error) detail = b.error; } } catch (_e) {}
+      setError("Couldn't send the text: " + detail);
+      return;
+    }
+    setPickupMsg(`Texted ${picker.name} at ${picker.phone}.`);
+  }
+
   if (loading) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
   if (!job) return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -431,6 +469,20 @@ export default function JobDetailPage() {
         <StaffPicker label="Dropped off by" field="dropped_off_by" />
       </div>
       {staff.length === 0 && <p className="mt-2 text-sm text-amber-600">Add people on the Staff page to fill these in.</p>}
+
+      <h2 className="mt-6 text-lg font-semibold text-zinc-900">Pick-up dispatch</h2>
+      <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <p className="text-sm text-zinc-600">Texts the address, time and notes to whoever's set as <span className="font-medium text-zinc-800">Picked up by</span> above.</p>
+        <div className="mt-3 flex flex-col gap-2">
+          <input value={pickupAddr} onChange={(e) => setPickupAddr(e.target.value)} placeholder="Pick-up address" className={input} />
+          <input value={pickupTime} onChange={(e) => setPickupTime(e.target.value)} placeholder="Pick-up time (e.g. today, 3pm)" className={input} />
+          <textarea value={pickupNotes} onChange={(e) => setPickupNotes(e.target.value)} rows={2} placeholder="Notes (gate code, which shed, who to ask for…)" className={input} />
+          <div className="flex items-center gap-3">
+            <button onClick={textPickup} disabled={pickupSending} className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">{pickupSending ? "Sending…" : "Text pick-up details"}</button>
+            {pickupMsg && <span className="text-sm text-green-600">{pickupMsg}</span>}
+          </div>
+        </div>
+      </div>
 
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Checklist</h2>
       <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
