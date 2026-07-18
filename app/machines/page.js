@@ -8,6 +8,31 @@ const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition
 const saveBtn = "rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700";
 const cancelBtn = "rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50";
 
+// Starter suggestions for the make / model pickers. Edit these freely — the
+// lists also grow automatically from the machines you enter.
+const SEED_MAKES = ["Honda", "Yamaha", "Suzuki", "Kawasaki", "Polaris", "Can-Am", "CFMoto", "TGB", "KTM", "Husqvarna", "Kymco", "SYM"];
+const SEED_MODELS = [
+  // Honda ATV
+  "TRX250", "TRX250TM", "TRX250TE", "TRX420FM", "TRX420FM1", "TRX420FE", "TRX420FA",
+  "TRX500FM", "TRX500FM1", "TRX500FM2", "TRX500FA", "TRX500FE", "TRX520FM", "TRX520FM1", "TRX520FA", "TRX680FA",
+  // Honda SxS + ag bikes
+  "Pioneer 500", "Pioneer 520", "Pioneer 700", "Pioneer 1000", "Big Red MUV700",
+  "CT110", "CTX200 Ag", "CRF150F", "CRF230F", "CRF250F", "XR150L", "XR190", "CG125",
+  // Yamaha
+  "Grizzly 350", "Grizzly 450", "Grizzly 700", "Kodiak 450", "Kodiak 700", "Big Bear 350",
+  "Viking", "Wolverine", "Rhino", "AG100", "AG125", "AG200", "TT-R125", "TT-R230", "TW200",
+  // Suzuki
+  "KingQuad 400", "KingQuad 500", "KingQuad 750", "Ozark 250", "Eiger 400", "DR200 Trojan", "TF125 Mudbug", "DR-Z125",
+  // Kawasaki
+  "Brute Force 300", "Brute Force 750", "KVF300", "KVF750", "Bayou 250", "Mule", "Teryx",
+  // Polaris
+  "Sportsman 450", "Sportsman 570", "Sportsman 850", "Ranger 570", "Ranger 1000", "RZR",
+  // Can-Am
+  "Outlander 450", "Outlander 570", "Outlander 650", "Outlander 1000", "Defender", "Maverick",
+  // CFMoto
+  "CForce 400", "CForce 520", "CForce 625", "CForce 850", "UForce 600", "UForce 1000",
+];
+
 export default function MachinesPage() {
   const [machines, setMachines] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -69,14 +94,14 @@ export default function MachinesPage() {
     ? machines.filter((m) => (m.type + " " + (m.make || "") + " " + (m.model || "") + " " + (m.vin || "") + " " + (m.key_number || "") + " " + (m.customers?.name || "")).toLowerCase().includes(term))
     : machines;
 
-  const makeOptions = [...new Set(machines.map((m) => m.make).filter(Boolean))].sort();
-  const modelOptions = [...new Set(machines.map((m) => m.model).filter(Boolean))].sort();
+  const makeOptions = [...new Set([...SEED_MAKES, ...machines.map((m) => m.make).filter(Boolean)])].sort();
+  const modelOptions = [...new Set([...SEED_MODELS, ...machines.map((m) => m.model).filter(Boolean)])].sort();
   const idLine = (m) => [m.vin && "VIN " + m.vin, m.key_number && "Key " + m.key_number, m.customers?.name].filter(Boolean).join(" · ");
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Machines</h1>
-      <p className="mt-1 text-zinc-600">Bikes &amp; ATVs — identified by VIN or key number — each linked to a customer.</p>
+      <p className="mt-1 text-zinc-600">Bikes &amp; ATVs — identified by make/model (VIN or key number optional) — each linked to a customer.</p>
 
       <form onSubmit={addMachine} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={input}>
