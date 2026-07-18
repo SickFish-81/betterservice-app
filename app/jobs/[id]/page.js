@@ -54,6 +54,14 @@ export default function JobDetailPage() {
     if (job?.customers?.address) setPickupAddr((a) => a || job.customers.address);
   }, [job?.id]);
 
+  // Friendly confirmation toast when staff save/update a job card.
+  const [thanks, setThanks] = useState("");
+  function sayThanks() {
+    const msgs = ["Thanks — job card updated ✓", "Saved. Nice one!", "Cheers — that's logged ✓", "Updated. Ka pai!"];
+    setThanks(msgs[Math.floor(Math.random() * msgs.length)]);
+    setTimeout(() => setThanks(""), 2600);
+  }
+
   const [timeEntries, setTimeEntries] = useState([]);
   const [timeStaffId, setTimeStaffId] = useState("");
   const [timeHours, setTimeHours] = useState("");
@@ -130,7 +138,7 @@ export default function JobDetailPage() {
 
   async function updateJobField(field, value) {
     await supabase.from("job_cards").update({ [field]: value }).eq("id", id);
-    load();
+    sayThanks(); load();
   }
 
   function startEdit() {
@@ -146,7 +154,7 @@ export default function JobDetailPage() {
       customer_id: eCustomer || null, machine_id: eMachine || null,
       reported_problem: eProblem, notes: eNotes,
     }).eq("id", id);
-    setEditing(false); load();
+    setEditing(false); sayThanks(); load();
   }
 
   async function addLabour(e) {
@@ -424,6 +432,12 @@ export default function JobDetailPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <Link href="/jobs" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">← Job Cards</Link>
+
+      {thanks && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+          <div className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-lg">{thanks}</div>
+        </div>
+      )}
 
       <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
