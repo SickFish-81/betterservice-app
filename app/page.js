@@ -29,9 +29,8 @@ export default function Home() {
       {/* Hero */}
       <section className="relative isolate overflow-hidden">
         <div className="absolute inset-0 -z-10 bg-cover bg-center" style={{ backgroundImage: `url('${HERO}')` }} />
-        <HeroVideo />
-        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-zinc-950/92 via-zinc-950/75 to-zinc-900/45" />
-        <div className="mx-auto max-w-5xl px-4 py-24 sm:py-32">
+        <HeroVideo>
+          <div className="mx-auto max-w-5xl px-4 py-24 sm:py-32">
           <p className="text-sm font-semibold uppercase tracking-wider text-red-400">Te Puke · 25+ years</p>
           <h1 className="mt-3 max-w-2xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">Honest, Reliable ATV &amp; Motorcycle Service</h1>
           <p className="mt-4 max-w-xl text-lg text-zinc-200">Servicing, Repairs and Quality Used ATVs from Craig at Betterservice Te Puke. Better Price, Better Advice, Better Bikes.</p>
@@ -39,7 +38,8 @@ export default function Home() {
             <a href="tel:02108327787" className="rounded-lg bg-red-600 px-5 py-3 font-semibold text-white shadow-sm hover:bg-red-700">Call or text · 021 08327787</a>
             <Link href="/for-sale" className="rounded-lg border border-white/40 bg-white/5 px-5 py-3 font-semibold text-white backdrop-blur hover:bg-white/15">View used ATVs →</Link>
           </div>
-        </div>
+          </div>
+        </HeroVideo>
       </section>
 
       {/* Services */}

@@ -2,39 +2,62 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// The hero clip plays once, then we hold on the logo for a branded beat before
-// replaying. Tweak these two numbers to change the timing.
-const PAUSE_MS = 6000; // how long the logo stays up between loops (~6s)
-const FADE_MS = 1100; // fade in / fade out duration
+// Hero intro choreography (tweak these three to change the timing):
+const FADE_MS = 1200;       // fade duration for the logo and the text
+const LOGO_HOLD_MS = 1200;  // how long the centred logo holds before handing off
+const MAX_WAIT_MS = 9000;   // safety net: reveal even if the video never fires "ended"
 
-export default function HeroVideo() {
+// The clip plays once, then the large logo fades in dead-centre over a dimmed
+// frame, then the logo fades out as the headline + buttons (children) fade in.
+// After that the video loops quietly behind the text.
+export default function HeroVideo({ children }) {
   const videoRef = useRef(null);
-  const [showLogo, setShowLogo] = useState(false);
+  const started = useRef(false);
+  const [logoVisible, setLogoVisible] = useState(false);
+  const [textVisible, setTextVisible] = useState(false);
 
   useEffect(() => {
     const v = videoRef.current;
-    if (!v) return;
     const timers = [];
 
-    // When the clip finishes: fade the logo in, hold, fade it out, then replay.
-    const onEnded = () => {
-      setShowLogo(true);
-      timers.push(setTimeout(() => setShowLogo(false), PAUSE_MS - FADE_MS));
+    // Respect reduced-motion: skip the cinematic intro and just show the hero.
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      started.current = true;
+      setTextVisible(true);
+      if (v) v.loop = true;
+      return;
+    }
+
+    const beginReveal = () => {
+      if (started.current) return;
+      started.current = true;
+      setLogoVisible(true); // logo fades in, centred
       timers.push(
         setTimeout(() => {
-          try {
-            v.currentTime = 0;
-            v.play();
-          } catch {
-            /* ignore autoplay hiccups */
+          setLogoVisible(false); // logo fades out …
+          setTextVisible(true);  // … while the text + buttons fade in
+          if (v) {
+            v.loop = true;
+            try {
+              v.currentTime = 0;
+              v.play();
+            } catch {
+              /* ignore autoplay hiccups */
+            }
           }
-        }, PAUSE_MS)
+        }, FADE_MS + LOGO_HOLD_MS)
       );
     };
 
-    v.addEventListener("ended", onEnded);
+    if (v) v.addEventListener("ended", beginReveal);
+    timers.push(setTimeout(beginReveal, MAX_WAIT_MS)); // fallback if autoplay is blocked
+
     return () => {
-      v.removeEventListener("ended", onEnded);
+      if (v) v.removeEventListener("ended", beginReveal);
       timers.forEach(clearTimeout);
     };
   }, []);
@@ -43,7 +66,7 @@ export default function HeroVideo() {
     <>
       <video
         ref={videoRef}
-        className="absolute inset-0 -z-10 h-full w-full object-cover"
+        className="absolute inset-0 z-0 h-full w-full object-cover"
         autoPlay
         muted
         playsInline
@@ -54,14 +77,28 @@ export default function HeroVideo() {
         <source src="/hero.mp4" type="video/mp4" />
       </video>
 
-      {/* Branded pause between loops: the logo fades in to the RIGHT of the hero
-          text, so it never overlaps the headline/CTA on the left. */}
+      <div className="absolute inset-0 z-10 bg-gradient-to-r from-zinc-950/92 via-zinc-950/75 to-zinc-900/45" />
+
+      {/* Headline + buttons (passed in from the page) — fade in after the logo hands off */}
       <div
-        className="pointer-events-none absolute inset-0 z-20 flex items-center justify-end px-6 transition-opacity ease-in-out sm:px-12"
-        style={{ opacity: showLogo ? 1 : 0, transitionDuration: `${FADE_MS}ms` }}
+        className="relative z-20 transition-opacity ease-in-out"
+        style={{
+          opacity: textVisible ? 1 : 0,
+          transitionDuration: `${FADE_MS}ms`,
+          pointerEvents: textVisible ? "auto" : "none",
+        }}
+      >
+        {children}
+      </div>
+
+      {/* Centred brand moment: the large logo over a dimmed frame, then it fades out */}
+      <div
+        className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center transition-opacity ease-in-out"
+        style={{ opacity: logoVisible ? 1 : 0, transitionDuration: `${FADE_MS}ms` }}
         aria-hidden="true"
       >
-        <img src="/logo.png" alt="" className="w-40 max-w-[45%] drop-shadow-2xl sm:w-64 lg:w-80" />
+        <div className="absolute inset-0 bg-zinc-950/70" />
+        <img src="/logo.png" alt="" className="relative w-72 max-w-[80%] drop-shadow-2xl sm:w-96" />
       </div>
     </>
   );
