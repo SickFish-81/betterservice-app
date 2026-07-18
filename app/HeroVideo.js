@@ -9,7 +9,7 @@ const MAX_WAIT_MS = 9000;   // safety net: reveal even if the video never fires 
 
 // The clip plays once, then the large logo fades in dead-centre over a dimmed
 // frame, then the logo fades out as the headline + buttons (children) fade in.
-// After that the video loops quietly behind the text.
+// After that it rests on the clip's final frame — one impactful pass, no loop.
 export default function HeroVideo({ children }) {
   const videoRef = useRef(null);
   const started = useRef(false);
@@ -28,7 +28,6 @@ export default function HeroVideo({ children }) {
     if (reduce) {
       started.current = true;
       setTextVisible(true);
-      if (v) v.loop = true;
       return;
     }
 
@@ -40,15 +39,6 @@ export default function HeroVideo({ children }) {
         setTimeout(() => {
           setLogoVisible(false); // logo fades out …
           setTextVisible(true);  // … while the text + buttons fade in
-          if (v) {
-            v.loop = true;
-            try {
-              v.currentTime = 0;
-              v.play();
-            } catch {
-              /* ignore autoplay hiccups */
-            }
-          }
         }, FADE_MS + LOGO_HOLD_MS)
       );
     };
