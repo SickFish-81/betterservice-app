@@ -1,8 +1,8 @@
 import Link from "next/link";
+import HeroVideo from "./HeroVideo";
 
 const LOGO = "/logo.png";
 const HERO = "/hero.jpg";
-const HERO_POSTER = "/hero-poster.jpg";
 const ATV = "/atv.jpg";
 const SHOP = [
   "/workshop-1.jpg",
@@ -29,10 +29,7 @@ export default function Home() {
       {/* Hero */}
       <section className="relative isolate overflow-hidden">
         <div className="absolute inset-0 -z-10 bg-cover bg-center" style={{ backgroundImage: `url('${HERO}')` }} />
-        <video className="absolute inset-0 -z-10 h-full w-full object-cover" autoPlay muted loop playsInline poster={HERO_POSTER} aria-hidden="true">
-          <source src="/hero.webm" type="video/webm" />
-          <source src="/hero.mp4" type="video/mp4" />
-        </video>
+        <HeroVideo />
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-zinc-950/92 via-zinc-950/75 to-zinc-900/45" />
         <div className="mx-auto max-w-5xl px-4 py-24 sm:py-32">
           <p className="text-sm font-semibold uppercase tracking-wider text-red-400">Te Puke · 25+ years</p>
