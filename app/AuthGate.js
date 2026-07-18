@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabaseClient";
 import NavBar from "./NavBar";
 import PublicNav from "./PublicNav";
 import AttentionBanner from "./AttentionBanner";
+import TimesheetNudge from "./TimesheetNudge";
 import { RoleContext } from "./RoleContext";
 
 const PUBLIC_EXACT = ["/", "/login", "/batteries"];
@@ -101,6 +102,7 @@ export default function AuthGate({ children }) {
   return (
     <RoleContext.Provider value={{ owner }}>
       <NavBar email={session.user.email} />
+      <TimesheetNudge />
       <AttentionBanner />
       {children}
     </RoleContext.Provider>
