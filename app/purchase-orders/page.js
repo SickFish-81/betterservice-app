@@ -13,6 +13,7 @@ const poNo = (n) => "PO-" + String(n ?? 0).padStart(4, "0");
 const STATUS_STYLES = {
   Draft: "bg-zinc-100 text-zinc-700",
   Ordered: "bg-amber-50 text-amber-700",
+  "Partially received": "bg-blue-50 text-blue-700",
   Received: "bg-emerald-50 text-emerald-700",
   Cancelled: "bg-red-50 text-red-600",
 };

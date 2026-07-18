@@ -10,12 +10,14 @@ import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const poNo = (n) => "PO-" + String(n ?? 0).padStart(4, "0");
 const expNo = (n) => "EXP-" + String(n ?? 0).padStart(5, "0");
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 const STATUS_STYLES = {
   Draft: "bg-zinc-100 text-zinc-700",
   Ordered: "bg-amber-50 text-amber-700",
+  "Partially received": "bg-blue-50 text-blue-700",
   Received: "bg-emerald-50 text-emerald-700",
   Cancelled: "bg-red-50 text-red-600",
 };
@@ -24,6 +26,7 @@ export default function PurchaseOrderDetail() {
   const { id } = useParams();
   const [po, setPo] = useState(null);
   const [items, setItems] = useState([]);
+  const [receipts, setReceipts] = useState([]);
   const [recv, setRecv] = useState({});
   const [settings, setSettings] = useState(null);
   const [gst, setGst] = useState("");
@@ -46,8 +49,13 @@ export default function PurchaseOrderDetail() {
     const its = (data.purchase_order_items || []).slice().sort((a, b) => (a.description > b.description ? 1 : -1));
     setItems(its);
     const r = {};
-    its.forEach((it) => { r[it.id] = { qty: String(it.qty_received || it.qty_ordered), cost: String(it.unit_cost) }; });
+    its.forEach((it) => {
+      const outstanding = Math.max(0, round2(Number(it.qty_ordered) - Number(it.qty_received || 0)));
+      r[it.id] = { qty: String(outstanding), cost: String(it.unit_cost) };
+    });
     setRecv(r);
+    const { data: rc } = await supabase.from("expenses").select("id, expense_number, expense_date, amount_ex_gst, gst, total, status").eq("purchase_order_id", id).order("expense_date");
+    setReceipts(rc || []);
     const { data: st } = await supabase.from("shop_settings").select("*").eq("id", 1).single();
     setSettings(st || null);
     setLoading(false);
@@ -131,7 +139,7 @@ export default function PurchaseOrderDetail() {
   if (loading) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
   if (error && !po) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-sm text-red-600" role="alert">{error}</p></main>;
   if (!po) return null;
-  const canReceive = po.status === "Draft" || po.status === "Ordered";
+  const canReceive = ["Draft", "Ordered", "Partially received"].includes(po.status);
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -146,55 +154,69 @@ export default function PurchaseOrderDetail() {
       {error && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>}
 
       <div className="mt-5 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 bg-zinc-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          <span>Part</span><span className="text-right">Ordered</span><span className="text-right">{canReceive ? "Receiving" : "Received"}</span><span className="text-right">Cost ea</span>
+        <div className="grid grid-cols-[1fr_2.5rem_2.5rem_4rem_5rem] gap-2 bg-zinc-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <span>Part</span><span className="text-right">Ord</span><span className="text-right">In</span><span className="text-right">{canReceive ? "Now" : ""}</span><span className="text-right">Cost ea</span>
         </div>
-        {items.map((it) => (
-          <div key={it.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm">
-            <span className="min-w-0 truncate text-zinc-800">{it.parts?.name || it.description}{it.job_cards && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">Job #{it.job_cards.job_number}</span>}</span>
-            <span className="w-12 text-right text-zinc-500">{it.qty_ordered}</span>
-            {canReceive ? (
-              <input type="number" min="0" step="0.01" inputMode="decimal" value={recv[it.id]?.qty ?? ""} onChange={setR(it.id, "qty")} className="w-16 rounded border border-zinc-300 px-2 py-1 text-right" />
-            ) : (
-              <span className="w-16 text-right text-zinc-800">{it.qty_received}</span>
-            )}
-            {canReceive ? (
-              <input type="number" min="0" step="0.01" inputMode="decimal" value={recv[it.id]?.cost ?? ""} onChange={setR(it.id, "cost")} className="w-20 rounded border border-zinc-300 px-2 py-1 text-right" />
-            ) : (
-              <span className="w-20 text-right text-zinc-800">{money(it.unit_cost)}</span>
-            )}
-          </div>
-        ))}
+        {items.map((it) => {
+          const outstanding = Math.max(0, round2(Number(it.qty_ordered) - Number(it.qty_received || 0)));
+          const done = outstanding === 0;
+          return (
+            <div key={it.id} className="grid grid-cols-[1fr_2.5rem_2.5rem_4rem_5rem] items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm">
+              <span className="min-w-0 truncate text-zinc-800">{it.parts?.name || it.description}{it.job_cards && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">Job #{it.job_cards.job_number}</span>}</span>
+              <span className="text-right text-zinc-500">{Number(it.qty_ordered)}</span>
+              <span className={"text-right " + (done ? "font-medium text-emerald-600" : "text-zinc-500")}>{Number(it.qty_received || 0)}</span>
+              {canReceive ? (
+                <input type="number" min="0" step="0.01" inputMode="decimal" value={recv[it.id]?.qty ?? ""} onChange={setR(it.id, "qty")} className={"w-16 rounded border px-2 py-1 text-right " + (done ? "border-zinc-200 bg-zinc-50 text-zinc-400" : "border-zinc-300")} />
+              ) : (
+                <span className="text-right text-zinc-400">—</span>
+              )}
+              {canReceive ? (
+                <input type="number" min="0" step="0.01" inputMode="decimal" value={recv[it.id]?.cost ?? ""} onChange={setR(it.id, "cost")} className="w-20 rounded border border-zinc-300 px-2 py-1 text-right" />
+              ) : (
+                <span className="text-right text-zinc-800">{money(it.unit_cost)}</span>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {canReceive ? (
+      {canReceive && (
         <div className="mt-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-zinc-600">
-            <span>Goods: <strong className="text-zinc-900">{money(goods)}</strong></span>
+            <span>This delivery: <strong className="text-zinc-900">{money(goods)}</strong></span>
             <label className="flex items-center gap-2">GST
               <input type="number" min="0" step="0.01" value={gstAuto ? gstVal : gst} onChange={(e) => { setGstAuto(false); setGst(e.target.value); }} className="w-20 rounded border border-zinc-300 px-2 py-1 text-right" />
               {!gstAuto && <button type="button" onClick={() => { setGstAuto(true); setGst(""); }} className="text-xs text-red-600 hover:underline">auto 15%</button>}
             </label>
             <span>Total: <strong className="text-zinc-900">{money(total)}</strong></span>
           </div>
-          <p className="mt-2 text-xs text-zinc-500">Enter what actually arrived — quantities, costs and GST are all editable. Receiving adds stock and records this as an on-account bill (Cost of Parts + GST, owed to the supplier).</p>
+          <p className="mt-2 text-xs text-zinc-500"><strong>Ord</strong> ordered · <strong>In</strong> received so far · <strong>Now</strong> what arrived in this delivery. Only part of the order turned up? Enter what came, leave the rest — the order stays open and you can receive the balance later. Each delivery adds stock and records its own on-account bill (Cost of Parts + GST, owed to the supplier).</p>
           <div className="mt-3 flex flex-wrap items-center gap-4">
-            <button onClick={receive} disabled={saving || goods <= 0} className={btn + " disabled:opacity-50"}>{saving ? "Receiving…" : "Receive & post"}</button>
+            <button onClick={receive} disabled={saving || goods <= 0} className={btn + " disabled:opacity-50"}>{saving ? "Receiving…" : "Receive this delivery"}</button>
             <button onClick={emailPO} disabled={emailing} className="text-sm font-medium text-red-600 hover:underline disabled:opacity-50">{emailing ? "Emailing…" : "email to supplier"}</button>
             {po.status === "Draft" && <button onClick={markOrdered} className="text-sm text-zinc-600 hover:underline">mark as ordered</button>}
             <button onClick={cancel} className="ml-auto text-sm text-red-500 hover:underline">cancel order</button>
           </div>
         </div>
-      ) : po.status === "Received" ? (
-        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-          <p className="font-medium">Received and posted to the books.</p>
-          {po.expenses && (
-            <p className="mt-1">Recorded as {expNo(po.expenses.expense_number)} — {money(po.expenses.amount_ex_gst)} + {money(po.expenses.gst)} GST = {money(po.expenses.total)}, owed to {po.suppliers?.name || "the supplier"} (Accounts Payable). It flows into your <Link href="/reports" className="underline">Reports</Link>.</p>
-          )}
-        </div>
-      ) : (
-        <p className="mt-4 text-sm text-zinc-500">This order was cancelled.</p>
       )}
+
+      {receipts.length > 0 && (
+        <div className="mt-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-zinc-900">Deliveries received ({receipts.length})</h2>
+          <ul className="mt-2 divide-y divide-zinc-100">
+            {receipts.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 py-1.5 text-sm">
+                <span className="text-zinc-600">{r.expense_date} · {expNo(r.expense_number)}</span>
+                <span className="text-zinc-800">{money(r.amount_ex_gst)} + {money(r.gst)} GST = <strong>{money(r.total)}</strong><span className={"ml-2 rounded-full px-2 py-0.5 text-xs font-medium " + (r.status === "Paid" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")}>{r.status}</span></span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-zinc-500">Each delivery is an on-account bill — settle them on the <Link href="/bills" className="underline">Bills</Link> page. Totals flow into your <Link href="/reports" className="underline">Reports</Link>.</p>
+        </div>
+      )}
+
+      {po.status === "Received" && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">Fully received — every ordered line is in and posted to the books.</div>}
+      {po.status === "Cancelled" && <p className="mt-4 text-sm text-zinc-500">This order was cancelled.</p>}
     </main>
   );
 }
