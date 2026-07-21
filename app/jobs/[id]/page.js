@@ -172,21 +172,18 @@ export default function JobDetailPage() {
     const part = parts.find((p) => p.id === partId);
     if (!part) { setError("Pick a part from inventory."); return; }
     const q = Math.max(0.01, Number(partQty) || 1);
-    const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "part", part_id: part.id, description: part.name, quantity: q, unit_price: part.unit_price });
+    // Atomic in the DB: inserts the line item and draws stock down together (no read-then-write race).
+    const { error } = await supabase.rpc("add_part_to_job", { p_job_id: id, p_part_id: part.id, p_qty: q });
     if (error) { setError(error.message); return; }
-    await supabase.from("parts").update({ qty_on_hand: Number(part.qty_on_hand) - q }).eq("id", part.id);
     setPartId(""); setPartQty("1"); load();
   }
 
   // Removing a stocked part puts it back on the shelf.
   async function removeItem(it) {
     if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
-    const { error } = await supabase.from("job_line_items").delete().eq("id", it.id);
+    // Atomic in the DB: deletes the line item and restocks the part together.
+    const { error } = await supabase.rpc("remove_job_line_item", { p_item_id: it.id });
     if (error) { setError("Couldn't remove item: " + error.message); return; }
-    if (it.kind === "part" && it.part_id) {
-      const part = parts.find((p) => p.id === it.part_id);
-      if (part) await supabase.from("parts").update({ qty_on_hand: Number(part.qty_on_hand) + Number(it.quantity) }).eq("id", it.part_id);
-    }
     load();
   }
 

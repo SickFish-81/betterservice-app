@@ -48,6 +48,7 @@ export default function Dashboard() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
+      <img src="/logo.png" alt="Betterservice Te Puke" className="mb-4 h-16 w-auto" />
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Shop Dashboard</h1>
       <p className="mt-2 text-zinc-600">Betterservice Te Puke — back office.</p>
       <div className="mt-8 grid gap-4 sm:grid-cols-2">

@@ -26,6 +26,7 @@ export default function JobsPage() {
   const [source, setSource] = useState("Phone");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showNew, setShowNew] = useState(false);
 
   async function loadData() {
     setLoading(true);
@@ -51,7 +52,7 @@ export default function JobsPage() {
     if (existing && existing.length > 0) { setError("There's already a job card for this machine today."); return; }
     const { error } = await supabase.from("job_cards").insert({ customer_id: customerId, machine_id: machineId, reported_problem: problem, source });
     if (error) { setError(error.message); return; }
-    setProblem(""); setMachineId(""); loadData();
+    setProblem(""); setMachineId(""); setCustomerId(""); setShowNew(false); loadData();
   }
 
   async function updateStatus(jobId, status) {
@@ -62,40 +63,21 @@ export default function JobsPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Job Cards</h1>
-      <p className="mt-1 text-zinc-600">Every job, from first contact to paid.</p>
-
-      <form onSubmit={addJob} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <div className="flex gap-2">
-          <select value={customerId} onChange={(e) => { setCustomerId(e.target.value); setMachineId(""); }} className={input + " flex-1"}>
-            <option value="">Select customer…</option>
-            {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
-          </select>
-          <Link href="/customers" title="Add a new customer" className="flex shrink-0 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50">+ New</Link>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Job Cards</h1>
+          <p className="mt-1 text-zinc-600">Every job, from first contact to paid.</p>
         </div>
-        <div className="flex gap-2">
-          <select value={machineId} onChange={(e) => setMachineId(e.target.value)} className={input + " flex-1"} disabled={!customerId}>
-            <option value="">{customerId ? "Select machine…" : "Pick a customer first"}</option>
-            {machinesForCustomer.map((m) => (<option key={m.id} value={m.id}>{m.type} — {m.make} {m.model}</option>))}
-          </select>
-          <Link href="/machines" title="Add a new machine" className="flex shrink-0 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50">+ New</Link>
-        </div>
-        <textarea value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="What's the problem / what needs doing?" rows={2} className={input} />
-        <select value={source} onChange={(e) => setSource(e.target.value)} className={input}>
-          <option>Phone</option>
-          <option>Website</option>
-          <option>Walk-in</option>
-        </select>
-        <button type="submit" className={btn}>Create job card</button>
-      </form>
+        <button onClick={() => { setError(null); setShowNew(true); }} className={btn + " shrink-0 whitespace-nowrap"}>+ New job card</button>
+      </div>
 
-      {error && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}
+      {error && !showNew && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}
 
       <div className="mt-6 flex flex-col gap-3">
         {loading ? (
           <p className="text-zinc-500">Loading…</p>
         ) : jobs.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-zinc-500">No job cards yet. Create one above.</p>
+          <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-zinc-500">No job cards yet. Tap “+ New job card” to start one.</p>
         ) : (
           jobs.map((j) => (
             <div key={j.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-300">
@@ -114,6 +96,44 @@ export default function JobsPage() {
           ))
         )}
       </div>
+
+      {showNew && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center" onClick={() => setShowNew(false)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold tracking-tight text-zinc-900">New job card</h2>
+              <button onClick={() => setShowNew(false)} aria-label="Close" className="rounded-md p-1 text-2xl leading-none text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">×</button>
+            </div>
+            <form onSubmit={addJob} className="mt-4 flex flex-col gap-3">
+              <div className="flex gap-2">
+                <select value={customerId} onChange={(e) => { setCustomerId(e.target.value); setMachineId(""); }} className={input + " flex-1"}>
+                  <option value="">Select customer…</option>
+                  {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                </select>
+                <Link href="/customers" title="Add a new customer" className="flex shrink-0 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50">+ New</Link>
+              </div>
+              <div className="flex gap-2">
+                <select value={machineId} onChange={(e) => setMachineId(e.target.value)} className={input + " flex-1"} disabled={!customerId}>
+                  <option value="">{customerId ? "Select machine…" : "Pick a customer first"}</option>
+                  {machinesForCustomer.map((m) => (<option key={m.id} value={m.id}>{m.type} — {m.make} {m.model}</option>))}
+                </select>
+                <Link href="/machines" title="Add a new machine" className="flex shrink-0 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50">+ New</Link>
+              </div>
+              <textarea value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="What's the problem / what needs doing?" rows={2} className={input} />
+              <select value={source} onChange={(e) => setSource(e.target.value)} className={input}>
+                <option>Phone</option>
+                <option>Website</option>
+                <option>Walk-in</option>
+              </select>
+              {error && <p className="text-sm text-red-600">Error: {error}</p>}
+              <div className="mt-1 flex gap-2">
+                <button type="button" onClick={() => setShowNew(false)} className="rounded-lg border border-zinc-300 bg-white px-4 py-2.5 font-medium text-zinc-700 hover:bg-zinc-50">Cancel</button>
+                <button type="submit" className={btn + " flex-1"}>Create job card</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

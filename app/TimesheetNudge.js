@@ -5,6 +5,9 @@
 // when they've gone ~3 hours without logging any time AND aren't currently clocked
 // on to a running timer. "Later" snoozes it for 3 hours, so it re-prompts roughly
 // every 3 hours until time is logged.
+//
+// Owners (e.g. Craig & Ben) don't keep timesheets, so they're never nudged — we
+// skip anyone whose staff row has role = 'owner'.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -27,9 +30,13 @@ export default function TimesheetNudge() {
     const email = auth?.user?.email;
     if (!email) { setShow(false); return; }
 
-    const { data: staff } = await supabase.from("staff").select("id").ilike("email", email).limit(1);
-    const sid = staff && staff[0] && staff[0].id;
+    const { data: staff } = await supabase.from("staff").select("id, role").ilike("email", email).limit(1);
+    const me = staff && staff[0];
+    const sid = me && me.id;
     if (!sid) { setShow(false); return; }
+
+    // Owners don't do timesheets — never nudge them.
+    if (me.role === "owner") { setShow(false); return; }
 
     // Currently clocked on (a running timer)? Then they're already tracking — no nudge.
     const { data: running } = await supabase
