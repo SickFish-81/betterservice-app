@@ -1,6 +1,14 @@
 "use client";
 
-export default function Error({ reset }) {
+import { useEffect } from "react";
+
+export default function Error({ error, reset }) {
+  useEffect(() => {
+    // Log the error so a problem in the field leaves a trace (browser console,
+    // and anywhere console errors are collected). Swap in a monitoring service here later.
+    console.error("App error boundary:", error);
+  }, [error]);
+
   return (
     <main className="mx-auto max-w-md px-4 py-16 text-center">
       <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Something went wrong</h1>

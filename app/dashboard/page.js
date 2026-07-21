@@ -48,9 +48,13 @@ export default function Dashboard() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <img src="/logo.png" alt="Betterservice Te Puke" className="mb-4 h-16 w-auto" />
-      <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Shop Dashboard</h1>
-      <p className="mt-2 text-zinc-600">Betterservice Te Puke — back office.</p>
+      <div className="flex items-center gap-4">
+        <img src="/logo.png" alt="Betterservice Te Puke" className="h-20 w-auto shrink-0" />
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Shop Dashboard</h1>
+          <p className="mt-2 text-zinc-600">Betterservice Te Puke — back office.</p>
+        </div>
+      </div>
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
         {cards.filter((c) => !c.ownerOnly || owner).map((c) => {
           const n = c.badge ? badgeFor(c.badge) : 0;

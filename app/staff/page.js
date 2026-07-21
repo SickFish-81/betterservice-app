@@ -67,6 +67,7 @@ export default function StaffPage() {
           Can send invoices
         </label>
         <button type="submit" className={btn}>Add staff member</button>
+        <p className="text-xs text-zinc-500">Adding someone here sets their access and role — it doesn&apos;t create their login. Their sign-in (email + password) is created separately in Supabase Auth using the same email; until that exists, they can&apos;t log in.</p>
       </form>
 
       {error && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}

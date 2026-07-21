@@ -85,23 +85,38 @@ export default function JobDetailPage() {
 
   async function load() {
     setLoading(true);
-    const { data: j, error: jErr } = await supabase
-      .from("job_cards")
-      .select("*, customers(name, phone, email, address), machines(type, make, model, vin, key_number)")
-      .eq("id", id).single();
-    const { data: li } = await supabase.from("job_line_items").select("*").eq("job_card_id", id).order("created_at");
-    const { data: s } = await supabase.from("staff").select("id, name, can_send_invoices").order("name");
-    const { data: inv } = await supabase.from("invoices").select("*").eq("job_card_id", id).order("created_at", { ascending: false }).limit(1);
-    const { data: pr } = await supabase.from("parts").select("*").order("name");
-    const { data: tpl } = await supabase.from("checklist_templates").select("*").order("name");
-    const { data: cl } = await supabase.from("job_checklist_items").select("*").eq("job_card_id", id).order("position");
-    const { data: ph } = await supabase.from("job_photos").select("*").eq("job_card_id", id).order("created_at");
-    const { data: te } = await supabase.from("job_time_entries").select("*, staff(name)").eq("job_card_id", id).order("created_at");
-    const { data: ap } = await supabase.from("purchase_order_items").select("*, parts(name, unit_price), purchase_orders!inner(po_number, status)").eq("job_card_id", id).is("accepted_at", null).eq("purchase_orders.status", "Received").gt("qty_received", 0);
-    const { data: prq } = await supabase.from("part_requests").select("*, parts(name)").eq("job_card_id", id).order("created_at", { ascending: false });
-    const { data: cust } = await supabase.from("customers").select("id, name").order("name");
-    const { data: mach } = await supabase.from("machines").select("id, customer_id, type, make, model");
-    const { data: st } = await supabase.from("shop_settings").select("*").eq("id", 1).single();
+    // All 14 reads are independent, so fire them together instead of one-by-one.
+    const [
+      { data: j, error: jErr },
+      { data: li },
+      { data: s },
+      { data: inv },
+      { data: pr },
+      { data: tpl },
+      { data: cl },
+      { data: ph },
+      { data: te },
+      { data: ap },
+      { data: prq },
+      { data: cust },
+      { data: mach },
+      { data: st },
+    ] = await Promise.all([
+      supabase.from("job_cards").select("*, customers(name, phone, email, address), machines(type, make, model, vin, key_number)").eq("id", id).single(),
+      supabase.from("job_line_items").select("*").eq("job_card_id", id).order("created_at"),
+      supabase.from("staff").select("id, name, can_send_invoices").order("name"),
+      supabase.from("invoices").select("*").eq("job_card_id", id).order("created_at", { ascending: false }).limit(1),
+      supabase.from("parts").select("*").order("name"),
+      supabase.from("checklist_templates").select("*").order("name"),
+      supabase.from("job_checklist_items").select("*").eq("job_card_id", id).order("position"),
+      supabase.from("job_photos").select("*").eq("job_card_id", id).order("created_at"),
+      supabase.from("job_time_entries").select("*, staff(name)").eq("job_card_id", id).order("created_at"),
+      supabase.from("purchase_order_items").select("*, parts(name, unit_price), purchase_orders!inner(po_number, status)").eq("job_card_id", id).is("accepted_at", null).eq("purchase_orders.status", "Received").gt("qty_received", 0),
+      supabase.from("part_requests").select("*, parts(name)").eq("job_card_id", id).order("created_at", { ascending: false }),
+      supabase.from("customers").select("id, name").order("name"),
+      supabase.from("machines").select("id, customer_id, type, make, model"),
+      supabase.from("shop_settings").select("*").eq("id", 1).single(),
+    ]);
     if (jErr) setError(jErr.message);
     else setJob(j);
     setItems(li || []);
@@ -128,10 +143,11 @@ export default function JobDetailPage() {
     return () => clearInterval(t);
   }, []);
 
-  const subtotal = items.reduce((s, it) => s + Number(it.amount), 0);
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const subtotal = round2(items.reduce((s, it) => s + Number(it.amount), 0));
   const totalHours = timeEntries.reduce((s, t) => s + Number(t.hours || 0), 0);
-  const gst = subtotal * 0.15;
-  const total = subtotal + gst;
+  const gst = round2(subtotal * 0.15);
+  const total = round2(subtotal + gst);
   const senders = staff.filter((s) => s.can_send_invoices);
   const staffName = (sid) => staff.find((s) => s.id === sid)?.name;
   const eMachines = machines.filter((m) => m.customer_id === eCustomer);
@@ -696,7 +712,7 @@ export default function JobDetailPage() {
             {photos.map((p) => (
               <div key={p.id} className="group relative">
                 <img src={p.url} alt="job photo" className="h-24 w-full rounded-lg object-cover" />
-                <button onClick={() => removePhoto(p)} className="absolute right-1 top-1 rounded bg-black/60 px-1.5 text-xs text-white opacity-0 group-hover:opacity-100">×</button>
+                <button onClick={() => removePhoto(p)} aria-label="Remove photo" className="absolute right-1 top-1 rounded bg-black/60 px-1.5 text-xs text-white opacity-0 group-hover:opacity-100">×</button>
               </div>
             ))}
           </div>

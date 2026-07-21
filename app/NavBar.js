@@ -85,9 +85,8 @@ export default function NavBar({ email }) {
   return (
     <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-4xl items-center gap-2 px-4 py-3">
-        <Link href="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-2 text-lg font-bold tracking-tight text-zinc-900">
-          <span className="inline-block h-5 w-5 rounded bg-red-600" />
-          Betterservice
+        <Link href="/dashboard" onClick={() => setOpen(false)} className="flex shrink-0 items-center">
+          <img src="/logo.png" alt="Betterservice Te Puke" className="h-8 w-auto" />
         </Link>
 
         {/* Desktop nav */}

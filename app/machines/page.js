@@ -49,6 +49,11 @@ export default function MachinesPage() {
   const [editingId, setEditingId] = useState(null);
   const [ev, setEv] = useState({ customer_id: "", type: "ATV", make: "", model: "", vin: "", key_number: "" });
 
+  // Per-model parts history (lazy-loaded from parts_for_model()).
+  const [openParts, setOpenParts] = useState({});     // machine id -> open?
+  const [modelParts, setModelParts] = useState({});   // "make||model" -> rows
+  const [partsLoading, setPartsLoading] = useState({}); // key -> loading?
+
   async function loadData() {
     setLoading(true);
     const { data: m, error: mErr } = await supabase.from("machines").select("*, customers(name)").order("created_at", { ascending: false });
@@ -87,6 +92,19 @@ export default function MachinesPage() {
     const { error } = await supabase.from("machines").delete().eq("id", m.id);
     if (error) { setError("Couldn't remove that machine — it's still linked to job cards. Remove those jobs first."); return; }
     loadData();
+  }
+
+  const modelKey = (m) => `${(m.make || "").toLowerCase()}||${(m.model || "").toLowerCase()}`;
+  async function toggleParts(m) {
+    const isOpen = openParts[m.id];
+    setOpenParts((o) => ({ ...o, [m.id]: !isOpen }));
+    if (isOpen) return;
+    const key = modelKey(m);
+    if (modelParts[key]) return; // already loaded
+    setPartsLoading((l) => ({ ...l, [key]: true }));
+    const { data } = await supabase.rpc("parts_for_model", { p_make: m.make, p_model: m.model });
+    setModelParts((mp) => ({ ...mp, [key]: data || [] }));
+    setPartsLoading((l) => ({ ...l, [key]: false }));
   }
 
   const term = q.trim().toLowerCase();
@@ -159,16 +177,68 @@ export default function MachinesPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-medium text-zinc-900">{m.type} — {m.make} {m.model}</p>
-                      <p className="truncate text-sm text-zinc-500">{idLine(m) || "—"}</p>
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-zinc-900">{m.type} — {m.make} {m.model}</p>
+                        <p className="truncate text-sm text-zinc-500">{idLine(m) || "—"}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-3 text-sm">
+                        <button onClick={() => startEdit(m)} className="font-medium text-red-600 hover:text-red-700">edit</button>
+                        <button onClick={() => removeMachine(m)} className="text-zinc-500 hover:text-red-600">remove</button>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 gap-3 text-sm">
-                      <button onClick={() => startEdit(m)} className="font-medium text-red-600 hover:text-red-700">edit</button>
-                      <button onClick={() => removeMachine(m)} className="text-zinc-500 hover:text-red-600">remove</button>
-                    </div>
-                  </div>
+                    {(m.make || m.model) && (
+                      <div className="mt-2">
+                        <button onClick={() => toggleParts(m)} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">
+                          {openParts[m.id] ? "▾" : "▸"} Parts used on {m.make} {m.model}
+                        </button>
+                        {openParts[m.id] && (
+                          <div className="mt-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3">
+                            {partsLoading[modelKey(m)] ? (
+                              <p className="text-xs text-zinc-500">Loading…</p>
+                            ) : (modelParts[modelKey(m)] || []).length === 0 ? (
+                              <p className="text-xs text-zinc-500">No parts recorded yet for this make/model — they'll appear here as parts get added to jobs.</p>
+                            ) : (
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="text-left text-xs text-zinc-500">
+                                    <th className="pb-1 font-medium">Part</th>
+                                    <th className="pb-1 font-medium">Supplier</th>
+                                    <th className="pb-1 text-right font-medium">Times</th>
+                                    <th className="pb-1 text-right font-medium">Qty</th>
+                                    <th className="pb-1 text-right font-medium">Last used</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(modelParts[modelKey(m)] || []).map((p, i) => (
+                                    <tr key={i} className="border-t border-zinc-200/70 align-top">
+                                      <td className="py-1 pr-2 text-zinc-800">{p.description || "—"}</td>
+                                      <td className="py-1 pr-2 text-zinc-600">
+                                        {p.supplier ? (
+                                          <>
+                                            <span>{p.supplier}</span>
+                                            {p.supplier_phone && (
+                                              <a href={`tel:${String(p.supplier_phone).replace(/\s+/g, "")}`} className="block text-xs text-red-600 hover:underline">{p.supplier_phone}</a>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <span className="text-zinc-400">—</span>
+                                        )}
+                                      </td>
+                                      <td className="py-1 text-right tabular-nums text-zinc-600">{p.times_used}</td>
+                                      <td className="py-1 text-right tabular-nums text-zinc-600">{Number(p.total_qty)}</td>
+                                      <td className="py-1 text-right text-zinc-500">{p.last_used ? new Date(p.last_used).toLocaleDateString("en-NZ") : "—"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </li>
             ))}
