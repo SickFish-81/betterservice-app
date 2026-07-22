@@ -316,9 +316,10 @@ export default function JobDetailPage() {
   }
 
   async function generateInvoice() {
-    const { error } = await supabase.from("invoices").insert({ job_card_id: id, subtotal, gst, total, status: "Unpaid" });
+    // Totals are computed on the server from the job's own line items (never
+    // trusted from the browser); the function also flips the job to "Invoiced".
+    const { error } = await supabase.rpc("generate_invoice", { p_job_id: id });
     if (error) { setError(error.message); return; }
-    await supabase.from("job_cards").update({ status: "Invoiced" }).eq("id", id);
     load();
   }
 
@@ -363,16 +364,16 @@ export default function JobDetailPage() {
       y += 6;
     });
     y += 2; doc.line(120, y, 190, y); y += 6;
-    doc.text("Subtotal", 120, y); doc.text("$" + subtotal.toFixed(2), 190, y, { align: "right" }); y += 5;
-    doc.text("GST 15%", 120, y); doc.text("$" + gst.toFixed(2), 190, y, { align: "right" }); y += 6;
-    doc.setFontSize(12); doc.text("Total", 120, y); doc.text("$" + total.toFixed(2), 190, y, { align: "right" });
+    doc.text("Subtotal", 120, y); doc.text("$" + Number(invoice.subtotal).toFixed(2), 190, y, { align: "right" }); y += 5;
+    doc.text("GST 15%", 120, y); doc.text("$" + Number(invoice.gst).toFixed(2), 190, y, { align: "right" }); y += 6;
+    doc.setFontSize(12); doc.text("Total", 120, y); doc.text("$" + Number(invoice.total).toFixed(2), 190, y, { align: "right" });
 
     doc.save("Invoice-" + invNo(invoice.invoice_number) + ".pdf");
     const pdfBase64 = doc.output("datauristring").split("base64,")[1];
     // Pass our login token in the body so the function can file the PDF as a signed-in staff member.
     const { data: { session } } = await supabase.auth.getSession();
     const { data: res, error: fErr } = await supabase.functions.invoke("send-invoice", {
-      body: { to: job.customers?.email || null, customerName: job.customers?.name, invoiceNumber: invoice.invoice_number, total, pdfBase64, accessToken: session?.access_token || null },
+      body: { to: job.customers?.email || null, customerName: job.customers?.name, invoiceNumber: invoice.invoice_number, total: invoice.total, pdfBase64, accessToken: session?.access_token || null },
     });
     if (fErr || res?.error) {
       let detail = res?.error || (fErr && fErr.message) || "Unknown error";
@@ -380,7 +381,8 @@ export default function JobDetailPage() {
       setError("Couldn't file the invoice: " + detail);
       return;
     }
-    await supabase.from("invoices").update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath, subtotal, gst, total }).eq("id", invoice.id);
+    // Don't re-send client-side money — the invoice already holds the server-computed totals.
+    await supabase.from("invoices").update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath }).eq("id", invoice.id);
     if (job.machine_id) {
       const todayNZ = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" });
       await supabase.from("machines").update({ last_service_date: todayNZ }).eq("id", job.machine_id);
