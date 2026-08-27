@@ -58,6 +58,13 @@ export default function InvoiceViewPage() {
     setInvoice(inv); setJob(j || null); setItems(li || []); setSettings(st || null);
     setPayments(pays || []); setOwner(isOwner === true); setSenders(staff || []);
     setEmailTo(j?.customers?.email || "");
+
+    // Default "sent by" to whoever is signed in — that's the right answer almost
+    // every time, and it stops a send failing just because a dropdown was untouched.
+    const { data: { user } } = await supabase.auth.getUser();
+    const me = (staff || []).find((x) => (x.email || "").toLowerCase() === (user?.email || "").toLowerCase());
+    setSenderId((prev) => prev || me?.id || (staff || [])[0]?.id || "");
+
     setLoading(false);
   }
 
@@ -185,10 +192,10 @@ export default function InvoiceViewPage() {
                      className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-red-500 focus:outline-none" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-500">From</label>
+              <label className="block text-xs font-medium text-zinc-500">Sent by</label>
               <select value={senderId} onChange={(e) => setSenderId(e.target.value)}
                       className="mt-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-red-500 focus:outline-none">
-                <option value="">Who's sending…</option>
+                {senders.length === 0 && <option value="">No one can send invoices</option>}
                 {senders.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
@@ -199,8 +206,16 @@ export default function InvoiceViewPage() {
         )}
       </div>
 
-      {invoice.sent && (
+      {owner && (
         <p className="mt-2 text-xs text-zinc-500">
+          Sends from <span className="font-medium text-zinc-700">{settings?.invoice_bcc ? "admin@betterservice.co.nz" : "admin@betterservice.co.nz"}</span>
+          {settings?.invoice_bcc ? <> · a copy goes to <span className="font-medium text-zinc-700">{settings.invoice_bcc}</span></> : null}
+          {". "}
+          &ldquo;Sent by&rdquo; records who did it, for the audit trail.
+        </p>
+      )}
+      {invoice.sent && (
+        <p className="mt-1 text-xs text-zinc-500">
           Last sent {invoice.sent_at ? new Date(invoice.sent_at).toLocaleString("en-NZ") : "—"}.
         </p>
       )}
