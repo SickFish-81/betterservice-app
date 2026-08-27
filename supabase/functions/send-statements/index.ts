@@ -27,7 +27,7 @@ async function buildStatementPdf(shop: Record<string, string>, g: Record<string,
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   let y = 800;
   const draw = (t: string, x: number, size = 10, f = font) => page.drawText(String(t ?? ""), { x, y, size, font: f });
-  draw(shop?.business_name || "Betterservice Tepuke", 40, 18, bold); y -= 22;
+  draw(shop?.business_name || "Betterservice ATV", 40, 18, bold); y -= 22;
   if (shop?.address) { draw(shop.address, 40, 9); y -= 12; }
   if (shop?.phone) { draw(shop.phone, 40, 9); y -= 12; }
   if (shop?.gst_number) { draw("GST: " + shop.gst_number, 40, 9); y -= 12; }
@@ -70,13 +70,13 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: "Betterservice Tepuke <admin@betterservice.co.nz>",
+          from: "Betterservice ATV <admin@betterservice.co.nz>",
           to: [g.email],
-          subject: "Your account statement — Betterservice Tepuke",
+          subject: "Your account statement — Betterservice ATV",
           html: `<p>Hi ${g.customer_name || "there"},</p>` +
-            `<p>A quick statement of your account with Betterservice Tepuke: <strong>${money(Number(g.total_owing))}</strong> is currently outstanding across ${g.invoices.length} invoice(s). The full breakdown is attached as a PDF.</p>` +
+            `<p>A quick statement of your account with Betterservice ATV: <strong>${money(Number(g.total_owing))}</strong> is currently outstanding across ${g.invoices.length} invoice(s). The full breakdown is attached as a PDF.</p>` +
             `<p>Please arrange payment when you can, or reply to this email with any questions.</p>` +
-            `<p>Cheers,<br/>Betterservice Tepuke</p>`,
+            `<p>Cheers,<br/>Betterservice ATV</p>`,
           attachments: [{ filename: "Statement.pdf", content: pdf64 }],
         }),
       });

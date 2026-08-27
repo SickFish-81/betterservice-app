@@ -12,6 +12,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
 import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName, invNo } from "../../../lib/invoicePdf";
+import { PAYMENT_TERMS, termsLabel } from "../../../lib/paymentTerms";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const btn = "rounded-lg px-3 py-2 text-sm font-medium transition disabled:opacity-50";
@@ -34,6 +35,7 @@ export default function InvoiceViewPage() {
   const [docRef, setDocRef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
+  const [savingTerms, setSavingTerms] = useState(false);
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
   const [emailTo, setEmailTo] = useState("");
@@ -124,6 +126,20 @@ export default function InvoiceViewPage() {
     () => Math.round((Number(invoice?.total || 0) - paid) * 100) / 100,
     [invoice, paid],
   );
+
+  // Terms are stored, not held in the page — the database trigger derives due_date
+  // from them, so the PDF and every report agree without the browser doing sums.
+  async function changeTerms(next) {
+    if (!invoice || next === invoice.payment_terms) return;
+    if (invoice.sent && !window.confirm(
+      "This invoice has already been sent. Changing the terms changes the due date on any copy you print or email from now on — the customer's existing copy will still show the old date.\n\nChange it?"
+    )) return;
+    setSavingTerms(true); setError(null);
+    const { error } = await supabase.from("invoices").update({ payment_terms: next }).eq("id", invoice.id);
+    setSavingTerms(false);
+    if (error) { setError("Couldn't change the terms: " + error.message); return; }
+    load();
+  }
 
   function printIt() {
     // Print the PDF itself rather than the page around it, so what comes out of the
@@ -230,7 +246,32 @@ export default function InvoiceViewPage() {
         </dl>
       )}
 
-      <div className="mt-5 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+      {owner && (
+        <div className="mt-5 flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+          <div className="min-w-[15rem] flex-1">
+            <label className="block text-xs font-medium text-zinc-500">Payment terms</label>
+            <select
+              value={invoice.payment_terms || ""}
+              onChange={(e) => changeTerms(e.target.value)}
+              disabled={savingTerms}
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-red-500 focus:outline-none"
+            >
+              {PAYMENT_TERMS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+          </div>
+          <div className="pb-1.5">
+            <span className="block text-xs font-medium text-zinc-500">Due</span>
+            <span className="text-sm font-semibold text-zinc-900">
+              {invoice.due_date
+                ? new Date(invoice.due_date + "T00:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "long", year: "numeric" })
+                : "—"}
+            </span>
+          </div>
+          {savingTerms && <span className="pb-2 text-xs text-zinc-400">saving…</span>}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <button onClick={printIt} className={`${btn} bg-zinc-900 text-white hover:bg-zinc-700`}>Print</button>
         <button onClick={download} className={`${btn} border border-zinc-300 text-zinc-700 hover:bg-zinc-50`}>Download PDF</button>
 

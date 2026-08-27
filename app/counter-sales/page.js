@@ -84,7 +84,7 @@ export default function CounterSalePage() {
     import("jspdf").then(({ jsPDF }) => {
       const doc = new jsPDF();
       let y = 20;
-      doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice Te Puke", 20, y); y += 7;
+      doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice ATV", 20, y); y += 7;
       doc.setFontSize(10);
       if (settings?.address) { doc.text(settings.address, 20, y); y += 5; }
       if (settings?.phone) { doc.text("Ph: " + settings.phone, 20, y); y += 5; }

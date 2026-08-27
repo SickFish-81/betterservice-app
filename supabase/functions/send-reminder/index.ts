@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
       headers: { Authorization: `Bearer ${token}`, apikey: ANON_KEY },
     });
     const st = (sres.ok ? (await sres.json())[0] : null) || {};
-    const business = st.business_name || "Betterservice Tepuke";
+    const business = st.business_name || "Betterservice ATV";
     const vars = { customer: customerName, machine: machineLabel || "bike", business, phone: st.phone || "021 08327787" };
     const subject = applyTemplate(st.reminder_email_subject || DEFAULT_SUBJECT, vars);
     const html = toHtml(applyTemplate(st.reminder_email_body || DEFAULT_BODY, vars));

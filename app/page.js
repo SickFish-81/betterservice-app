@@ -33,7 +33,7 @@ export default function Home() {
           <div className="mx-auto max-w-5xl px-4 py-24 sm:py-32">
           <p className="text-sm font-semibold uppercase tracking-wider text-red-400">Te Puke · 25+ years</p>
           <h1 className="mt-3 max-w-2xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">Honest, Reliable ATV &amp; Motorcycle Service</h1>
-          <p className="mt-4 max-w-xl text-lg text-zinc-200">Servicing, Repairs and Quality Used ATVs from Craig at Betterservice Te Puke. Better Price, Better Advice, Better Bikes.</p>
+          <p className="mt-4 max-w-xl text-lg text-zinc-200">Servicing, Repairs and Quality Used ATVs from Craig at Betterservice ATV. Better Price, Better Advice, Better Bikes.</p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a href="tel:02108327787" className="rounded-lg bg-red-600 px-5 py-3 font-semibold text-white shadow-sm hover:bg-red-700">Call or text · 021 08327787</a>
             <Link href="/for-sale" className="rounded-lg border border-white/40 bg-white/5 px-5 py-3 font-semibold text-white backdrop-blur hover:bg-white/15">View used ATVs →</Link>
@@ -70,7 +70,7 @@ export default function Home() {
       {/* Contact */}
       <section id="contact" className="border-t border-zinc-200 bg-white">
         <div className="mx-auto grid max-w-5xl items-center gap-6 px-4 py-12 sm:grid-cols-[auto,1fr]">
-          <img src={LOGO} alt="Betterservice Te Puke" className="h-24 w-auto" />
+          <img src={LOGO} alt="Betterservice ATV" className="h-24 w-auto" />
           <div>
             <p className="text-zinc-700">556 Te Puke Highway, Te Puke</p>
             <p className="text-zinc-700">Phone / text: <a href="tel:02108327787" className="font-medium text-red-600 hover:underline">021 08327787</a></p>
@@ -78,7 +78,7 @@ export default function Home() {
             <p className="mt-3 text-sm text-zinc-500">Off-road motorcycle &amp; ATV specialists — servicing, repairs, used ATV sales, parts &amp; accessories.</p>
           </div>
         </div>
-        <div className="border-t border-zinc-100 py-6 text-center text-xs text-zinc-500">© Betterservice Te Puke</div>
+        <div className="border-t border-zinc-100 py-6 text-center text-xs text-zinc-500">© Betterservice ATV</div>
       </section>
     </main>
   );

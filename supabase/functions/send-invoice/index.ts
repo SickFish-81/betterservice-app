@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
       headers: { Authorization: `Bearer ${token}`, apikey: ANON_KEY },
     });
     const st = (sres.ok ? (await sres.json())[0] : null) || {};
-    const business = st.business_name || "Betterservice Tepuke";
+    const business = st.business_name || "Betterservice ATV";
     const vars = { customer: customerName, number: invNo, total: Number(total || 0).toFixed(2), business, phone: st.phone || "021 08327787" };
     // Where the shop's own copy goes. Ignored if it isn't a plausible address, so a
     // typo in Settings can never stop an invoice reaching the customer.

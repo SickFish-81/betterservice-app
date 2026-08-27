@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
     }
     const shop = (await (await sb("/rest/v1/shop_settings?id=eq.1&select=*")).json())[0] || {};
     const perDay = Math.max(0, Number(shop.reminders_per_day ?? 5));
-    const business = shop.business_name || "Betterservice Tepuke";
+    const business = shop.business_name || "Betterservice ATV";
     const phone = shop.phone || "021 08327787";
     const tpl = shop.sms_due_body || DEFAULT_DUE_BODY;
 

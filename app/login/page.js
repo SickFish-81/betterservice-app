@@ -30,7 +30,7 @@ export default function LoginPage() {
   return (
     <main className="mx-auto max-w-sm px-4 py-12">
       <div className="flex items-center gap-2">
-        <img src="/logo.png" alt="Betterservice Te Puke" className="h-12 w-auto" />
+        <img src="/logo.png" alt="Betterservice ATV" className="h-12 w-auto" />
       </div>
       <h1 className="mt-6 text-2xl font-bold tracking-tight text-zinc-900">Staff Sign In</h1>
       <p className="mt-1 text-sm text-zinc-600">The shop&apos;s back office.</p>

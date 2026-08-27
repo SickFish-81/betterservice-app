@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { PAYMENT_TERMS } from "../../lib/paymentTerms";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const area = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
@@ -56,7 +57,7 @@ export default function SettingsPage() {
     setError(null); setSaved(false);
     const { error } = await supabase.from("shop_settings").update({
       business_name: s.business_name, address: s.address, phone: s.phone,
-      gst_number: s.gst_number, bank_account: s.bank_account, invoice_bcc: s.invoice_bcc,
+      gst_number: s.gst_number, bank_account: s.bank_account, invoice_bcc: s.invoice_bcc, default_payment_terms: s.default_payment_terms,
       invoice_email_subject: s.invoice_email_subject, invoice_email_body: s.invoice_email_body,
       reminder_email_subject: s.reminder_email_subject, reminder_email_body: s.reminder_email_body,
       po_email_subject: s.po_email_subject, po_email_body: s.po_email_body,
@@ -78,11 +79,25 @@ export default function SettingsPage() {
         <p className="mt-6 text-sm text-red-600">{error || "Couldn't load settings."}</p>
       ) : (
         <form onSubmit={save} className="mt-6 flex flex-col gap-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <Field label="Business name" value={s.business_name} onChange={(e) => set("business_name", e.target.value)} placeholder="Betterservice Te Puke" />
+          <Field label="Business name" value={s.business_name} onChange={(e) => set("business_name", e.target.value)} placeholder="Betterservice ATV" />
           <Field label="Address" value={s.address} onChange={(e) => set("address", e.target.value)} placeholder="556 Te Puke Highway, Te Puke" />
           <Field label="Phone" value={s.phone} onChange={(e) => set("phone", e.target.value)} placeholder="021 08327787" />
           <Field label="GST number" value={s.gst_number} onChange={(e) => set("gst_number", e.target.value)} placeholder="e.g. 123-456-789" />
           <Field label="Bank account (for invoice payment)" value={s.bank_account} onChange={(e) => set("bank_account", e.target.value)} placeholder="e.g. 12-3456-7890123-00" />
+          <label className="block">
+            <span className="block text-sm font-medium text-zinc-700">Default payment terms</span>
+            <select
+              value={s.default_payment_terms || "twentieth"}
+              onChange={(e) => set("default_payment_terms", e.target.value)}
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+            >
+              {PAYMENT_TERMS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+          </label>
+          <p className="-mt-2 text-xs text-zinc-500">
+            Applied to new invoices. You can still change the terms on any individual invoice before sending it.
+          </p>
+
           <Field
             label="Send a copy of every invoice to"
             value={s.invoice_bcc}
