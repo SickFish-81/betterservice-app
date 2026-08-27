@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { PAYMENT_METHODS, DEFAULT_PAYMENT_METHOD } from "../../lib/paymentMethods";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const expNo = (n) => "EXP-" + String(n ?? 0).padStart(5, "0");
@@ -17,7 +18,7 @@ export default function BillsPage() {
   const [error, setError] = useState(null);
   const [payingId, setPayingId] = useState(null);
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("bank");
+  const [method, setMethod] = useState(DEFAULT_PAYMENT_METHOD);
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -99,10 +100,7 @@ export default function BillsPage() {
                     <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 p-3">
                       <input type="number" min="0" step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-28 rounded-lg border border-zinc-300 px-2 py-1.5 text-right" />
                       <select value={method} onChange={(e) => setMethod(e.target.value)} className="rounded-lg border border-zinc-300 px-2 py-1.5 text-sm">
-                        <option value="bank">Bank</option>
-                        <option value="cash">Cash</option>
-                        <option value="card">Card</option>
-                        <option value="other">Other</option>
+                        {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
                       </select>
                       <button onClick={() => pay(b)} disabled={busy} className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">{busy ? "Saving…" : "Record payment"}</button>
                       <button onClick={cancelPay} className="text-sm text-zinc-500 hover:underline">cancel</button>

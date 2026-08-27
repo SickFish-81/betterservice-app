@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
+import { PAYMENT_METHODS, DEFAULT_PAYMENT_METHOD } from "../../lib/paymentMethods";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const invNo = (n) => String(n ?? 0).padStart(4, "0");
@@ -15,6 +16,7 @@ export default function InvoicesPage() {
   const [error, setError] = useState(null);
   const [payingId, setPayingId] = useState(null);
   const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState(DEFAULT_PAYMENT_METHOD);
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -43,6 +45,7 @@ export default function InvoicesPage() {
     setError(null);
     setPayingId(inv.id);
     setPayAmount(balanceOf(inv).toFixed(2));
+    setPayMethod(DEFAULT_PAYMENT_METHOD);
   }
 
   async function recordPayment(inv) {
@@ -51,12 +54,12 @@ export default function InvoicesPage() {
     if (amt <= 0) { setError("Enter a payment amount."); return; }
     if (amt > balanceOf(inv) + 0.001) { setError("That's more than the balance owing (" + money(balanceOf(inv)) + ")."); return; }
     setBusy(true);
-    const { error } = await supabase.from("payments").insert({ invoice_id: inv.id, amount: amt });
+    const { error } = await supabase.from("payments").insert({ invoice_id: inv.id, amount: amt, method: payMethod });
     if (error) { setError("Couldn't record payment: " + error.message); setBusy(false); return; }
     if (paidOf(inv) + amt >= Number(inv.total) - 0.001 && inv.job_card_id) {
       await supabase.from("job_cards").update({ status: "Paid" }).eq("id", inv.job_card_id);
     }
-    setPayingId(null); setPayAmount(""); setBusy(false); load();
+    setPayingId(null); setPayAmount(""); setPayMethod(DEFAULT_PAYMENT_METHOD); setBusy(false); load();
   }
 
   const shown = filter === "unpaid" ? invoices.filter((i) => i.status !== "Paid") : invoices;
@@ -122,6 +125,9 @@ export default function InvoicesPage() {
                   <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-2">
                     <span className="text-sm text-zinc-600">Owing {money(bal)} — record</span>
                     <input value={payAmount} onChange={(e) => setPayAmount(e.target.value)} type="number" min="0" step="0.01" aria-label="Payment amount" className="w-28 rounded-lg border border-zinc-300 px-2 py-1 text-right text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+                    <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} aria-label="How it was paid" className="rounded-lg border border-zinc-300 px-2 py-1 text-sm text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100">
+                      {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
                     <button disabled={busy} onClick={() => recordPayment(inv)} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">{busy ? "…" : "Save payment"}</button>
                     <button onClick={() => { setPayingId(null); setPayAmount(""); }} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">Cancel</button>
                   </div>

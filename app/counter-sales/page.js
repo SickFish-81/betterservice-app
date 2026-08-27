@@ -4,13 +4,14 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { PAYMENT_METHODS, DEFAULT_PAYMENT_METHOD } from "../../lib/paymentMethods";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const saleNo = (n) => "CS-" + String(n ?? 0).padStart(5, "0");
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
-const METHODS = ["Cash", "Eftpos", "Card", "Bank transfer"];
+
 const emptyLine = () => ({ part_id: "", description: "", qty: "1", price: "" });
 
 export default function CounterSalePage() {
@@ -19,7 +20,7 @@ export default function CounterSalePage() {
   const [settings, setSettings] = useState(null);
   const [customerId, setCustomerId] = useState("");
   const [lines, setLines] = useState([emptyLine()]);
-  const [method, setMethod] = useState("Cash");
+  const [method, setMethod] = useState(DEFAULT_PAYMENT_METHOD);
   const [recent, setRecent] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -156,7 +157,7 @@ export default function CounterSalePage() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-zinc-600">Payment
             <select value={method} onChange={(e) => setMethod(e.target.value)} className="rounded-lg border border-zinc-300 px-2 py-1.5 text-sm">
-              {METHODS.map((m) => <option key={m}>{m}</option>)}
+              {PAYMENT_METHODS.map((m) => <option key={m}>{m}</option>)}
             </select>
           </label>
           <button onClick={complete} disabled={saving || total <= 0} className={btn + " ml-auto disabled:opacity-50"}>{saving ? "Saving…" : `Complete sale · ${money(total)}`}</button>
