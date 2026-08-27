@@ -30,6 +30,7 @@ export default function InvoiceViewPage() {
   const [senderId, setSenderId] = useState("");
 
   const [pdfUrl, setPdfUrl] = useState(null);
+  const [source, setSource] = useState(null);   // "filed" = the archived copy | "draft" = regenerated
   const [docRef, setDocRef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -70,19 +71,52 @@ export default function InvoiceViewPage() {
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
-  // Rebuild the PDF whenever the underlying data changes, and hand the frame a blob URL.
+  // Which PDF to show, and why it matters:
+  //
+  // Once an invoice has been sent, the file that went to the customer is archived in
+  // the private `invoices` bucket. THAT is the record. Re-drawing it from today's
+  // template would show a document the customer never received — and the template
+  // does change (the logo and text wrapping both changed on 27 Aug). An invoice
+  // carries a GST number, so the archive has to win over a pretty reproduction.
+  //
+  // So: show the filed copy when there is one. Only render fresh when there isn't
+  // (a draft, or an invoice generated before it was ever sent).
   useEffect(() => {
     let revoked = null;
+    let cancelled = false;
+
     (async () => {
       if (!invoice || !job) return;
+
+      // 1. The archived copy, if this invoice has been sent.
+      if (invoice.pdf_url) {
+        const { data, error } = await supabase.storage
+          .from("invoices")
+          .createSignedUrl(invoice.pdf_url, 3600);
+        if (!cancelled && !error && data?.signedUrl) {
+          setPdfUrl(data.signedUrl);
+          setSource("filed");
+          // Still build a document object so Download and Re-email have something
+          // to work with, but it is NOT what the frame is showing.
+          setDocRef(await buildInvoicePdf({ settings, invoice, job, items }));
+          return;
+        }
+        // Fall through if the file has gone missing — better a fresh render than
+        // an empty frame, as long as we say so.
+      }
+
+      // 2. Nothing filed: render from current data.
       const doc = await buildInvoicePdf({ settings, invoice, job, items });
+      if (cancelled) return;
       const url = pdfToObjectUrl(doc);
       revoked = url;
       setDocRef(doc);
       setPdfUrl(url);
+      setSource(invoice.pdf_url ? "missing" : "draft");
     })();
+
     // Blob URLs live until revoked; without this every reload leaks one.
-    return () => { if (revoked) URL.revokeObjectURL(revoked); };
+    return () => { cancelled = true; if (revoked) URL.revokeObjectURL(revoked); };
   }, [invoice, job, items, settings]);
 
   const paid = useMemo(() => payments.reduce((s, p) => s + Number(p.amount || 0), 0), [payments]);
@@ -100,7 +134,23 @@ export default function InvoiceViewPage() {
     w.print();
   }
 
-  function download() {
+  async function download() {
+    // Download whatever is on screen. If that's the archived copy, the customer's
+    // actual file is what lands in Downloads — not a re-render of it.
+    if (source === "filed" && pdfUrl) {
+      try {
+        const res = await fetch(pdfUrl);
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = invoiceFileName(invoice);
+        a.click();
+        URL.revokeObjectURL(a.href);
+        return;
+      } catch {
+        /* fall back to the rendered copy below */
+      }
+    }
     if (!docRef) return;
     docRef.save(invoiceFileName(invoice));
   }
@@ -222,7 +272,24 @@ export default function InvoiceViewPage() {
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       {note && <p className="mt-3 text-sm text-green-700">{note}</p>}
 
-      <h2 className="mt-6 text-sm font-semibold uppercase tracking-wide text-zinc-500">Exactly as it prints</h2>
+      <div className="mt-6 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+          {source === "filed" ? "The invoice as sent" : "Exactly as it prints"}
+        </h2>
+        {source === "filed" && (
+          <span className="text-xs text-zinc-500">
+            Archived copy — the actual file the customer received, not a re-render.
+          </span>
+        )}
+        {source === "draft" && (
+          <span className="text-xs text-zinc-500">Not sent yet — generated from current details.</span>
+        )}
+        {source === "missing" && (
+          <span className="text-xs text-amber-700">
+            The filed copy couldn&apos;t be opened, so this is a fresh render — it may differ from what was sent.
+          </span>
+        )}
+      </div>
       <div className="mt-2 overflow-hidden rounded-xl border border-zinc-300 bg-zinc-50 shadow-sm">
         {pdfUrl ? (
           <iframe ref={frame} src={pdfUrl} title={`Invoice ${invNo(invoice.invoice_number)}`} className="h-[80vh] w-full" />
