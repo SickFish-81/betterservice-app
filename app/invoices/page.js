@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
@@ -58,15 +59,6 @@ export default function InvoicesPage() {
     setPayingId(null); setPayAmount(""); setBusy(false); load();
   }
 
-  async function openPdf(p) {
-    setError(null);
-    if (!p) return;
-    if (p.startsWith("http")) { window.open(p, "_blank"); return; }
-    const { data, error } = await supabase.storage.from("invoices").createSignedUrl(p, 60);
-    if (error) { setError("Couldn’t open PDF: " + error.message); return; }
-    window.open(data.signedUrl, "_blank");
-  }
-
   const shown = filter === "unpaid" ? invoices.filter((i) => i.status !== "Paid") : invoices;
   const outstanding = invoices.filter((i) => i.status !== "Paid").reduce((s, i) => s + balanceOf(i), 0);
 
@@ -108,7 +100,10 @@ export default function InvoicesPage() {
               <li key={inv.id} className="p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-medium text-zinc-900">Invoice #{invNo(inv.invoice_number)} <span className="text-sm font-normal text-zinc-500">· {money(inv.total)}</span></p>
+                    <p className="font-medium text-zinc-900">
+                      <Link href={`/invoices/${inv.id}`} className="hover:underline">Invoice #{invNo(inv.invoice_number)}</Link>
+                      <span className="text-sm font-normal text-zinc-500"> · {money(inv.total)}</span>
+                    </p>
                     <p className="truncate text-sm text-zinc-500">
                       {inv.job?.customers?.name || "—"}
                       {inv.job?.job_number ? " · Job #" + inv.job.job_number : ""}
@@ -116,7 +111,7 @@ export default function InvoicesPage() {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
-                    {inv.pdf_url && <button onClick={() => openPdf(inv.pdf_url)} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">PDF</button>}
+                    <Link href={`/invoices/${inv.id}`} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">View</Link>
                     {badge(inv.status)}
                     {!paid && payingId !== inv.id && (
                       <button onClick={() => startPayment(inv)} className="rounded-md bg-zinc-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-zinc-700">Record payment</button>

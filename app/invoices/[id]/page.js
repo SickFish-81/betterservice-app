@@ -1,0 +1,220 @@
+"use client";
+
+// One invoice, shown as the real PDF — not an HTML lookalike.
+//
+// The document in the frame below is built by the SAME code that produced the file
+// the customer received (lib/invoicePdf.js). So "view", "print", "download" and
+// "email again" are all the same artefact, and none of them can drift from the
+// others as the app changes.
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { supabase } from "../../../lib/supabaseClient";
+import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName, invNo } from "../../../lib/invoicePdf";
+
+const money = (n) => "$" + Number(n || 0).toFixed(2);
+const btn = "rounded-lg px-3 py-2 text-sm font-medium transition disabled:opacity-50";
+
+export default function InvoiceViewPage() {
+  const { id } = useParams();
+  const router = useRouter();
+
+  const [invoice, setInvoice] = useState(null);
+  const [job, setJob] = useState(null);
+  const [items, setItems] = useState([]);
+  const [settings, setSettings] = useState(null);
+  const [payments, setPayments] = useState([]);
+  const [owner, setOwner] = useState(false);
+  const [senders, setSenders] = useState([]);
+  const [senderId, setSenderId] = useState("");
+
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [docRef, setDocRef] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState(null);
+  const [note, setNote] = useState(null);
+  const [emailTo, setEmailTo] = useState("");
+  const frame = useRef(null);
+
+  async function load() {
+    setError(null);
+    const [{ data: inv, error: iErr }, { data: st }, { data: isOwner }] = await Promise.all([
+      supabase.from("invoices").select("*").eq("id", id).maybeSingle(),
+      supabase.from("shop_settings").select("*").limit(1).maybeSingle(),
+      supabase.rpc("is_owner"),
+    ]);
+    if (iErr) { setError(iErr.message); setLoading(false); return; }
+    if (!inv) { setError("That invoice doesn't exist."); setLoading(false); return; }
+
+    const [{ data: j }, { data: li }, { data: pays }, { data: staff }] = await Promise.all([
+      supabase.from("job_cards").select("*, customers(*), machines(*)").eq("id", inv.job_card_id).maybeSingle(),
+      supabase.from("job_line_items").select("*").eq("job_card_id", inv.job_card_id).order("created_at"),
+      supabase.from("payments").select("*").eq("invoice_id", inv.id).order("created_at"),
+      supabase.from("staff").select("id,name,can_send_invoices,role").eq("can_send_invoices", true),
+    ]);
+
+    setInvoice(inv); setJob(j || null); setItems(li || []); setSettings(st || null);
+    setPayments(pays || []); setOwner(isOwner === true); setSenders(staff || []);
+    setEmailTo(j?.customers?.email || "");
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+
+  // Rebuild the PDF whenever the underlying data changes, and hand the frame a blob URL.
+  useEffect(() => {
+    let revoked = null;
+    (async () => {
+      if (!invoice || !job) return;
+      const doc = await buildInvoicePdf({ settings, invoice, job, items });
+      const url = pdfToObjectUrl(doc);
+      revoked = url;
+      setDocRef(doc);
+      setPdfUrl(url);
+    })();
+    // Blob URLs live until revoked; without this every reload leaks one.
+    return () => { if (revoked) URL.revokeObjectURL(revoked); };
+  }, [invoice, job, items, settings]);
+
+  const paid = useMemo(() => payments.reduce((s, p) => s + Number(p.amount || 0), 0), [payments]);
+  const balance = useMemo(
+    () => Math.round((Number(invoice?.total || 0) - paid) * 100) / 100,
+    [invoice, paid],
+  );
+
+  function printIt() {
+    // Print the PDF itself rather than the page around it, so what comes out of the
+    // printer is the document — no nav, no buttons, no browser styling.
+    const w = frame.current?.contentWindow;
+    if (!w) { setError("The invoice is still rendering — try again in a second."); return; }
+    w.focus();
+    w.print();
+  }
+
+  function download() {
+    if (!docRef) return;
+    docRef.save(invoiceFileName(invoice));
+  }
+
+  async function emailAgain() {
+    setError(null); setNote(null);
+    const to = emailTo.trim();
+    if (!to) { setError("No email address to send to."); return; }
+    if (!senderId) { setError("Choose who's sending it."); return; }
+    if (!docRef) { setError("The invoice is still rendering — try again in a second."); return; }
+    const already = invoice.sent
+      ? `This invoice was already sent${invoice.sent_at ? " on " + new Date(invoice.sent_at).toLocaleDateString("en-NZ") : ""}.\n\nSend it to ${to} again?`
+      : `Send invoice #${invNo(invoice.invoice_number)} to ${to}?`;
+    if (!window.confirm(already)) return;
+
+    setBusy("email");
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data: res, error: fErr } = await supabase.functions.invoke("send-invoice", {
+      body: {
+        to,
+        customerName: job?.customers?.name,
+        invoiceNumber: invoice.invoice_number,
+        total: invoice.total,
+        pdfBase64: pdfToBase64(docRef),
+        accessToken: session?.access_token || null,
+      },
+    });
+    setBusy("");
+    if (fErr || res?.error) {
+      let detail = res?.error || fErr?.message || "Unknown error";
+      try { if (fErr?.context?.json) { const b = await fErr.context.json(); if (b?.error) detail = b.error; } } catch (_e) {}
+      setError("Couldn't send it: " + detail);
+      return;
+    }
+    // Money is never re-sent from the browser — the invoice already holds the
+    // server-computed totals and the lock trigger would reject a change anyway.
+    await supabase.from("invoices")
+      .update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath })
+      .eq("id", invoice.id);
+    setNote(res.emailError ? `Filed, but the email didn't go: ${res.emailError}` : `Sent to ${to}.`);
+    load();
+  }
+
+  if (loading) return <main className="mx-auto max-w-3xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
+  if (error && !invoice) return (
+    <main className="mx-auto max-w-3xl px-4 py-8">
+      <p className="text-red-600">{error}</p>
+      <Link href="/invoices" className="mt-4 inline-block text-sm text-zinc-600 underline">Back to invoices</Link>
+    </main>
+  );
+
+  const status = balance <= 0 ? "Paid" : paid > 0 ? "Part paid" : "Unpaid";
+  const statusTone = balance <= 0 ? "bg-green-50 text-green-700" : paid > 0 ? "bg-amber-50 text-amber-800" : "bg-zinc-100 text-zinc-600";
+
+  return (
+    <main className="mx-auto max-w-3xl px-4 py-8">
+      <Link href="/invoices" className="text-sm text-zinc-500 hover:text-zinc-800">← Invoices</Link>
+
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">
+          Invoice #{invNo(invoice.invoice_number)}
+        </h1>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusTone}`}>{status}</span>
+      </div>
+
+      <p className="mt-1 text-zinc-600">
+        {job?.customers?.name || "—"}
+        {job?.job_number ? <> · <Link href={`/jobs/${job.id}`} className="underline hover:text-zinc-900">job #{job.job_number}</Link></> : null}
+        {invoice.issued_date ? ` · issued ${new Date(invoice.issued_date + "T00:00:00").toLocaleDateString("en-NZ")}` : ""}
+      </p>
+
+      {owner && (
+        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <div className="flex gap-2"><dt className="text-zinc-500">Total</dt><dd className="font-medium text-zinc-900">{money(invoice.total)}</dd></div>
+          <div className="flex gap-2"><dt className="text-zinc-500">Paid</dt><dd className="font-medium text-zinc-900">{money(paid)}</dd></div>
+          <div className="flex gap-2"><dt className="text-zinc-500">Balance</dt><dd className="font-medium text-zinc-900">{money(balance)}</dd></div>
+        </dl>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+        <button onClick={printIt} className={`${btn} bg-zinc-900 text-white hover:bg-zinc-700`}>Print</button>
+        <button onClick={download} className={`${btn} border border-zinc-300 text-zinc-700 hover:bg-zinc-50`}>Download PDF</button>
+
+        {owner && (
+          <>
+            <div className="min-w-[12rem] flex-1">
+              <label className="block text-xs font-medium text-zinc-500">Email to</label>
+              <input value={emailTo} onChange={(e) => setEmailTo(e.target.value)} type="email" placeholder="customer@example.com"
+                     className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-red-500 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-500">From</label>
+              <select value={senderId} onChange={(e) => setSenderId(e.target.value)}
+                      className="mt-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-red-500 focus:outline-none">
+                <option value="">Who's sending…</option>
+                {senders.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <button onClick={emailAgain} disabled={busy === "email"} className={`${btn} bg-red-600 text-white hover:bg-red-700`}>
+              {busy === "email" ? "Sending…" : invoice.sent ? "Email again" : "Email to customer"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {invoice.sent && (
+        <p className="mt-2 text-xs text-zinc-500">
+          Last sent {invoice.sent_at ? new Date(invoice.sent_at).toLocaleString("en-NZ") : "—"}.
+        </p>
+      )}
+      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {note && <p className="mt-3 text-sm text-green-700">{note}</p>}
+
+      <h2 className="mt-6 text-sm font-semibold uppercase tracking-wide text-zinc-500">Exactly as it prints</h2>
+      <div className="mt-2 overflow-hidden rounded-xl border border-zinc-300 bg-zinc-50 shadow-sm">
+        {pdfUrl ? (
+          <iframe ref={frame} src={pdfUrl} title={`Invoice ${invNo(invoice.invoice_number)}`} className="h-[80vh] w-full" />
+        ) : (
+          <p className="p-8 text-center text-sm text-zinc-500">Rendering the invoice…</p>
+        )}
+      </div>
+    </main>
+  );
+}

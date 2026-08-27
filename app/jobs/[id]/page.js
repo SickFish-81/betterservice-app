@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import { buildInvoicePdf, pdfToBase64, invoiceFileName } from "../../../lib/invoicePdf";
 import { useOwner } from "../../RoleContext";
 
 const STATUSES = ["New", "In progress", "Awaiting parts", "Ready", "Invoiced", "Paid"];
@@ -38,8 +39,10 @@ export default function JobDetailPage() {
   const [senderId, setSenderId] = useState("");
   const [labourDesc, setLabourDesc] = useState("");
   const [hours, setHours] = useState("1");
+  const [labourRate, setLabourRate] = useState("115");   // $/hr — editable, e.g. welding at 50
   const [partId, setPartId] = useState("");
   const [partQty, setPartQty] = useState("1");
+  const [partPrice, setPartPrice] = useState("");   // blank = use the part's own price
   const [newTask, setNewTask] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -176,9 +179,11 @@ export default function JobDetailPage() {
   async function addLabour(e) {
     e.preventDefault();
     if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
-    const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Math.max(0, Number(hours) || 0), unit_price: 115 });
+    const rate = Number(labourRate);
+    if (!Number.isFinite(rate) || rate < 0) { setError("Rate must be a number."); return; }
+    const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Math.max(0, Number(hours) || 0), unit_price: Math.round(rate * 100) / 100 });
     if (error) { setError(error.message); return; }
-    setLabourDesc(""); setHours("1"); load();
+    setLabourDesc(""); setHours("1"); setLabourRate("115"); load();
   }
 
   // Add a part FROM inventory, drawing it down from stock.
@@ -188,10 +193,15 @@ export default function JobDetailPage() {
     const part = parts.find((p) => p.id === partId);
     if (!part) { setError("Pick a part from inventory."); return; }
     const q = Math.max(0.01, Number(partQty) || 1);
+    // Blank price = bill the part's own price. A typed price applies to THIS job only
+    // and never changes the inventory record.
+    const priceEntered = partPrice.trim() !== "" && Number.isFinite(Number(partPrice));
+    const p = priceEntered ? Math.max(0, Number(partPrice)) : null;
+    if (partPrice.trim() !== "" && !priceEntered) { setError("Price must be a number."); return; }
     // Atomic in the DB: inserts the line item and draws stock down together (no read-then-write race).
-    const { error } = await supabase.rpc("add_part_to_job", { p_job_id: id, p_part_id: part.id, p_qty: q });
+    const { error } = await supabase.rpc("add_part_to_job", { p_job_id: id, p_part_id: part.id, p_qty: q, p_unit_price: p });
     if (error) { setError(error.message); return; }
-    setPartId(""); setPartQty("1"); load();
+    setPartId(""); setPartQty("1"); setPartPrice(""); load();
   }
 
   // Removing a stocked part puts it back on the shelf.
@@ -343,33 +353,11 @@ export default function JobDetailPage() {
   async function approveAndSend() {
     if (!senderId) { setError("Choose who's sending — must be an owner who can send invoices."); return; }
     setError(null);
-    const { jsPDF } = await import("jspdf");
-    const doc = new jsPDF();
-    let y = 20;
-    doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice Te Puke", 20, y); y += 7;
-    doc.setFontSize(10);
-    if (settings?.address) { doc.text(settings.address, 20, y); y += 5; }
-    if (settings?.phone) { doc.text("Ph: " + settings.phone, 20, y); y += 5; }
-    doc.text(["GST #: " + (settings?.gst_number || "-"), settings?.bank_account ? "Bank: " + settings.bank_account : ""].filter(Boolean).join("    "), 20, y); y += 12;
-    doc.setFontSize(14); doc.text("TAX INVOICE  #" + invNo(invoice.invoice_number), 20, y); y += 8;
-    doc.setFontSize(10);
-    doc.text("Date: " + new Date().toLocaleDateString("en-NZ"), 20, y); y += 6;
-    doc.text("Customer: " + (job.customers?.name || ""), 20, y); y += 5;
-    doc.text("Machine: " + [job.machines?.type, job.machines?.make, job.machines?.model].filter(Boolean).join(" "), 20, y); y += 10;
-    doc.line(20, y, 190, y); y += 6;
-    items.forEach((it) => {
-      const desc = (it.kind === "labour" ? "Labour: " : "") + (it.description || "") + "  (" + it.quantity + " x $" + Number(it.unit_price).toFixed(2) + ")";
-      doc.text(desc.substring(0, 70), 20, y);
-      doc.text("$" + Number(it.amount).toFixed(2), 190, y, { align: "right" });
-      y += 6;
-    });
-    y += 2; doc.line(120, y, 190, y); y += 6;
-    doc.text("Subtotal", 120, y); doc.text("$" + Number(invoice.subtotal).toFixed(2), 190, y, { align: "right" }); y += 5;
-    doc.text("GST 15%", 120, y); doc.text("$" + Number(invoice.gst).toFixed(2), 190, y, { align: "right" }); y += 6;
-    doc.setFontSize(12); doc.text("Total", 120, y); doc.text("$" + Number(invoice.total).toFixed(2), 190, y, { align: "right" });
-
-    doc.save("Invoice-" + invNo(invoice.invoice_number) + ".pdf");
-    const pdfBase64 = doc.output("datauristring").split("base64,")[1];
+    // One shared builder draws every invoice — see lib/invoicePdf.js. The view page
+    // uses the same one, so what you re-print is exactly what the customer got.
+    const doc = await buildInvoicePdf({ settings, invoice, job, items });
+    doc.save(invoiceFileName(invoice));
+    const pdfBase64 = pdfToBase64(doc);
     // Pass our login token in the body so the function can file the PDF as a signed-in staff member.
     const { data: { session } } = await supabase.auth.getSession();
     const { data: res, error: fErr } = await supabase.functions.invoke("send-invoice", {
@@ -426,7 +414,9 @@ export default function JobDetailPage() {
     setPickupMsg(`Texted ${picker.name} at ${picker.phone}.`);
   }
 
-  if (loading) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
+  // Only blank the page on the FIRST load. Re-fetching after an edit keeps the
+  // existing content mounted, so the browser holds your scroll position.
+  if (loading && !job) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
   if (!job) return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <Link href="/jobs" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">← Job Cards</Link>
@@ -637,14 +627,35 @@ export default function JobDetailPage() {
           <label className="block text-xs font-medium text-zinc-500">Hours</label>
           <input value={hours} onChange={(e) => setHours(e.target.value)} type="number" min="0" step="0.25" className={input} />
         </div>
-        {owner && <div className="pb-2 text-xs text-zinc-500">@ $115/hr</div>}
+        {owner && (
+          <div className="w-24">
+            <label className="block text-xs font-medium text-zinc-500">Rate $/hr</label>
+            <input
+              value={labourRate}
+              onChange={(e) => setLabourRate(e.target.value)}
+              type="number"
+              min="0"
+              step="0.01"
+              title="Standard rate is $115/hr. Change it for work charged differently — welding, sublet, a quoted rate."
+              className={input}
+            />
+          </div>
+        )}
         <button disabled={!!invoice} className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">Add labour</button>
       </form>
 
       <form onSubmit={addPart} className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="min-w-[10rem] flex-1">
           <label className="block text-xs font-medium text-zinc-500">Part (from inventory)</label>
-          <select value={partId} onChange={(e) => setPartId(e.target.value)} className={input}>
+          <select
+            value={partId}
+            onChange={(e) => {
+              setPartId(e.target.value);
+              const sel = parts.find((p) => p.id === e.target.value);
+              setPartPrice(sel ? String(sel.unit_price ?? "") : "");
+            }}
+            className={input}
+          >
             <option value="">Select a part…</option>
             {parts.map((p) => (<option key={p.id} value={p.id}>{p.name}{owner ? ` — ${money(p.unit_price)}` : ""} ({p.qty_on_hand} in stock)</option>))}
           </select>
@@ -653,6 +664,21 @@ export default function JobDetailPage() {
           <label className="block text-xs font-medium text-zinc-500">Qty</label>
           <input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min="0" step="0.01" className={input} />
         </div>
+        {owner && (
+          <div className="w-24">
+            <label className="block text-xs font-medium text-zinc-500">Price each</label>
+            <input
+              value={partPrice}
+              onChange={(e) => setPartPrice(e.target.value)}
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              title="Bills this job at this price. The part's price in inventory is unchanged."
+              className={input}
+            />
+          </div>
+        )}
         <button className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50" disabled={parts.length === 0 || !!invoice}>Add part</button>
         {parts.length === 0 && <p className="w-full text-xs text-amber-600">No parts in inventory yet — add some on the Parts page.</p>}
       </form>

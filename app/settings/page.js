@@ -56,7 +56,7 @@ export default function SettingsPage() {
     setError(null); setSaved(false);
     const { error } = await supabase.from("shop_settings").update({
       business_name: s.business_name, address: s.address, phone: s.phone,
-      gst_number: s.gst_number, bank_account: s.bank_account,
+      gst_number: s.gst_number, bank_account: s.bank_account, invoice_bcc: s.invoice_bcc,
       invoice_email_subject: s.invoice_email_subject, invoice_email_body: s.invoice_email_body,
       reminder_email_subject: s.reminder_email_subject, reminder_email_body: s.reminder_email_body,
       po_email_subject: s.po_email_subject, po_email_body: s.po_email_body,
@@ -83,6 +83,15 @@ export default function SettingsPage() {
           <Field label="Phone" value={s.phone} onChange={(e) => set("phone", e.target.value)} placeholder="021 08327787" />
           <Field label="GST number" value={s.gst_number} onChange={(e) => set("gst_number", e.target.value)} placeholder="e.g. 123-456-789" />
           <Field label="Bank account (for invoice payment)" value={s.bank_account} onChange={(e) => set("bank_account", e.target.value)} placeholder="e.g. 12-3456-7890123-00" />
+          <Field
+            label="Send a copy of every invoice to"
+            value={s.invoice_bcc}
+            onChange={(e) => set("invoice_bcc", e.target.value)}
+            placeholder="admin@betterservice.co.nz"
+          />
+          <p className="-mt-2 text-xs text-zinc-500">
+            A blind copy of each invoice email goes here, so the shop keeps its own record. The customer never sees this address. Leave it blank to stop the copies.
+          </p>
 
           <div className="border-t border-zinc-100 pt-4">
             <h2 className="text-lg font-semibold text-zinc-900">Message templates</h2>

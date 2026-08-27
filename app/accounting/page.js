@@ -35,7 +35,9 @@ export default function AccountingPage() {
   const inBank = bal("100");
   const owedToYou = bal("110");
 
-  if (loading) return <main className="mx-auto max-w-3xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
+  // Only blank the page on the FIRST load. Re-fetching after an edit keeps the
+  // existing content mounted, so the browser holds your scroll position.
+  if (loading && !data) return <main className="mx-auto max-w-3xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
   if (error === "owners") return (
     <main className="mx-auto max-w-3xl px-4 py-16 text-center">
       <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Accounting</h1>

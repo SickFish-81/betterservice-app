@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: `${business} <accounts@betterservice.co.nz>`, to: [to], subject, html }),
+      body: JSON.stringify({ from: `${business} <admin@betterservice.co.nz>`, to: [to], subject, html }),
     });
     const data = await r.json();
     if (!r.ok) return json({ error: data?.message || "Resend rejected the send." }, 400);

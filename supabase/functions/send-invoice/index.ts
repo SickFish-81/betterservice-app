@@ -60,6 +60,11 @@ Deno.serve(async (req) => {
     const st = (sres.ok ? (await sres.json())[0] : null) || {};
     const business = st.business_name || "Betterservice Tepuke";
     const vars = { customer: customerName, number: invNo, total: Number(total || 0).toFixed(2), business, phone: st.phone || "021 08327787" };
+    // Where the shop's own copy goes. Ignored if it isn't a plausible address, so a
+    // typo in Settings can never stop an invoice reaching the customer.
+    const bccRaw = String(st.invoice_bcc ?? "").trim();
+    const bcc = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(bccRaw) ? bccRaw : "";
+
     const subject = applyTemplate(st.invoice_email_subject || DEFAULT_SUBJECT, vars);
     const html = toHtml(applyTemplate(st.invoice_email_body || DEFAULT_BODY, vars));
 
@@ -71,8 +76,11 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: `${business} <accounts@betterservice.co.nz>`,
+          from: `${business} <admin@betterservice.co.nz>`,
           to: [to],
+          // Shop's own copy of every invoice sent. Blind, so the customer never sees
+          // it. Address lives in Settings (invoice_bcc) — blank it to stop the copies.
+          ...(bcc ? { bcc: [bcc] } : {}),
           subject,
           html,
           attachments: [{ filename: `Invoice-${invNo}.pdf`, content: pdfBase64 }],
@@ -87,7 +95,7 @@ Deno.serve(async (req) => {
       emailError = "No email on file for this customer — invoice filed but not emailed.";
     }
 
-    return json({ ok: true, pdfPath: path, emailId, emailError, emailed: !!emailId });
+    return json({ ok: true, pdfPath: path, emailId, emailError, emailed: !!emailId, copiedTo: emailId ? bcc || null : null });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }

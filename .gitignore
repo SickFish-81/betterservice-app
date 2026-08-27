@@ -48,3 +48,7 @@ build/
 .env*.local
 *.log
 /tmp/
+
+# database backups — real customer data, never commit
+/backups/
+*.sql.gz

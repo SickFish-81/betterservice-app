@@ -136,7 +136,9 @@ export default function PurchaseOrderDetail() {
     load();
   }
 
-  if (loading) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
+  // Only blank the page on the FIRST load. Re-fetching after an edit keeps the
+  // existing content mounted, so the browser holds your scroll position.
+  if (loading && !po) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
   if (error && !po) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-sm text-red-600" role="alert">{error}</p></main>;
   if (!po) return null;
   const canReceive = ["Draft", "Ordered", "Partially received"].includes(po.status);

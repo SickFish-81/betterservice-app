@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: "Betterservice Tepuke <accounts@betterservice.co.nz>",
+          from: "Betterservice Tepuke <admin@betterservice.co.nz>",
           to: [g.email],
           subject: "Your account statement — Betterservice Tepuke",
           html: `<p>Hi ${g.customer_name || "there"},</p>` +

@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: `${business} <accounts@betterservice.co.nz>`,
+        from: `${business} <admin@betterservice.co.nz>`,
         to: [to],
         subject,
         html,
