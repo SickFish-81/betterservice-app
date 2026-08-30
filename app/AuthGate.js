@@ -9,7 +9,7 @@ import AttentionBanner from "./AttentionBanner";
 import TimesheetNudge from "./TimesheetNudge";
 import { RoleContext } from "./RoleContext";
 
-const PUBLIC_EXACT = ["/", "/login", "/batteries"];
+const PUBLIC_EXACT = ["/", "/login", "/reset", "/batteries"];
 function isPublic(p) {
   return PUBLIC_EXACT.includes(p) || p === "/for-sale" || p.startsWith("/for-sale/");
 }
@@ -58,7 +58,7 @@ export default function AuthGate({ children }) {
 
   // Public pages — no login, public header (login page shows no nav).
   if (isPublic(pathname)) {
-    if (pathname === "/login") return children;
+    if (pathname === "/login" || pathname === "/reset") return children;
     return (<><PublicNav />{children}</>);
   }
 
