@@ -12,6 +12,7 @@ const cards = [
   { href: "/jobs", title: "Job Cards", desc: "Take a job from first contact to a filed invoice." },
   { href: "/counter-sales", title: "Counter Sale", desc: "Sell parts & accessories over the counter, no job card.", ownerOnly: true },
   { href: "/invoices", title: "Invoices", desc: "What's billed and what's still owing.", ownerOnly: true },
+  { href: "/rentals", title: "Rentals", desc: "Storage units & the shed — tenants, rent and holds.", ownerOnly: true },
   { href: "/bills", title: "Bills To Pay", desc: "Supplier bills owing — record payments.", badge: "bills", ownerOnly: true },
   { href: "/part-requests", title: "Parts Requests", desc: "Parts the team need ordered for jobs.", badge: "reqs", ownerOnly: true },
   { href: "/due", title: "Due For Service", desc: "Machines overdue for a service — chase them to book work." },
