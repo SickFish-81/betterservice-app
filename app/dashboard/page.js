@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import { useOwner } from "../RoleContext";
 
@@ -27,6 +28,13 @@ const cards = [
 export default function Dashboard() {
   const [att, setAtt] = useState(null);
   const owner = useOwner();
+  const router = useRouter();
+
+  // Clear the stored session, then send them to the sign-in page.
+  async function signOut() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
 
   useEffect(() => {
     (async () => {
@@ -54,6 +62,7 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Shop Dashboard</h1>
           <p className="mt-2 text-zinc-600">Betterservice ATV — back office.</p>
         </div>
+        <button onClick={signOut} className="ml-auto shrink-0 rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-red-50">Sign out</button>
       </div>
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
         {cards.filter((c) => !c.ownerOnly || owner).map((c) => {
