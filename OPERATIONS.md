@@ -117,4 +117,44 @@ cycle. The manual **pick-up text** (`send-sms`) is already wired on the job card
 
 ---
 
+## 5. Automatic rent invoices — deploy, dry-run, then schedule
+
+`generate-rental-invoices` bills the ten units and the shed. Rent is issued three
+days before the month it covers (29 Aug for 1 Sep) and due on the 1st, collected by
+automatic payment. Rates are held **GST-inclusive** on the agreement; the generator
+extracts GST at 3/23 rather than adding 15%, so the invoice total is exactly the
+agreed rent.
+
+To switch it on:
+
+1. **Deploy it** — `supabase functions deploy generate-rental-invoices`.
+2. **Secrets** — needs `CRON_SECRET` and `RESEND_API_KEY` (both already set for
+   statements). `SUPABASE_SERVICE_ROLE_KEY` is provided by the platform.
+3. **Enter the tenancies** under Rentals in the app: unit, tenant, monthly rent,
+   start date. Tenants must exist under Customers first, with an email address —
+   no email means the invoice is created but not sent.
+4. **Dry run first** — add `?dry=1` and it reports exactly what it would invoice
+   and to whom, without creating or sending anything:
+
+   ```
+   curl -s -H "x-cron-secret: $CRON_SECRET" \
+     "https://vdwssiefdhmepdgkuoxd.supabase.co/functions/v1/generate-rental-invoices?dry=1"
+   ```
+
+5. **Schedule it daily** — in Supabase, add a Cron schedule calling the function
+   once a day with the header `x-cron-secret: <CRON_SECRET>`.
+
+Daily, not monthly, is deliberate: it works a +/- 3 day window around each period
+start, so a failed run heals itself the next morning, and the unique index on
+(agreement, period) means the same rent can never be billed twice. A once-a-month
+job that fails is a month of rent never invoiced.
+
+Each run emails a summary of what went out to the `invoice_bcc` address in Settings.
+With auto-send that summary is the only safety net — read it.
+
+To stop billing one unit, tick **on hold** on its tenancy, or set an end date. A
+tenancy with an end date in the past is never billed again.
+
+---
+
 *Keep this updated as services or keys change.*
