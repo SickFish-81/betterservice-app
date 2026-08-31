@@ -55,3 +55,6 @@ build/
 
 # scratch folder for files staged for deletion
 _to_delete/
+
+# Supabase CLI working state
+supabase/.temp/
