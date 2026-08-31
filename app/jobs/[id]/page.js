@@ -358,6 +358,16 @@ export default function JobDetailPage() {
   }
 
   // Flag a part the job needs ordered — lands in Craig's Parts Requests queue.
+  // Hand the job to Craig. Everyone can do this, owners included — Craig can
+  // invoice straight from here, but if he's worked the job himself the button
+  // shouldn't vanish on him.
+  async function sendForApproval() {
+    setError(null);
+    const { error } = await supabase.rpc("mark_job_ready", { p_job_id: id });
+    if (error) { setError(error.message); return; }
+    load();
+  }
+
   async function generateInvoice() {
     // Time logged but never billed is money given away — job 10 went out with
     // 2.38 h on it and no labour at all. Don't let that happen silently.
@@ -476,6 +486,7 @@ export default function JobDetailPage() {
   const unbilledEntries = timeEntries.filter((t) => !t.billed && !(t.started_at && !t.ended_at) && Number(t.hours) > 0);
   const unbilledHours = Math.round(unbilledEntries.reduce((sum, t) => sum + Number(t.hours || 0), 0) * 100) / 100;
 
+  const readyByName = (staff || []).find((x) => x.id === job?.ready_by)?.name || "";
   const markupPct = Number(settings?.parts_markup_percent ?? 30);
 
   return (
@@ -826,6 +837,25 @@ export default function JobDetailPage() {
           <input type="file" accept="image/*" capture="environment" onChange={uploadPhoto} className="hidden" disabled={uploading} />
         </label>
       </div>
+
+      {job.status !== "Invoiced" && job.status !== "Paid" && (
+        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+          {job.status === "Ready" ? (
+            <p className="text-sm text-zinc-600">
+              <span className="font-medium text-violet-700">Sent to Craig for approval</span>
+              {job.ready_at ? ` · ${new Date(job.ready_at).toLocaleString("en-NZ", { dateStyle: "medium", timeStyle: "short" })}` : ""}
+              {readyByName ? ` · by ${readyByName}` : ""}
+            </p>
+          ) : (
+            <>
+              <button onClick={sendForApproval} className="w-full rounded-lg bg-violet-600 px-4 py-2.5 font-medium text-white hover:bg-violet-700">
+                Send to Craig for approval
+              </button>
+              <p className="mt-2 text-xs text-zinc-500">Marks the job Ready and puts it in front of Craig so it can be invoiced.</p>
+            </>
+          )}
+        </div>
+      )}
 
       {owner && (<>
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Invoice</h2>

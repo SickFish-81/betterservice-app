@@ -27,6 +27,7 @@ export default function AttentionBanner() {
 
   const chips = [];
   const plural = (n) => (n > 1 ? "s" : "");
+  if (s.jobs_ready > 0) chips.push({ href: "/jobs", label: `${s.jobs_ready} job${plural(s.jobs_ready)} ready to invoice`, tone: "red" });
   if (s.bookings_new > 0) chips.push({ href: "/bookings", label: `${s.bookings_new} booking request${plural(s.bookings_new)} from the website`, tone: "red" });
   if (s.bills_count > 0) chips.push({ href: "/bills", label: `${s.bills_count} bill${plural(s.bills_count)} to pay · ${money(s.bills_total)}`, tone: "red" });
   if (s.invoices_unpaid > 0) chips.push({ href: "/invoices", label: `${s.invoices_unpaid} invoice${plural(s.invoices_unpaid)} unpaid`, tone: "amber" });
