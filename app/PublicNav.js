@@ -15,7 +15,7 @@ export default function PublicNav() {
         <nav className="flex flex-wrap items-center gap-4 text-sm font-medium text-zinc-600">
           <Link href="/for-sale" className="hover:text-zinc-900">Used ATVs</Link>
           <Link href="/batteries" className="hover:text-zinc-900">Batteries</Link>
-          <a href="/#contact" className="hover:text-zinc-900">Book a service</a>
+          <Link href="/book" className="hover:text-zinc-900">Book a service</Link>
           <a href="https://flipbikes.co.nz" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-900">Flip Bikes</a>
         </nav>
         <div className="ml-auto">
