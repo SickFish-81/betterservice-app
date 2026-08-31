@@ -78,7 +78,15 @@ async function buildInvoicePdf(shop: Record<string, string>, inv: Record<string,
   page.drawText("Due " + nzDate(inv.due_date), { x: 400, y, size: 10, font });
   y -= 20;
 
-  draw("To: " + (customer?.name || ""), 40, 11, bold); y -= 14;
+  // Addressed to whoever pays. A unit let to a business is invoiced to the
+  // business, with the person as the contact — same rule as job card invoices.
+  const billedTo = String(customer?.company_name ?? "").trim();
+  if (billedTo) {
+    draw("To: " + billedTo, 40, 11, bold); y -= 13;
+    draw("Attn: " + (customer?.name || ""), 40, 9); y -= 12;
+  } else {
+    draw("To: " + (customer?.name || ""), 40, 11, bold); y -= 14;
+  }
   if (customer?.address) { draw(customer.address, 40, 9); y -= 12; }
   y -= 10;
 
@@ -115,7 +123,7 @@ Deno.serve(async (req) => {
     const business = shop.business_name || "Betterservice ATV";
 
     const agreements = await (await sb(
-      "/rest/v1/rental_agreements?select=id,on_hold,start_date,end_date,monthly_rate_incl_gst,lease_pdf_path,lease_sent_at,customers(name,email,address),rental_units(name)"
+      "/rest/v1/rental_agreements?select=id,on_hold,start_date,end_date,monthly_rate_incl_gst,lease_pdf_path,lease_sent_at,customers(name,email,address,company_name),rental_units(name)"
     )).json();
     if (!Array.isArray(agreements)) return json({ error: "Couldn't read agreements", detail: agreements }, 500);
 
