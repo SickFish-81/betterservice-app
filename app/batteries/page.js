@@ -36,8 +36,8 @@ export default function Batteries() {
       <section className="bg-zinc-900 text-white">
         <div className="mx-auto max-w-5xl px-4 py-16">
           <p className="text-sm font-semibold uppercase tracking-wider text-red-400">In stock now</p>
-          <h1 className="mt-2 text-4xl font-bold tracking-tight sm:text-5xl">Neuton Power Batteries</h1>
-          <p className="mt-4 max-w-2xl text-lg text-zinc-300">Cheap, quality AGM &amp; lithium batteries — ATVs, side-by-sides, motorcycles, mowers, cars, 4x4s, tractors and marine. Ready to go at Betterservice ATV.</p>
+          <h1 className="mt-2 text-4xl font-bold tracking-tight sm:text-5xl">Bosch Batteries</h1>
+          <p className="mt-4 max-w-2xl text-lg text-zinc-300">Bosch AGM &amp; lithium batteries — ATVs, side-by-sides, motorcycles, mowers, cars, 4x4s, tractors and marine. Fitted and ready to go at Betterservice ATV.</p>
           <a href="tel:02108327787" className="mt-7 inline-block rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700">Call or text · 021 08327787</a>
         </div>
       </section>
@@ -57,10 +57,10 @@ export default function Batteries() {
             ))}
           </div>
           <div>
-            <img src={PRODUCT_IMG} alt="Neuton Power Batteries" className="w-full rounded-xl border border-zinc-200 bg-white object-contain" />
+            <img src={PRODUCT_IMG} alt="Bosch batteries" className="w-full rounded-xl border border-zinc-200 bg-white object-contain" />
             <div className="mt-4 rounded-xl border border-red-100 bg-red-50 p-5">
               <p className="font-semibold text-zinc-900">Not sure which one?</p>
-              <p className="mt-1 text-sm text-zinc-700">Tell Craig your make and model and he'll sort the right battery — most are in stock and ready to fit.</p>
+              <p className="mt-1 text-sm text-zinc-700">Tell Craig your make and model and he\u2019ll sort the right Bosch battery \u2014 most are in stock and ready to fit.</p>
               <a href="tel:02108327787" className="mt-3 inline-block rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700">Call or text Craig</a>
             </div>
           </div>
