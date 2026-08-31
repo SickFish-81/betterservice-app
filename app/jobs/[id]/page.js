@@ -49,6 +49,9 @@ export default function JobDetailPage() {
   const [ordSupplier, setOrdSupplier] = useState("");
   const [ordRef, setOrdRef] = useState("");
   const [stopping, setStopping] = useState(null);   // entry awaiting a stop confirmation
+  const [editLine, setEditLine] = useState(null);   // line item being repriced
+  const [lineQty, setLineQty] = useState("");
+  const [linePrice, setLinePrice] = useState("");
   const [suppliers, setSuppliers] = useState([]);
   const [newTask, setNewTask] = useState("");
   const [templateId, setTemplateId] = useState("");
@@ -195,6 +198,28 @@ export default function JobDetailPage() {
   // A part ordered in from a supplier for this job — not stock, so nothing is
   // drawn down. Craig enters what it cost; the database applies the shop's
   // markup and works out the charge, so the sum is done in one place.
+  function startEditLine(it) {
+    setEditLine(it.id);
+    setLineQty(String(it.quantity ?? ""));
+    setLinePrice(String(it.unit_price ?? ""));
+    setError(null);
+  }
+
+  // Reprice a line already on the job — a quoted rate, a discount, a price that
+  // came out wrong. The line total recalculates itself in the database, and the
+  // job's lock trigger refuses the change outright once an invoice exists.
+  async function saveLine(it) {
+    const q = Number(lineQty);
+    const pr = Number(linePrice);
+    if (!(q > 0)) { setError("Quantity must be more than zero."); return; }
+    if (!Number.isFinite(pr) || pr < 0) { setError("Price must be a number."); return; }
+    const { error } = await supabase.from("job_line_items")
+      .update({ quantity: q, unit_price: Math.round(pr * 100) / 100 })
+      .eq("id", it.id);
+    if (error) { setError(error.message); return; }
+    setEditLine(null); setError(null); load();
+  }
+
   async function addOrderedPart(e) {
     e.preventDefault();
     if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
@@ -700,7 +725,8 @@ export default function JobDetailPage() {
         ) : (
           <ul className="divide-y divide-zinc-100">
             {items.map((it) => (
-              <li key={it.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+              <li key={it.id} className="p-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
                 <span className="text-zinc-800">
                   <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-medium uppercase text-zinc-500">{it.kind}</span>
                   <span className="ml-2 font-medium text-zinc-900">{it.description}</span>
@@ -711,8 +737,25 @@ export default function JobDetailPage() {
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   {owner && <span className="font-semibold text-zinc-900">{money(it.amount)}</span>}
+                  {owner && !invoice && <button onClick={() => (editLine === it.id ? setEditLine(null) : startEditLine(it))} className="text-xs text-zinc-600 hover:underline">{editLine === it.id ? "cancel" : "edit"}</button>}
                   {!invoice && <button onClick={() => removeItem(it)} className="text-xs text-red-500 hover:underline">remove</button>}
                 </span>
+                </div>
+
+                {editLine === it.id && owner && !invoice && (
+                  <div className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                    <label className="w-24 text-xs font-medium text-zinc-600">Qty / hours
+                      <input value={lineQty} onChange={(e) => setLineQty(e.target.value)} type="number" min="0" step="0.01" className={input} />
+                    </label>
+                    <label className="w-28 text-xs font-medium text-zinc-600">Unit price
+                      <input value={linePrice} onChange={(e) => setLinePrice(e.target.value)} type="number" min="0" step="0.01" className={input} />
+                    </label>
+                    <p className="pb-2 text-xs text-zinc-500">
+                      = <span className="font-semibold text-zinc-800">{money((Number(lineQty) || 0) * (Number(linePrice) || 0))}</span> before GST
+                    </p>
+                    <button onClick={() => saveLine(it)} className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700">Save</button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
