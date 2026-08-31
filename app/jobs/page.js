@@ -22,6 +22,10 @@ export default function JobsPage() {
   const [machines, setMachines] = useState([]);
   const [customerId, setCustomerId] = useState("");
   const [machineId, setMachineId] = useState("");
+  const [addingMachine, setAddingMachine] = useState(false);
+  const [nmType, setNmType] = useState("ATV");
+  const [nmMake, setNmMake] = useState("");
+  const [nmModel, setNmModel] = useState("");
   const [problem, setProblem] = useState("");
   const [source, setSource] = useState("Phone");
   const [loading, setLoading] = useState(true);
@@ -43,6 +47,24 @@ export default function JobsPage() {
   useEffect(() => { loadData(); }, []);
 
   const machinesForCustomer = machines.filter((m) => m.customer_id === customerId);
+
+  // A customer turning up with a bike that isn't on file used to mean leaving
+  // this page, adding it under Machines, and starting the job card again. Add
+  // it here instead, and select it.
+  async function addMachineInline() {
+    if (!customerId) { setError("Pick a customer first."); return; }
+    if (!nmMake.trim() && !nmModel.trim()) { setError("Give the machine a make or model."); return; }
+    const { data, error } = await supabase
+      .from("machines")
+      .insert({ customer_id: customerId, type: nmType.trim() || "ATV", make: nmMake.trim(), model: nmModel.trim() })
+      .select("id, customer_id, type, make, model")
+      .single();
+    if (error) { setError(error.message); return; }
+    setMachines((prev) => [...prev, data]);
+    setMachineId(data.id);
+    setNmMake(""); setNmModel(""); setAddingMachine(false); setError(null);
+  }
+
 
   async function addJob(e) {
     e.preventDefault();
@@ -117,8 +139,22 @@ export default function JobsPage() {
                   <option value="">{customerId ? "Select machine…" : "Pick a customer first"}</option>
                   {machinesForCustomer.map((m) => (<option key={m.id} value={m.id}>{m.type} — {m.make} {m.model}</option>))}
                 </select>
-                <Link href="/machines" title="Add a new machine" className="flex shrink-0 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50">+ New</Link>
+                <button type="button" onClick={() => { setAddingMachine((v) => !v); setError(null); }} disabled={!customerId} title="Add a new machine for this customer" className="flex shrink-0 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">{addingMachine ? "cancel" : "+ New"}</button>
               </div>
+              {addingMachine && customerId && (
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                  <p className="mb-2 text-xs font-medium text-zinc-600">New machine for this customer</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <input value={nmType} onChange={(e) => setNmType(e.target.value)} placeholder="Type" list="nm-types" className={input} />
+                    <input value={nmMake} onChange={(e) => setNmMake(e.target.value)} placeholder="Make" list="nm-makes" className={input} />
+                    <input value={nmModel} onChange={(e) => setNmModel(e.target.value)} placeholder="Model" list="nm-models" className={input} />
+                  </div>
+                  <datalist id="nm-types">{[...new Set(machines.map((m) => m.type).filter(Boolean))].map((v) => <option key={v} value={v} />)}</datalist>
+                  <datalist id="nm-makes">{[...new Set(machines.map((m) => m.make).filter(Boolean))].map((v) => <option key={v} value={v} />)}</datalist>
+                  <datalist id="nm-models">{[...new Set(machines.map((m) => m.model).filter(Boolean))].map((v) => <option key={v} value={v} />)}</datalist>
+                  <button type="button" onClick={addMachineInline} className="mt-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700">Add machine</button>
+                </div>
+              )}
               <textarea value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="What's the problem / what needs doing?" rows={2} className={input} />
               <select value={source} onChange={(e) => setSource(e.target.value)} className={input}>
                 <option>Phone</option>
