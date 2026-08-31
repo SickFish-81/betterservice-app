@@ -46,6 +46,9 @@ export default function JobDetailPage() {
   const [ordDesc, setOrdDesc] = useState("");
   const [ordQty, setOrdQty] = useState("1");
   const [ordCost, setOrdCost] = useState("");
+  const [ordSupplier, setOrdSupplier] = useState("");
+  const [ordRef, setOrdRef] = useState("");
+  const [suppliers, setSuppliers] = useState([]);
   const [newTask, setNewTask] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -74,11 +77,6 @@ export default function JobDetailPage() {
   const [timeNote, setTimeNote] = useState("");
   const [nowTs, setNowTs] = useState(Date.now());
   const [arrivedParts, setArrivedParts] = useState([]);
-  const [partRequests, setPartRequests] = useState([]);
-  const [reqPartId, setReqPartId] = useState("");
-  const [reqDesc, setReqDesc] = useState("");
-  const [reqQty, setReqQty] = useState("1");
-  const [reqNote, setReqNote] = useState("");
 
   const [editing, setEditing] = useState(false);
   const [eCustomer, setECustomer] = useState("");
@@ -105,14 +103,14 @@ export default function JobDetailPage() {
       { data: cl },
       { data: ph },
       { data: te },
+      { data: sup },
       { data: ap },
-      { data: prq },
       { data: cust },
       { data: mach },
       { data: st },
     ] = await Promise.all([
       supabase.from("job_cards").select("*, customers(name, phone, email, address), machines(type, make, model, vin, key_number)").eq("id", id).single(),
-      supabase.from("job_line_items").select("*").eq("job_card_id", id).order("created_at"),
+      supabase.from("job_line_items").select("*, suppliers(name)").eq("job_card_id", id).order("created_at"),
       supabase.from("staff").select("id, name, can_send_invoices").order("name"),
       supabase.from("invoices").select("*").eq("job_card_id", id).order("created_at", { ascending: false }).limit(1),
       supabase.from("parts").select("*").order("name"),
@@ -120,8 +118,8 @@ export default function JobDetailPage() {
       supabase.from("job_checklist_items").select("*").eq("job_card_id", id).order("position"),
       supabase.from("job_photos").select("*").eq("job_card_id", id).order("created_at"),
       supabase.from("job_time_entries").select("*, staff(name)").eq("job_card_id", id).order("created_at"),
+      supabase.from("suppliers").select("id, name").order("name"),
       supabase.from("purchase_order_items").select("*, parts(name, unit_price), purchase_orders!inner(po_number, status)").eq("job_card_id", id).is("accepted_at", null).eq("purchase_orders.status", "Received").gt("qty_received", 0),
-      supabase.from("part_requests").select("*, parts(name)").eq("job_card_id", id).order("created_at", { ascending: false }),
       supabase.from("customers").select("id, name").order("name"),
       supabase.from("machines").select("id, customer_id, type, make, model"),
       supabase.from("shop_settings").select("*").eq("id", 1).single(),
@@ -136,8 +134,8 @@ export default function JobDetailPage() {
     setChecklist(cl || []);
     setPhotos(ph || []);
     setTimeEntries(te || []);
+    setSuppliers(sup || []);
     setArrivedParts(ap || []);
-    setPartRequests(prq || []);
     setCustomers(cust || []);
     setMachines(mach || []);
     setSettings(st || null);
@@ -206,9 +204,10 @@ export default function JobDetailPage() {
     if (!Number.isFinite(c) || c < 0) { setError("Enter what the part cost you."); return; }
     const { error } = await supabase.rpc("add_ordered_part_to_job", {
       p_job_id: id, p_description: ordDesc.trim(), p_qty: q, p_cost: c,
+      p_supplier_id: ordSupplier || null, p_supplier_ref: ordRef.trim() || null,
     });
     if (error) { setError(error.message); return; }
-    setOrdDesc(""); setOrdQty("1"); setOrdCost(""); setError(null); load();
+    setOrdDesc(""); setOrdQty("1"); setOrdCost(""); setOrdRef(""); setError(null); load();
   }
 
   // Add a part FROM inventory, drawing it down from stock.
@@ -359,21 +358,6 @@ export default function JobDetailPage() {
   }
 
   // Flag a part the job needs ordered — lands in Craig's Parts Requests queue.
-  async function requestPart(e) {
-    e.preventDefault();
-    const part = parts.find((p) => p.id === reqPartId);
-    const desc = part ? part.name : reqDesc.trim();
-    if (!desc) { setError("Pick a part or type what's needed."); return; }
-    const { error } = await supabase.from("part_requests").insert({ job_card_id: id, part_id: reqPartId || null, description: desc, quantity: Math.max(0.01, Number(reqQty) || 1), note: reqNote || null });
-    if (error) { setError(error.message); return; }
-    setReqPartId(""); setReqDesc(""); setReqQty("1"); setReqNote(""); load();
-  }
-
-  async function cancelRequest(r) {
-    await supabase.from("part_requests").update({ status: "Cancelled" }).eq("id", r.id);
-    load();
-  }
-
   async function generateInvoice() {
     // Time logged but never billed is money given away — job 10 went out with
     // 2.38 h on it and no labour at all. Don't let that happen silently.
@@ -682,6 +666,9 @@ export default function JobDetailPage() {
                   <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-medium uppercase text-zinc-500">{it.kind}</span>
                   <span className="ml-2 font-medium text-zinc-900">{it.description}</span>
                   <span className="ml-2 text-zinc-500">{owner ? `${it.quantity} × ${money(it.unit_price)}` : `×${it.quantity}`}</span>
+                  {it.suppliers?.name && (
+                    <span className="ml-2 text-xs text-zinc-400">from {it.suppliers.name}{it.supplier_ref ? ` · ${it.supplier_ref}` : ""}</span>
+                  )}
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   {owner && <span className="font-semibold text-zinc-900">{money(it.amount)}</span>}
@@ -739,6 +726,17 @@ export default function JobDetailPage() {
             </label>
             <label className="w-28 text-xs font-medium text-zinc-600">Cost each
               <input value={ordCost} onChange={(e) => setOrdCost(e.target.value)} type="number" min="0" step="0.01" placeholder="what you paid" className={input} />
+            </label>
+          </div>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <label className="min-w-[10rem] flex-1 text-xs font-medium text-zinc-600">Supplier
+              <select value={ordSupplier} onChange={(e) => setOrdSupplier(e.target.value)} className={input}>
+                <option value="">Not recorded</option>
+                {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+              </select>
+            </label>
+            <label className="w-40 text-xs font-medium text-zinc-600">Their invoice / docket
+              <input value={ordRef} onChange={(e) => setOrdRef(e.target.value)} placeholder="optional" className={input} />
             </label>
             <button type="submit" className="rounded-lg bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-700">Add part</button>
           </div>
@@ -810,36 +808,6 @@ export default function JobDetailPage() {
           </div>
         </>
       )}
-
-      <h2 className="mt-6 text-lg font-semibold text-zinc-900">Request a part</h2>
-      <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        {partRequests.length > 0 && (
-          <ul className="mb-3 divide-y divide-zinc-100">
-            {partRequests.map((r) => (
-              <li key={r.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                <span className="min-w-0"><span className="font-medium text-zinc-900">{r.description}</span><span className="ml-2 text-zinc-500">×{r.quantity}{r.note ? " · " + r.note : ""}</span></span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <span className={"rounded-full px-2 py-0.5 text-xs font-medium " + (r.status === "Requested" ? "bg-amber-50 text-amber-700" : r.status === "Ordered" ? "bg-blue-50 text-blue-700" : r.status === "Done" ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-500")}>{r.status}</span>
-                  {r.status === "Requested" && <button onClick={() => cancelRequest(r)} className="text-xs text-zinc-400 hover:text-red-600">cancel</button>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <form onSubmit={requestPart} className="flex flex-col gap-2">
-          <select value={reqPartId} onChange={(e) => setReqPartId(e.target.value)} className={input}>
-            <option value="">Type a new item below…</option>
-            {parts.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-          </select>
-          {!reqPartId && <input value={reqDesc} onChange={(e) => setReqDesc(e.target.value)} placeholder="What's needed (e.g. front brake pads)" className={input} />}
-          <div className="flex gap-2">
-            <input value={reqQty} onChange={(e) => setReqQty(e.target.value)} type="number" min="0" step="0.01" aria-label="Quantity" className="w-20 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
-            <input value={reqNote} onChange={(e) => setReqNote(e.target.value)} placeholder="Note (optional)" className={`${input} flex-1`} />
-          </div>
-          <button className="self-start rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700">Request part</button>
-        </form>
-        <p className="mt-2 text-xs text-zinc-500">Sends it to Craig's Parts Requests queue on the dashboard.</p>
-      </div>
 
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Photos</h2>
       <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
