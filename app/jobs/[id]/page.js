@@ -43,6 +43,9 @@ export default function JobDetailPage() {
   const [partId, setPartId] = useState("");
   const [partQty, setPartQty] = useState("1");
   const [partPrice, setPartPrice] = useState("");   // blank = use the part's own price
+  const [ordDesc, setOrdDesc] = useState("");
+  const [ordQty, setOrdQty] = useState("1");
+  const [ordCost, setOrdCost] = useState("");
   const [newTask, setNewTask] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -188,6 +191,24 @@ export default function JobDetailPage() {
     const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Math.max(0, Number(hours) || 0), unit_price: Math.round(rate * 100) / 100 });
     if (error) { setError(error.message); return; }
     setLabourDesc(""); setHours("1"); setLabourRate("115"); load();
+  }
+
+  // A part ordered in from a supplier for this job — not stock, so nothing is
+  // drawn down. Craig enters what it cost; the database applies the shop's
+  // markup and works out the charge, so the sum is done in one place.
+  async function addOrderedPart(e) {
+    e.preventDefault();
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    const q = Number(ordQty);
+    const c = Number(ordCost);
+    if (!ordDesc.trim()) { setError("Name the part."); return; }
+    if (!(q > 0)) { setError("Quantity must be more than zero."); return; }
+    if (!Number.isFinite(c) || c < 0) { setError("Enter what the part cost you."); return; }
+    const { error } = await supabase.rpc("add_ordered_part_to_job", {
+      p_job_id: id, p_description: ordDesc.trim(), p_qty: q, p_cost: c,
+    });
+    if (error) { setError(error.message); return; }
+    setOrdDesc(""); setOrdQty("1"); setOrdCost(""); setError(null); load();
   }
 
   // Add a part FROM inventory, drawing it down from stock.
@@ -471,6 +492,8 @@ export default function JobDetailPage() {
   const unbilledEntries = timeEntries.filter((t) => !t.billed && !(t.started_at && !t.ended_at) && Number(t.hours) > 0);
   const unbilledHours = Math.round(unbilledEntries.reduce((sum, t) => sum + Number(t.hours || 0), 0) * 100) / 100;
 
+  const markupPct = Number(settings?.parts_markup_percent ?? 30);
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <Link href="/jobs" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">← Job Cards</Link>
@@ -703,6 +726,31 @@ export default function JobDetailPage() {
         )}
         <button disabled={!!invoice} className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">Add labour</button>
       </form>
+
+      {!invoice && (
+        <form onSubmit={addOrderedPart} className="mt-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Part ordered in for this job</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-[12rem] flex-1 text-xs font-medium text-zinc-600">Part
+              <input value={ordDesc} onChange={(e) => setOrdDesc(e.target.value)} placeholder="e.g. Front brake pads, Honda" className={input} />
+            </label>
+            <label className="w-20 text-xs font-medium text-zinc-600">Qty
+              <input value={ordQty} onChange={(e) => setOrdQty(e.target.value)} type="number" min="0" step="0.01" className={input} />
+            </label>
+            <label className="w-28 text-xs font-medium text-zinc-600">Cost each
+              <input value={ordCost} onChange={(e) => setOrdCost(e.target.value)} type="number" min="0" step="0.01" placeholder="what you paid" className={input} />
+            </label>
+            <button type="submit" className="rounded-lg bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-700">Add part</button>
+          </div>
+          {Number(ordCost) > 0 && Number(ordQty) > 0 && (
+            <p className="mt-2 text-xs text-zinc-500">
+              Charged at ${(Math.round(Number(ordCost) * (1 + markupPct / 100) * 100) / 100).toFixed(2)} each
+              {Number(ordQty) !== 1 && <> · {ordQty} × = ${(Math.round(Number(ordCost) * (1 + markupPct / 100) * 100) / 100 * Number(ordQty)).toFixed(2)}</>}
+              {" "}(cost +{markupPct}%), before GST
+            </p>
+          )}
+        </form>
+      )}
 
       <form onSubmit={addPart} className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="min-w-[10rem] flex-1">

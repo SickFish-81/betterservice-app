@@ -28,7 +28,6 @@ const groups = [
       { href: "/stocktake", label: "Stocktake" },
       { href: "/suppliers", label: "Suppliers", ownerOnly: true },
       { href: "/purchase-orders", label: "Orders", ownerOnly: true },
-      { href: "/part-requests", label: "Requests", ownerOnly: true },
     ],
   },
   {

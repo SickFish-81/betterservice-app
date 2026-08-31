@@ -15,7 +15,6 @@ const cards = [
   { href: "/bookings", title: "Booking Requests", desc: "Jobs booked in from the website — accept to create the job card.", badge: "bookings", ownerOnly: true },
   { href: "/rentals", title: "Rentals", desc: "Storage units & the shed — tenants, rent and holds.", ownerOnly: true },
   { href: "/bills", title: "Bills To Pay", desc: "Supplier bills owing — record payments.", badge: "bills", ownerOnly: true },
-  { href: "/part-requests", title: "Parts Requests", desc: "Parts the team need ordered for jobs.", badge: "reqs", ownerOnly: true },
   { href: "/due", title: "Due For Service", desc: "Machines overdue for a service — chase them to book work." },
   { href: "/parts", title: "Parts & Inventory", desc: "Stock levels and low-stock alerts." },
   { href: "/secondhand", title: "For Sale (manage)", desc: "Add & manage second-hand listings + photos.", ownerOnly: true },
@@ -47,7 +46,6 @@ export default function Dashboard() {
 
   const badgeFor = (b) => {
     if (!att) return 0;
-    if (b === "reqs") return att.parts_requests || 0;
     if (b === "bookings") return att.bookings_new || 0;
     if (b === "bills") return att.bills_count || 0;
     return 0;

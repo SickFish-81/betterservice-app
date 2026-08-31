@@ -16,7 +16,7 @@ function isPublic(p) {
 }
 
 // Money / admin areas — owners only. Workshop logins get a friendly block.
-const OWNER_ONLY = ["/accounting", "/reports", "/invoices", "/credit-notes", "/bills", "/expenses", "/counter-sales", "/purchase-orders", "/suppliers", "/part-requests", "/timesheets", "/settings", "/staff", "/secondhand", "/rentals", "/bookings"];
+const OWNER_ONLY = ["/accounting", "/reports", "/invoices", "/credit-notes", "/bills", "/expenses", "/counter-sales", "/purchase-orders", "/suppliers", "/timesheets", "/settings", "/staff", "/secondhand", "/rentals", "/bookings"];
 function isOwnerOnly(p) {
   return OWNER_ONLY.some((x) => p === x || p.startsWith(x + "/"));
 }
