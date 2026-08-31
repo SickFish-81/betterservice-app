@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
+import Hireage from "./Hireage";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
@@ -30,6 +31,7 @@ export default function RentalsPage() {
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [tab, setTab] = useState("units");
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   async function load() {
@@ -125,9 +127,24 @@ export default function RentalsPage() {
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Rentals</h1>
       <p className="mt-1 text-zinc-600">
-        The storage units and the shed. Rent is invoiced automatically three days before each month starts,
-        due on the 1st.
+        {tab === "units"
+          ? "The storage units and the shed. Rent is invoiced automatically three days before each month starts, due on the 1st."
+          : "Gear hired out by the day. Paid when it goes out or comes back, not on account."}
       </p>
+
+      <div className="mt-5 flex gap-1 border-b border-zinc-200">
+        {[["units", "Storage units"], ["hireage", "Hireage"]].map(([k, lbl]) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={"-mb-px border-b-2 px-4 py-2 text-sm font-medium " +
+              (tab === k ? "border-red-600 text-red-700" : "border-transparent text-zinc-500 hover:text-zinc-800")}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {tab === "hireage" && <Hireage />}
+      {tab === "units" && (
+      <>
 
       <form onSubmit={save} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-zinc-900">{editingId ? "Edit tenancy" : "New tenancy"}</h2>
@@ -221,6 +238,8 @@ export default function RentalsPage() {
           </ul>
         )}
       </div>
+      </>
+      )}
     </main>
   );
 }
