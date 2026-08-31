@@ -82,6 +82,7 @@ export default function JobDetailPage() {
   const [eMachine, setEMachine] = useState("");
   const [eProblem, setEProblem] = useState("");
   const [eNotes, setENotes] = useState("");
+  const [eCustNotes, setECustNotes] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -165,13 +166,14 @@ export default function JobDetailPage() {
     setEMachine(job.machine_id || "");
     setEProblem(job.reported_problem || "");
     setENotes(job.notes || "");
+    setECustNotes(job.customer_notes || "");
     setEditing(true);
   }
 
   async function saveDetails() {
     await supabase.from("job_cards").update({
       customer_id: eCustomer || null, machine_id: eMachine || null,
-      reported_problem: eProblem, notes: eNotes,
+      reported_problem: eProblem, notes: eNotes, customer_notes: eCustNotes,
     }).eq("id", id);
     setEditing(false); sayThanks(); load();
   }
@@ -463,7 +465,8 @@ export default function JobDetailPage() {
               {eMachines.map((m) => (<option key={m.id} value={m.id}>{m.type} — {m.make} {m.model}</option>))}
             </select>
             <textarea value={eProblem} onChange={(e) => setEProblem(e.target.value)} rows={2} placeholder="Reported problem / what needs doing" className={input} />
-            <textarea value={eNotes} onChange={(e) => setENotes(e.target.value)} rows={2} placeholder="Notes / inspection findings" className={input} />
+            <textarea value={eNotes} onChange={(e) => setENotes(e.target.value)} rows={2} placeholder="Shop notes — internal, also texted with the pick-up message" className={input} />
+            <textarea value={eCustNotes} onChange={(e) => setECustNotes(e.target.value)} rows={3} placeholder="Notes for the customer — prints on the invoice (e.g. brakes 1/2 worn, clutch adjusted to spec)" className={input} />
             <div className="flex gap-2">
               <button onClick={saveDetails} className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700">Save</button>
               <button onClick={() => setEditing(false)} className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Cancel</button>
@@ -476,6 +479,7 @@ export default function JobDetailPage() {
             {job.customers?.address && <p className="mt-1 text-sm text-zinc-600"><span className="font-medium text-zinc-700">Address:</span> {job.customers.address}</p>}
             {job.reported_problem && <p className="mt-3 rounded-lg bg-zinc-50 p-3 text-sm text-zinc-700">{job.reported_problem}</p>}
             {job.notes && <p className="mt-2 text-sm text-zinc-600"><span className="font-medium text-zinc-700">Notes:</span> {job.notes}</p>}
+            {job.customer_notes && <p className="mt-2 text-sm text-zinc-600"><span className="font-medium text-zinc-700">For the customer:</span> {job.customer_notes}</p>}
             <button onClick={startEdit} className="mt-3 text-sm font-medium text-red-600 hover:text-red-700">Edit details</button>
           </>
         )}
