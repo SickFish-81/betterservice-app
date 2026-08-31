@@ -89,6 +89,22 @@ export default function RentalsPage() {
     load();
   }
 
+  // Only for a tenancy entered by mistake. One that has ever been invoiced is
+  // refused by the database — its invoices point at it, and deleting it would
+  // orphan them. End-date it instead.
+  async function removeAgreement(a) {
+    if (!window.confirm(`Delete this tenancy for ${a.rental_units?.name || "this unit"}?\n\nUse this only for a mistake. To end a real tenancy, set an end date instead so the history is kept.`)) return;
+    const { error } = await supabase.from("rental_agreements").delete().eq("id", a.id);
+    if (error) {
+      setError(error.message.includes("foreign key") || error.message.includes("violates")
+        ? "This tenancy has invoices against it, so it can't be deleted. Set an end date instead."
+        : error.message);
+      return;
+    }
+    setError(null);
+    load();
+  }
+
   async function toggleHold(a) {
     const { error } = await supabase.from("rental_agreements").update({ on_hold: !a.on_hold }).eq("id", a.id);
     if (error) setError(error.message);
@@ -187,6 +203,7 @@ export default function RentalsPage() {
                   <div className="flex shrink-0 items-center gap-3 text-xs">
                     {a && <button onClick={() => startEdit(a)} className="text-zinc-600 hover:underline">edit</button>}
                     {a && <button onClick={() => toggleHold(a)} className="text-zinc-600 hover:underline">{a.on_hold ? "resume" : "hold"}</button>}
+                    {a && <button onClick={() => removeAgreement(a)} className="text-red-500 hover:underline">remove</button>}
                   </div>
                 </li>
               );
