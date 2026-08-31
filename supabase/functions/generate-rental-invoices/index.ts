@@ -57,6 +57,41 @@ function periodsInPlay(today: Date): string[] {
   return out;
 }
 
+function applyTemplate(tpl: unknown, vars: Record<string, unknown>) {
+  return String(tpl ?? "").replace(/\{(\w+)\}/g, (_m, k) =>
+    Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k] ?? "") : `{${k}}`);
+}
+
+// Craig's welcome-and-conditions letter, rendered from the editable template in
+// Settings. pdf-lib neither wraps nor paginates, so both are done here.
+async function buildLetterPdf(body: string) {
+  const { PDFDocument, StandardFonts } = await import("https://esm.sh/pdf-lib@1.17.1");
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const SIZE = 11, LEAD = 15, LEFT = 50, TOP = 790, BOTTOM = 60, WIDTH = 495;
+
+  const lines: string[] = [];
+  for (const para of String(body ?? "").split(/\r?\n/)) {
+    if (!para.trim()) { lines.push(""); continue; }
+    let line = "";
+    for (const word of para.trim().split(/\s+/)) {
+      const test = line ? line + " " + word : word;
+      if (font.widthOfTextAtSize(test, SIZE) > WIDTH && line) { lines.push(line); line = word; }
+      else line = test;
+    }
+    lines.push(line);
+  }
+
+  let page = pdf.addPage([595, 842]);
+  let y = TOP;
+  for (const ln of lines) {
+    if (y < BOTTOM) { page = pdf.addPage([595, 842]); y = TOP; }
+    if (ln) page.drawText(ln, { x: LEFT, y, size: SIZE, font });
+    y -= LEAD;
+  }
+  return await pdf.saveAsBase64();
+}
+
 async function buildInvoicePdf(shop: Record<string, string>, inv: Record<string, unknown>, customer: Record<string, string>, lines: Record<string, unknown>[]) {
   const { PDFDocument, StandardFonts } = await import("https://esm.sh/pdf-lib@1.17.1");
   const pdf = await PDFDocument.create();
@@ -166,17 +201,31 @@ Deno.serve(async (req) => {
         if (!up.ok) problems.push(`${who}: PDF not filed (${up.status})`);
 
         // The lease goes out once, with the first invoice for that agreement.
+        // A file uploaded against the agreement wins — that's the signed or
+        // lawyer-drafted version. Otherwise it's rendered from the Settings
+        // template, so Craig can reword it without a deploy.
         const attachments: Record<string, string>[] = [{ filename: `Invoice-${String(inv.invoice_number).padStart(5, "0")}.pdf`, content: pdf64 }];
         let leaseSent = false;
-        if (ag.lease_pdf_path && !ag.lease_sent_at) {
-          const lr = await fetch(`${SUPABASE_URL}/storage/v1/object/${ag.lease_pdf_path}`, {
-            headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-          });
-          if (lr.ok) {
-            attachments.push({ filename: "Lease-Agreement.pdf", content: b64(new Uint8Array(await lr.arrayBuffer())) });
+        if (!ag.lease_sent_at) {
+          if (ag.lease_pdf_path) {
+            const lr = await fetch(`${SUPABASE_URL}/storage/v1/object/${ag.lease_pdf_path}`, {
+              headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+            });
+            if (lr.ok) {
+              attachments.push({ filename: "Lease-Agreement.pdf", content: b64(new Uint8Array(await lr.arrayBuffer())) });
+              leaseSent = true;
+            } else {
+              problems.push(`${who}: lease attachment couldn't be read (${lr.status})`);
+            }
+          } else if (shop.lease_letter_body) {
+            const letter = applyTemplate(shop.lease_letter_body, {
+              customer: ag.customers?.name || "",
+              unit: ag.rental_units?.name || "",
+              date: nzDate(inv.issued_date),
+              start: nzDate(ag.start_date),
+            });
+            attachments.push({ filename: "Lease-Agreement.pdf", content: await buildLetterPdf(letter) });
             leaseSent = true;
-          } else {
-            problems.push(`${who}: lease attachment couldn't be read (${lr.status})`);
           }
         }
 
