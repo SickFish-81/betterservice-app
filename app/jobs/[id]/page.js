@@ -83,6 +83,8 @@ export default function JobDetailPage() {
   const [eProblem, setEProblem] = useState("");
   const [eNotes, setENotes] = useState("");
   const [eCustNotes, setECustNotes] = useState("");
+  const [billHours, setBillHours] = useState("");
+  const [billRate, setBillRate] = useState("115");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -298,6 +300,30 @@ export default function JobDetailPage() {
     load();
   }
 
+  // Turn every unbilled entry into ONE labour line, at whatever hours the owner
+  // decides is fair. Clocked time is what happened; billed time is a judgement —
+  // so the hours are editable here rather than copied across blindly.
+  async function billAllTime(charge) {
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    if (unbilledEntries.length === 0) return;
+    if (charge) {
+      const h = Number(billHours === "" ? unbilledHours : billHours);
+      const r = Number(billRate);
+      if (!(h > 0)) { setError("Hours must be more than zero."); return; }
+      if (!Number.isFinite(r) || r < 0) { setError("Rate must be a number."); return; }
+      if (!window.confirm(`Add ${h} h at $${r}/hr = $${(h * r).toFixed(2)} + GST as labour on this job?`)) return;
+      const { error } = await supabase.from("job_line_items").insert({
+        job_card_id: id, kind: "labour", description: "Labour", quantity: h, unit_price: Math.round(r * 100) / 100,
+      });
+      if (error) { setError(error.message); return; }
+    } else if (!window.confirm(`Leave ${unbilledHours} h off the invoice? The time stays on the timesheet, but nothing is charged for it.`)) {
+      return;
+    }
+    await supabase.from("job_time_entries").update({ billed: true }).in("id", unbilledEntries.map((t) => t.id));
+    setBillHours("");
+    load();
+  }
+
   async function removeTime(entry) {
     await supabase.from("job_time_entries").delete().eq("id", entry.id);
     load();
@@ -328,6 +354,11 @@ export default function JobDetailPage() {
   }
 
   async function generateInvoice() {
+    // Time logged but never billed is money given away — job 10 went out with
+    // 2.38 h on it and no labour at all. Don't let that happen silently.
+    if (unbilledHours > 0 && !window.confirm(
+      `There's ${unbilledHours} h logged on this job that hasn't been charged as labour.\n\nInvoice anyway without charging it?`
+    )) return;
     // Totals are computed on the server from the job's own line items (never
     // trusted from the browser); the function also flips the job to "Invoiced".
     const { error } = await supabase.rpc("generate_invoice", { p_job_id: id });
@@ -436,6 +467,10 @@ export default function JobDetailPage() {
     </label>
   );
 
+  // Entries that are finished, have hours, and haven't been charged yet.
+  const unbilledEntries = timeEntries.filter((t) => !t.billed && !(t.started_at && !t.ended_at) && Number(t.hours) > 0);
+  const unbilledHours = Math.round(unbilledEntries.reduce((sum, t) => sum + Number(t.hours || 0), 0) * 100) / 100;
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <Link href="/jobs" className="text-sm font-medium text-zinc-500 hover:text-zinc-800">← Job Cards</Link>
@@ -532,6 +567,27 @@ export default function JobDetailPage() {
           <button className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Add</button>
         </form>
       </div>
+
+      {!invoice && unbilledHours > 0 && (
+        <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm font-medium text-amber-900">{unbilledHours} h logged on this job hasn&apos;t been charged as labour.</p>
+          <p className="mt-1 text-xs text-amber-800">Check the hours before they go on the invoice — adjust them if the clocked time isn&apos;t what you&apos;d charge.</p>
+          {owner ? (
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="text-xs font-medium text-amber-900">Hours
+                <input value={billHours} onChange={(e) => setBillHours(e.target.value)} type="number" step="0.25" min="0" placeholder={String(unbilledHours)} className="mt-1 block w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-zinc-900" />
+              </label>
+              <label className="text-xs font-medium text-amber-900">Rate $/h
+                <input value={billRate} onChange={(e) => setBillRate(e.target.value)} type="number" step="1" min="0" className="mt-1 block w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-zinc-900" />
+              </label>
+              <button onClick={() => billAllTime(true)} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">Bill as labour</button>
+              <button onClick={() => billAllTime(false)} className="pb-2 text-xs text-amber-800 underline hover:text-amber-900">don&apos;t charge this time</button>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-amber-800">An owner needs to put this on the invoice.</p>
+          )}
+        </div>
+      )}
 
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Time on this job</h2>
       <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
