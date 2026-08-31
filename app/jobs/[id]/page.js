@@ -48,6 +48,7 @@ export default function JobDetailPage() {
   const [ordCost, setOrdCost] = useState("");
   const [ordSupplier, setOrdSupplier] = useState("");
   const [ordRef, setOrdRef] = useState("");
+  const [stopping, setStopping] = useState(null);   // entry awaiting a stop confirmation
   const [suppliers, setSuppliers] = useState([]);
   const [newTask, setNewTask] = useState("");
   const [templateId, setTemplateId] = useState("");
@@ -291,14 +292,21 @@ export default function JobDetailPage() {
     load();
   }
 
-  // Stopping the timer closes the entry, rounds the time UP to the next quarter
-  // hour and puts the labour on the job — all server-side, so the rounding rule
-  // and the rate live in one place and the browser can't disagree with them.
-  async function stopTimer(entry) {
+  // Stopping asks first. Rounding up means a timer knocked on by accident would
+  // otherwise bill a quarter hour, so the labour only goes on once someone says
+  // so. The figure shown is a preview; the database does the real sum.
+  async function stopTimer(entry, bill) {
     setError(null);
-    const { error } = await supabase.rpc("stop_job_timer", { p_entry_id: entry.id });
+    setStopping(null);
+    const { error } = await supabase.rpc("stop_job_timer", { p_entry_id: entry.id, p_bill: bill });
     if (error) { setError(error.message); return; }
     load();
+  }
+
+  // Same rule as the database: up to the next quarter hour, minimum a quarter.
+  function previewHours(entry) {
+    const worked = Math.max(0, (nowTs - new Date(entry.started_at).getTime()) / 3600000);
+    return Math.max(0.25, Math.ceil(worked * 4) / 4);
   }
 
   async function addManualTime(e) {
@@ -620,7 +628,8 @@ export default function JobDetailPage() {
               const running = t.started_at && !t.ended_at;
               const elapsed = running ? (nowTs - new Date(t.started_at).getTime()) / 3600000 : 0;
               return (
-                <li key={t.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <li key={t.id} className="py-2 text-sm">
+                  <div className="flex items-center justify-between gap-3">
                   <span className="min-w-0">
                     <span className="font-medium text-zinc-900">{t.staff?.name || "—"}</span>
                     {running ? (
@@ -632,10 +641,26 @@ export default function JobDetailPage() {
                     {t.billed && <span className="ml-2 text-xs font-medium text-emerald-600">billed</span>}
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
-                    {running && <button onClick={() => stopTimer(t)} title="Stops the timer and adds the labour, rounded up to the next 15 minutes" className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">Stop</button>}
+                    {running && <button onClick={() => setStopping(stopping === t.id ? null : t.id)} className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">Stop</button>}
                     {owner && !running && !t.billed && !invoice && <button onClick={() => billTime(t)} className="text-xs font-medium text-red-600 hover:underline">bill as labour</button>}
                     <button onClick={() => removeTime(t)} className="text-xs text-red-500 hover:underline">remove</button>
                   </span>
+                  </div>
+
+                  {stopping === t.id && running && (
+                    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-amber-900">
+                        Stop and charge <span className="font-semibold">{previewHours(t).toFixed(2)} h</span> at {money(shopRate)}/hr
+                        {" = "}<span className="font-semibold">{money(previewHours(t) * shopRate)}</span> + GST?
+                      </p>
+                      <p className="mt-1 text-xs text-amber-800">Time is rounded up to the next 15 minutes.</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <button onClick={() => stopTimer(t, true)} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">Yes, add it</button>
+                        <button onClick={() => stopTimer(t, false)} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100">Stop, don&apos;t charge</button>
+                        <button onClick={() => setStopping(null)} className="text-xs text-amber-700 hover:underline">keep running</button>
+                      </div>
+                    </div>
+                  )}
                 </li>
               );
             })}
