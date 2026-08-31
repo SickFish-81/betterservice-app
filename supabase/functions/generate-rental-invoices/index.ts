@@ -157,6 +157,12 @@ Deno.serve(async (req) => {
     const shop = (await (await sb("/rest/v1/shop_settings?id=eq.1&select=*")).json())[0] || {};
     const business = shop.business_name || "Betterservice ATV";
 
+    // The shop's own copy. Blind, so the tenant never sees it. Ignored unless it
+    // looks like an address, so a typo in Settings can't stop an invoice
+    // reaching the tenant.
+    const bccRaw = String(shop.invoice_bcc ?? "").trim();
+    const bcc = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(bccRaw) ? bccRaw : "";
+
     const agreements = await (await sb(
       "/rest/v1/rental_agreements?select=id,on_hold,start_date,end_date,monthly_rate_incl_gst,lease_pdf_path,lease_sent_at,customers(name,email,address,company_name),rental_units(name)"
     )).json();
@@ -239,6 +245,9 @@ Deno.serve(async (req) => {
             body: JSON.stringify({
               from: `${business} <admin@betterservice.co.nz>`,
               to: [to],
+              // Same email, same attachments — invoice, and the lease on a first
+              // one — so the shop holds exactly what the tenant received.
+              ...(bcc ? { bcc: [bcc] } : {}),
               subject: `Rent invoice ${invNo(inv.invoice_number)} — ${monthName}`,
               html:
                 `<p>Hi ${esc(ag.customers?.name || "there")},</p>` +
@@ -274,8 +283,7 @@ Deno.serve(async (req) => {
     // Tell the shop what went out. With auto-send this summary is the only
     // safety net there is — a wrong invoice should be a same-day fix, not a
     // month-end surprise.
-    const bcc = String(shop.invoice_bcc ?? "").trim();
-    if (!dry && done.length > 0 && RESEND && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(bcc)) {
+    if (!dry && done.length > 0 && RESEND && bcc) {
       await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND}`, "Content-Type": "application/json" },
