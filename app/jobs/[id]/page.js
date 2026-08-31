@@ -7,7 +7,6 @@ import { supabase } from "../../../lib/supabaseClient";
 import { buildInvoicePdf, pdfToBase64, invoiceFileName } from "../../../lib/invoicePdf";
 import { useOwner } from "../../RoleContext";
 
-const STATUSES = ["New", "In progress", "Awaiting parts", "Ready", "Invoiced", "Paid"];
 const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
   "In progress": "bg-amber-50 text-amber-700",
@@ -538,9 +537,11 @@ export default function JobDetailPage() {
       <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Job #{job.job_number}</h1>
-          <select value={job.status} onChange={(e) => updateJobField("status", e.target.value)} className={`rounded-full border-0 px-3 py-1.5 text-sm font-medium ${STATUS_STYLES[job.status] || "bg-zinc-100 text-zinc-700"}`}>
-            {STATUSES.map((s) => (<option key={s}>{s}</option>))}
-          </select>
+          {/* Status is shown, not set. It follows what actually happens: a job is
+              New until someone sends it to Craig, then Ready, then Invoiced. */}
+          <span className={`rounded-full px-3 py-1.5 text-sm font-medium ${STATUS_STYLES[job.status] || "bg-zinc-100 text-zinc-700"}`}>
+            {job.status}
+          </span>
         </div>
 
         {editing ? (
