@@ -51,9 +51,21 @@ export default function InvoiceViewPage() {
     if (iErr) { setError(iErr.message); setLoading(false); return; }
     if (!inv) { setError("That invoice doesn't exist."); setLoading(false); return; }
 
+    // An invoice reaches its customer one of two ways. Workshop invoices come
+    // THROUGH a job card; rent and hireage have no job card and carry their own
+    // customer_id and their own line items. Both are shaped into the same
+    // { job: { customers }, items } so the page and the shared PDF builder don't
+    // have to know the difference.
+    const viaJob = !!inv.job_card_id;
+
     const [{ data: j }, { data: li }, { data: pays }, { data: staff }] = await Promise.all([
-      supabase.from("job_cards").select("*, customers(*), machines(*)").eq("id", inv.job_card_id).maybeSingle(),
-      supabase.from("job_line_items").select("*").eq("job_card_id", inv.job_card_id).order("created_at"),
+      viaJob
+        ? supabase.from("job_cards").select("*, customers(*), machines(*)").eq("id", inv.job_card_id).maybeSingle()
+        : supabase.from("customers").select("*").eq("id", inv.customer_id).maybeSingle()
+            .then(({ data, error }) => ({ data: data ? { customers: data, machines: null } : null, error })),
+      viaJob
+        ? supabase.from("job_line_items").select("*").eq("job_card_id", inv.job_card_id).order("created_at")
+        : supabase.from("invoice_line_items").select("*").eq("invoice_id", inv.id).order("sort").order("created_at"),
       supabase.from("payments").select("*").eq("invoice_id", inv.id).order("created_at"),
       supabase.from("staff").select("id,name,can_send_invoices,role").eq("can_send_invoices", true),
     ]);
