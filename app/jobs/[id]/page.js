@@ -188,7 +188,7 @@ export default function JobDetailPage() {
     if (!Number.isFinite(rate) || rate < 0) { setError("Rate must be a number."); return; }
     const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Math.max(0, Number(hours) || 0), unit_price: Math.round(rate * 100) / 100 });
     if (error) { setError(error.message); return; }
-    setLabourDesc(""); setHours("1"); setLabourRate("115"); load();
+    setLabourDesc(""); setHours("1"); setLabourRate(String(shopRate)); load();
   }
 
   // A part ordered in from a supplier for this job — not stock, so nothing is
@@ -291,10 +291,12 @@ export default function JobDetailPage() {
     load();
   }
 
+  // Stopping the timer closes the entry, rounds the time UP to the next quarter
+  // hour and puts the labour on the job — all server-side, so the rounding rule
+  // and the rate live in one place and the browser can't disagree with them.
   async function stopTimer(entry) {
-    const end = new Date();
-    const worked = Math.max(0, (end - new Date(entry.started_at)) / 3600000);
-    const { error } = await supabase.from("job_time_entries").update({ ended_at: end.toISOString(), hours: Math.round(worked * 100) / 100 }).eq("id", entry.id);
+    setError(null);
+    const { error } = await supabase.rpc("stop_job_timer", { p_entry_id: entry.id });
     if (error) { setError(error.message); return; }
     load();
   }
@@ -309,12 +311,12 @@ export default function JobDetailPage() {
     setTimeHours(""); setTimeNote(""); load();
   }
 
-  // Turn a logged time entry into a billable labour line ($115/hr).
+  // Turn a logged time entry into a billable labour line, at the shop rate.
   async function billTime(entry) {
     if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
     if (!entry.hours) { setError("Stop the timer first so it has hours."); return; }
     const who = entry.staff?.name || staffName(entry.staff_id) || "Labour";
-    const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: entry.note || (who + " — labour"), quantity: entry.hours, unit_price: 115 });
+    const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: entry.note || (who + " — labour"), quantity: entry.hours, unit_price: shopRate });
     if (error) { setError(error.message); return; }
     await supabase.from("job_time_entries").update({ billed: true }).eq("id", entry.id);
     load();
@@ -486,6 +488,7 @@ export default function JobDetailPage() {
   const unbilledEntries = timeEntries.filter((t) => !t.billed && !(t.started_at && !t.ended_at) && Number(t.hours) > 0);
   const unbilledHours = Math.round(unbilledEntries.reduce((sum, t) => sum + Number(t.hours || 0), 0) * 100) / 100;
 
+  const shopRate = Number(settings?.labour_rate ?? 115);
   const readyByName = (staff || []).find((x) => x.id === job?.ready_by)?.name || "";
   const markupPct = Number(settings?.parts_markup_percent ?? 30);
 
@@ -596,7 +599,7 @@ export default function JobDetailPage() {
                 <input value={billHours} onChange={(e) => setBillHours(e.target.value)} type="number" step="0.25" min="0" placeholder={String(unbilledHours)} className="mt-1 block w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-zinc-900" />
               </label>
               <label className="text-xs font-medium text-amber-900">Rate $/h
-                <input value={billRate} onChange={(e) => setBillRate(e.target.value)} type="number" step="1" min="0" className="mt-1 block w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-zinc-900" />
+                <input value={billRate || String(shopRate)} onChange={(e) => setBillRate(e.target.value)} type="number" step="1" min="0" className="mt-1 block w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-zinc-900" />
               </label>
               <button onClick={() => billAllTime(true)} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">Bill as labour</button>
               <button onClick={() => billAllTime(false)} className="pb-2 text-xs text-amber-800 underline hover:text-amber-900">don&apos;t charge this time</button>
@@ -629,7 +632,7 @@ export default function JobDetailPage() {
                     {t.billed && <span className="ml-2 text-xs font-medium text-emerald-600">billed</span>}
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
-                    {running && <button onClick={() => stopTimer(t)} className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">Stop</button>}
+                    {running && <button onClick={() => stopTimer(t)} title="Stops the timer and adds the labour, rounded up to the next 15 minutes" className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">Stop</button>}
                     {owner && !running && !t.billed && !invoice && <button onClick={() => billTime(t)} className="text-xs font-medium text-red-600 hover:underline">bill as labour</button>}
                     <button onClick={() => removeTime(t)} className="text-xs text-red-500 hover:underline">remove</button>
                   </span>
@@ -717,7 +720,7 @@ export default function JobDetailPage() {
               type="number"
               min="0"
               step="0.01"
-              title="Standard rate is $115/hr. Change it for work charged differently — welding, sublet, a quoted rate."
+              title="The shop rate comes from Settings. Change it here for work charged differently — welding, sublet, a quoted rate."
               className={input}
             />
           </div>
