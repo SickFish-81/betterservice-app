@@ -15,11 +15,12 @@ export default function CustomersPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
+  const [company, setCompany] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const [editingId, setEditingId] = useState(null);
-  const [ev, setEv] = useState({ name: "", phone: "", email: "", address: "", no_reminders: false });
+  const [ev, setEv] = useState({ name: "", phone: "", email: "", address: "", company_name: "", no_reminders: false });
 
   async function loadCustomers() {
     setLoading(true);
@@ -34,20 +35,20 @@ export default function CustomersPage() {
   async function addCustomer(e) {
     e.preventDefault();
     if (!name.trim()) return;
-    const { error } = await supabase.from("customers").insert({ name, phone, email, address });
+    const { error } = await supabase.from("customers").insert({ name, phone, email, address, company_name: company || null });
     if (error) { setError(error.message); return; }
-    setName(""); setPhone(""); setEmail(""); setAddress(""); loadCustomers();
+    setName(""); setPhone(""); setEmail(""); setAddress(""); setCompany(""); loadCustomers();
   }
 
   function startEdit(c) {
     setEditingId(c.id);
-    setEv({ name: c.name || "", phone: c.phone || "", email: c.email || "", address: c.address || "", no_reminders: !!c.no_reminders });
+    setEv({ name: c.name || "", phone: c.phone || "", email: c.email || "", address: c.address || "", company_name: c.company_name || "", no_reminders: !!c.no_reminders });
     setError(null);
   }
 
   async function saveEdit(id) {
     if (!ev.name.trim()) { setError("Name can't be blank."); return; }
-    const { error } = await supabase.from("customers").update({ name: ev.name, phone: ev.phone, email: ev.email, address: ev.address, no_reminders: ev.no_reminders }).eq("id", id);
+    const { error } = await supabase.from("customers").update({ name: ev.name, phone: ev.phone, email: ev.email, address: ev.address, company_name: ev.company_name || null, no_reminders: ev.no_reminders }).eq("id", id);
     if (error) { setError(error.message); return; }
     setEditingId(null); loadCustomers();
   }
@@ -74,6 +75,7 @@ export default function CustomersPage() {
         <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" placeholder="Phone" className={input} />
         <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email" className={input} />
         <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (for pickup / delivery)" className={input} />
+        <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company charged (leave blank to charge this person)" className={input} />
         <button type="submit" className={btn}>Add customer</button>
       </form>
 
@@ -97,6 +99,7 @@ export default function CustomersPage() {
                     <input value={ev.phone} onChange={(e) => setEv({ ...ev, phone: e.target.value })} type="tel" placeholder="Phone" className={input} />
                     <input value={ev.email} onChange={(e) => setEv({ ...ev, email: e.target.value })} type="email" placeholder="Email" className={input} />
                     <input value={ev.address} onChange={(e) => setEv({ ...ev, address: e.target.value })} placeholder="Address (for pickup / delivery)" className={input} />
+                    <input value={ev.company_name} onChange={(e) => setEv({ ...ev, company_name: e.target.value })} placeholder="Company charged (leave blank to charge this person)" className={input} />
                     <label className="flex items-center gap-2 py-1 text-sm text-zinc-700"><input type="checkbox" checked={!ev.no_reminders} onChange={(e) => setEv({ ...ev, no_reminders: !e.target.checked })} className="h-4 w-4 rounded border-zinc-300 accent-red-600" /> Send service reminders</label>
                     <div className="flex gap-2">
                       <button onClick={() => saveEdit(c.id)} className={saveBtn}>Save</button>
