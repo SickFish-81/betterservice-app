@@ -1,9 +1,9 @@
 "use client";
 
-// Book a service — see app/BookingForm.js.
+// Make an enquiry — see app/BookingForm.js.
 
 import BookingForm from "../BookingForm";
 
 export default function Page() {
-  return <BookingForm mode="booking" />;
+  return <BookingForm mode="enquiry" />;
 }

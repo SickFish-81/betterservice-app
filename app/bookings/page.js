@@ -50,12 +50,12 @@ export default function BookingsPage() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Booking requests</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Bookings &amp; enquiries</h1>
         <button onClick={() => setShowAll((v) => !v)} className="text-sm text-zinc-600 underline hover:text-zinc-900">
           {showAll ? "show new only" : "show all"}
         </button>
       </div>
-      <p className="mt-1 text-zinc-600">Sent in from the website. Accepting one creates the customer, machine and job card.</p>
+      <p className="mt-1 text-zinc-600">Sent in from the website. Bookings become job cards; enquiries just want an answer — reply on their email, then decline to clear it.</p>
 
       {error && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}
 
@@ -73,6 +73,9 @@ export default function BookingsPage() {
                 <div className="min-w-0">
                   <p className="font-semibold text-zinc-900">
                     {r.company_name ? `${r.company_name} — ${r.contact_name}` : r.contact_name}
+                    {r.kind === "enquiry" && (
+                      <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700">enquiry</span>
+                    )}
                     {r.status !== "new" && (
                       <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-500">{r.status}</span>
                     )}
@@ -90,7 +93,7 @@ export default function BookingsPage() {
                   <div className="flex shrink-0 items-center gap-3">
                     <button onClick={() => accept(r)} disabled={busyId === r.id}
                       className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
-                      {busyId === r.id ? "Working…" : "Accept → job card"}
+                      {busyId === r.id ? "Working…" : r.kind === "enquiry" ? "Turn into job card" : "Accept → job card"}
                     </button>
                     <button onClick={() => decline(r)} disabled={busyId === r.id} className="text-sm text-zinc-500 hover:underline">decline</button>
                   </div>

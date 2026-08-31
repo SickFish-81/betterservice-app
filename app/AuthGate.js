@@ -5,11 +5,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 import NavBar from "./NavBar";
 import PublicNav from "./PublicNav";
+import PublicFooter from "./PublicFooter";
 import AttentionBanner from "./AttentionBanner";
 import TimesheetNudge from "./TimesheetNudge";
 import { RoleContext } from "./RoleContext";
 
-const PUBLIC_EXACT = ["/", "/login", "/reset", "/batteries", "/book"];
+const PUBLIC_EXACT = ["/", "/login", "/reset", "/batteries", "/book", "/enquiry"];
 function isPublic(p) {
   return PUBLIC_EXACT.includes(p) || p === "/for-sale" || p.startsWith("/for-sale/");
 }
@@ -59,7 +60,7 @@ export default function AuthGate({ children }) {
   // Public pages — no login, public header (login page shows no nav).
   if (isPublic(pathname)) {
     if (pathname === "/login" || pathname === "/reset") return children;
-    return (<><PublicNav />{children}</>);
+    return (<><PublicNav />{children}<PublicFooter /></>);
   }
 
   // Staff pages — require login AND owner approval.
