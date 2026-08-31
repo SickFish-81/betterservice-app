@@ -20,7 +20,7 @@ export default function Hireage() {
   const [items, setItems] = useState([]);
   const [hires, setHires] = useState([]);
   const [customers, setCustomers] = useState([]);
-  const [f, setF] = useState({ item_id: "", customer_id: "", hire_date: todayISO(), rate_type: "full", notes: "" });
+  const [f, setF] = useState({ item_id: "", customer_name: "", phone: "", hire_date: todayISO(), rate_type: "full", notes: "" });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
@@ -46,14 +46,16 @@ export default function Hireage() {
     e.preventDefault();
     setError(null);
     if (!f.item_id) return setError("Pick what's being hired.");
-    if (!f.customer_id) return setError("Pick the customer. Add them under Customers first if they're not listed.");
+    if (!f.customer_name.trim()) return setError("Type who's taking it.");
     if (!f.hire_date) return setError("Enter the date.");
-    const { error } = await supabase.from("hires").insert({
-      item_id: f.item_id, customer_id: f.customer_id, hire_date: f.hire_date,
-      rate_type: f.rate_type, notes: f.notes || null,
+    // The database matches the typed name to an existing customer, or creates
+    // one — so the counter isn't held up by a dropdown or a separate form.
+    const { error } = await supabase.rpc("record_hire", {
+      p_item_id: f.item_id, p_customer_name: f.customer_name.trim(), p_hire_date: f.hire_date,
+      p_rate_type: f.rate_type, p_notes: f.notes || null, p_phone: f.phone || null,
     });
     if (error) { setError(error.message); return; }
-    setF((v) => ({ ...v, customer_id: "", notes: "" }));
+    setF((v) => ({ ...v, customer_name: "", phone: "", notes: "" }));
     load();
   }
 
@@ -69,15 +71,17 @@ export default function Hireage() {
     <div>
       <form onSubmit={record} className="mt-4 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-zinc-900">Record a hire</h2>
+        <p className="-mt-2 text-xs text-zinc-500">Type the name — an existing customer is matched automatically, a new one is created.</p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <select value={f.item_id} onChange={set("item_id")} className={input}>
             <option value="">What&apos;s going out…</option>
             {items.filter((i) => i.active).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
           </select>
-          <select value={f.customer_id} onChange={set("customer_id")} className={input}>
-            <option value="">Who&apos;s taking it…</option>
-            {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <input value={f.customer_name} onChange={set("customer_name")} list="hire-customers"
+                 placeholder="Who&apos;s taking it — type a name" className={input} />
+          <datalist id="hire-customers">
+            {customers.map((c) => <option key={c.id} value={c.name} />)}
+          </datalist>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm text-zinc-600">Date
@@ -90,7 +94,10 @@ export default function Hireage() {
             </select>
           </label>
         </div>
-        <input value={f.notes} onChange={set("notes")} placeholder="Notes (optional)" className={input} />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <input value={f.phone} onChange={set("phone")} type="tel" placeholder="Phone (optional)" className={input} />
+          <input value={f.notes} onChange={set("notes")} placeholder="Notes (optional)" className={input} />
+        </div>
         {chosenRate != null && (
           <p className="text-xs text-zinc-500">
             They pay <span className="font-medium text-zinc-700">{money(chosenRate)}</span> — that&apos;s {money(chosenRate - Math.round(chosenRate * 3 / 23 * 100) / 100)} + {money(Math.round(chosenRate * 3 / 23 * 100) / 100)} GST.
