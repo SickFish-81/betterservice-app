@@ -32,6 +32,8 @@ export default function RentalsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("units");
+  const [newUnit, setNewUnit] = useState({ name: "", description: "" });
+  const [addingUnit, setAddingUnit] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   async function load() {
@@ -113,6 +115,32 @@ export default function RentalsPage() {
     load();
   }
 
+  async function addUnit(e) {
+    e.preventDefault();
+    setError(null);
+    const name = newUnit.name.trim();
+    if (!name) return setError("Give the unit a name.");
+    const { error } = await supabase.from("rental_units")
+      .insert({ name, description: newUnit.description.trim() || null });
+    if (error) {
+      setError(error.message.includes("duplicate") || error.message.includes("unique")
+        ? `There's already a unit called "${name}".`
+        : error.message);
+      return;
+    }
+    setNewUnit({ name: "", description: "" });
+    setAddingUnit(false);
+    load();
+  }
+
+  // Retiring a unit keeps its history — the tenancies and invoices that ran
+  // through it stay exactly where they are, it just stops being offered.
+  async function toggleUnitActive(u) {
+    const { error } = await supabase.from("rental_units").update({ active: !u.active }).eq("id", u.id);
+    if (error) setError(error.message);
+    load();
+  }
+
   async function toggleHold(a) {
     const { error } = await supabase.from("rental_agreements").update({ on_hold: !a.on_hold }).eq("id", a.id);
     if (error) setError(error.message);
@@ -152,7 +180,7 @@ export default function RentalsPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <select value={form.unit_id} onChange={set("unit_id")} className={input}>
             <option value="">Which unit…</option>
-            {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            {units.filter((u) => u.active || u.id === form.unit_id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
           <select value={form.customer_id} onChange={set("customer_id")} className={input}>
             <option value="">Which tenant…</option>
@@ -198,10 +226,29 @@ export default function RentalsPage() {
       {error && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}
 
       <div className="mt-8">
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline justify-between gap-3">
           <h2 className="font-semibold text-zinc-900">The units</h2>
-          <p className="text-sm text-zinc-500">{units.length - vacant} let · {vacant} vacant</p>
+          <div className="flex items-baseline gap-3">
+            <p className="text-sm text-zinc-500">{units.length - vacant} let · {vacant} vacant</p>
+            <button onClick={() => { setAddingUnit((v) => !v); setError(null); }} className="text-sm text-zinc-600 underline hover:text-zinc-900">
+              {addingUnit ? "cancel" : "+ add a unit"}
+            </button>
+          </div>
         </div>
+
+        {addingUnit && (
+          <form onSubmit={addUnit} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <label className="min-w-[10rem] flex-1 text-xs font-medium text-zinc-600">Name
+              <input value={newUnit.name} onChange={(e) => setNewUnit((v) => ({ ...v, name: e.target.value }))}
+                     placeholder="e.g. Unit 11, Sign Space" className={input} />
+            </label>
+            <label className="min-w-[10rem] flex-1 text-xs font-medium text-zinc-600">Description
+              <input value={newUnit.description} onChange={(e) => setNewUnit((v) => ({ ...v, description: e.target.value }))}
+                     placeholder="optional" className={input} />
+            </label>
+            <button type="submit" className="rounded-lg bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-700">Add unit</button>
+          </form>
+        )}
 
         {loading ? (
           <p className="mt-4 text-zinc-500">Loading…</p>
@@ -219,7 +266,8 @@ export default function RentalsPage() {
                       {a && <span>{a.customers?.company_name || a.customers?.name || "—"}</span>}
                       {a?.on_hold && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">on hold</span>}
                       {upcoming && <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700">from {nzDate(a.start_date)}</span>}
-                      {!a && <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-500">vacant</span>}
+                      {!a && u.active && <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-500">vacant</span>}
+                      {!u.active && <span className="ml-2 rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-semibold text-zinc-600">retired</span>}
                     </p>
                     <p className="truncate text-sm text-zinc-500">
                       {a
@@ -231,6 +279,7 @@ export default function RentalsPage() {
                     {a && <button onClick={() => startEdit(a)} className="text-zinc-600 hover:underline">edit</button>}
                     {a && <button onClick={() => toggleHold(a)} className="text-zinc-600 hover:underline">{a.on_hold ? "resume" : "hold"}</button>}
                     {a && <button onClick={() => removeAgreement(a)} className="text-red-500 hover:underline">remove</button>}
+                    {!a && <button onClick={() => toggleUnitActive(u)} className="text-zinc-600 hover:underline">{u.active ? "retire" : "reinstate"}</button>}
                   </div>
                 </li>
               );
