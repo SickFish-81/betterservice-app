@@ -45,10 +45,16 @@ export default function RentalsPage() {
   }
   useEffect(() => { load(); }, []);
 
-  // The agreement that covers today, if any. An agreement with no end date runs on.
+  // The tenancy that matters for a unit: the one running today, or if none has
+  // started yet, the next one due. A tenancy signed for next month is NOT a
+  // vacant unit — showing it as vacant is how a unit gets double-let.
   const today = new Date().toISOString().slice(0, 10);
-  const currentFor = (unitId) =>
-    agreements.find((a) => a.unit_id === unitId && a.start_date <= today && (!a.end_date || a.end_date >= today));
+  const currentFor = (unitId) => {
+    const live = agreements
+      .filter((a) => a.unit_id === unitId && (!a.end_date || a.end_date >= today))
+      .sort((x, y) => String(x.start_date).localeCompare(String(y.start_date)));
+    return live.find((a) => a.start_date <= today) || live[0] || null;
+  };
 
   function startEdit(a) {
     setEditingId(a.id);
@@ -186,17 +192,21 @@ export default function RentalsPage() {
           <ul className="mt-3 divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 bg-white">
             {units.map((u) => {
               const a = currentFor(u.id);
+              const upcoming = !!a && a.start_date > today;
               return (
                 <li key={u.id} className="flex items-center justify-between gap-3 p-4">
                   <div className="min-w-0">
                     <p className="font-medium text-zinc-900">
                       {u.name}
+                      {a && <span className="text-zinc-400"> · </span>}
+                      {a && <span>{a.customers?.company_name || a.customers?.name || "—"}</span>}
                       {a?.on_hold && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">on hold</span>}
+                      {upcoming && <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700">from {nzDate(a.start_date)}</span>}
                       {!a && <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-500">vacant</span>}
                     </p>
                     <p className="truncate text-sm text-zinc-500">
                       {a
-                        ? `${a.customers?.name || "—"} · ${money(a.monthly_rate_incl_gst)}/month · since ${nzDate(a.start_date)}${a.end_date ? ` · ends ${nzDate(a.end_date)}` : ""}`
+                        ? `${a.customers?.company_name ? a.customers?.name + " · " : ""}${money(a.monthly_rate_incl_gst)}/month · ${upcoming ? "starts" : "since"} ${nzDate(a.start_date)} · ${a.end_date ? "ends " + nzDate(a.end_date) : "open-ended"}`
                         : "No tenant"}
                     </p>
                   </div>
