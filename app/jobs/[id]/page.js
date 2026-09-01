@@ -46,7 +46,7 @@ export default function JobDetailPage() {
   const [ordDesc, setOrdDesc] = useState("");
   const [ordQty, setOrdQty] = useState("1");
   const [ordCost, setOrdCost] = useState("");
-  const [ordSupplier, setOrdSupplier] = useState("");
+  const [ordSupplier, setOrdSupplier] = useState("");   // typed name, resolved to an id on save
   const [ordRef, setOrdRef] = useState("");
   const [stopping, setStopping] = useState(null);   // entry awaiting a stop confirmation
   const [editLine, setEditLine] = useState(null);   // line item being repriced
@@ -228,9 +228,17 @@ export default function JobDetailPage() {
     if (!ordDesc.trim()) { setError("Name the part."); return; }
     if (!(q > 0)) { setError("Quantity must be more than zero."); return; }
     if (!Number.isFinite(c) || c < 0) { setError("Enter what the part cost you."); return; }
+    // Resolve the typed supplier first — matched if it exists, created if not —
+    // so nobody has to break off and set one up under Admin mid-job.
+    let supplierId = null;
+    if (ordSupplier.trim()) {
+      const { data: sid, error: sErr } = await supabase.rpc("find_or_create_supplier", { p_name: ordSupplier.trim() });
+      if (sErr) { setError(sErr.message); return; }
+      supplierId = sid || null;
+    }
     const { error } = await supabase.rpc("add_ordered_part_to_job", {
       p_job_id: id, p_description: ordDesc.trim(), p_qty: q, p_cost: c,
-      p_supplier_id: ordSupplier || null, p_supplier_ref: ordRef.trim() || null,
+      p_supplier_id: supplierId, p_supplier_ref: ordRef.trim() || null,
     });
     if (error) { setError(error.message); return; }
     setOrdDesc(""); setOrdQty("1"); setOrdCost(""); setOrdRef(""); setError(null); load();
@@ -830,10 +838,11 @@ export default function JobDetailPage() {
           </div>
           <div className="mt-2 flex flex-wrap items-end gap-2">
             <label className="min-w-[10rem] flex-1 text-xs font-medium text-zinc-600">Supplier
-              <select value={ordSupplier} onChange={(e) => setOrdSupplier(e.target.value)} className={input}>
-                <option value="">Not recorded</option>
-                {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
-              </select>
+              <input value={ordSupplier} onChange={(e) => setOrdSupplier(e.target.value)} list="ord-suppliers"
+                     placeholder="type a name — new ones are added" className={input} />
+              <datalist id="ord-suppliers">
+                {suppliers.map((sp) => <option key={sp.id} value={sp.name} />)}
+              </datalist>
             </label>
             <label className="w-40 text-xs font-medium text-zinc-600">Their invoice / docket
               <input value={ordRef} onChange={(e) => setOrdRef(e.target.value)} placeholder="optional" className={input} />

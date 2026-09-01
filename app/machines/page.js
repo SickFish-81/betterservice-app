@@ -114,6 +114,8 @@ export default function MachinesPage() {
 
   const makeOptions = [...new Set([...SEED_MAKES, ...machines.map((m) => m.make).filter(Boolean)])].sort();
   const modelOptions = [...new Set([...SEED_MODELS, ...machines.map((m) => m.model).filter(Boolean)])].sort();
+  // Type is now free text too — a side-by-side, mower or generator isn't "Other".
+  const typeOptions = [...new Set(["ATV", "Motorcycle", "Side by side", "Mower", "Other", ...machines.map((m) => m.type).filter(Boolean)])].sort();
   const idLine = (m) => [m.vin && "VIN " + m.vin, m.key_number && "Key " + m.key_number, m.customers?.name].filter(Boolean).join(" · ");
 
   return (
@@ -126,11 +128,7 @@ export default function MachinesPage() {
           <option value="">Select customer…</option>
           {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
         </select>
-        <select value={type} onChange={(e) => setType(e.target.value)} className={input}>
-          <option>ATV</option>
-          <option>Motorcycle</option>
-          <option>Other</option>
-        </select>
+        <input value={type} onChange={(e) => setType(e.target.value)} placeholder="Type (pick or type new)" list="type-options" className={input} />
         <input value={make} onChange={(e) => setMake(e.target.value)} placeholder="Make (pick or type new)" list="make-options" className={input} />
         <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model (pick or type new)" list="model-options" className={input} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -160,11 +158,7 @@ export default function MachinesPage() {
                       <option value="">Select customer…</option>
                       {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
                     </select>
-                    <select value={ev.type} onChange={(e) => setEv({ ...ev, type: e.target.value })} className={input}>
-                      <option>ATV</option>
-                      <option>Motorcycle</option>
-                      <option>Other</option>
-                    </select>
+                    <input value={ev.type} onChange={(e) => setEv({ ...ev, type: e.target.value })} placeholder="Type" list="type-options" className={input} />
                     <input value={ev.make} onChange={(e) => setEv({ ...ev, make: e.target.value })} placeholder="Make" list="make-options" className={input} />
                     <input value={ev.model} onChange={(e) => setEv({ ...ev, model: e.target.value })} placeholder="Model" list="model-options" className={input} />
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -245,6 +239,7 @@ export default function MachinesPage() {
           </ul>
         )}
       </div>
+      <datalist id="type-options">{typeOptions.map((x) => (<option key={x} value={x} />))}</datalist>
       <datalist id="make-options">{makeOptions.map((x) => (<option key={x} value={x} />))}</datalist>
       <datalist id="model-options">{modelOptions.map((x) => (<option key={x} value={x} />))}</datalist>
     </main>
