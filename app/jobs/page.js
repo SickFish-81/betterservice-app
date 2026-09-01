@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 
-const STATUSES = ["New", "In progress", "Awaiting parts", "Ready", "Invoiced", "Paid"];
 const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
   "In progress": "bg-amber-50 text-amber-700",
@@ -77,12 +76,6 @@ export default function JobsPage() {
     setProblem(""); setMachineId(""); setCustomerId(""); setShowNew(false); loadData();
   }
 
-  async function updateStatus(jobId, status) {
-    const { error } = await supabase.from("job_cards").update({ status }).eq("id", jobId);
-    if (error) setError(error.message);
-    else loadData();
-  }
-
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
       <div className="flex items-start justify-between gap-3">
@@ -105,9 +98,9 @@ export default function JobsPage() {
             <div key={j.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-300">
               <div className="flex items-center justify-between gap-3">
                 <Link href={`/jobs/${j.id}`} className="text-lg font-semibold text-zinc-900 hover:text-red-700">Job #{j.job_number}</Link>
-                <select value={j.status} onChange={(e) => updateStatus(j.id, e.target.value)} className={`rounded-full border-0 px-3 py-1 text-sm font-medium ${STATUS_STYLES[j.status] || "bg-zinc-100 text-zinc-700"}`}>
-                  {STATUSES.map((s) => (<option key={s}>{s}</option>))}
-                </select>
+                <span className={`rounded-full px-3 py-1 text-sm font-medium ${STATUS_STYLES[j.status] || "bg-zinc-100 text-zinc-700"}`}>
+                  {j.status}
+                </span>
               </div>
               <p className="mt-1 text-sm text-zinc-700">{j.customers?.name} · {j.machines?.type} {j.machines?.make} {j.machines?.model}</p>
               {j.reported_problem && <p className="mt-1 text-sm text-zinc-500">{j.reported_problem}</p>}
