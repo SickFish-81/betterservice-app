@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
-import { buildInvoicePdf, pdfToBase64, invoiceFileName } from "../../../lib/invoicePdf";
+import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName } from "../../../lib/invoicePdf";
+import { buildJobCardPdf, jobCardFileName } from "../../../lib/jobCardPdf";
 import { useOwner } from "../../RoleContext";
 
 const STATUS_STYLES = {
@@ -400,6 +401,22 @@ export default function JobDetailPage() {
     const { error } = await supabase.rpc("mark_job_ready", { p_job_id: id });
     if (error) { setError(error.message); return; }
     load();
+  }
+
+  // The job card as a sheet of paper, for reading before confirming the job.
+  // Opens in a tab rather than downloading — Craig wants to look at it, not
+  // collect files. Falls back to saving if the browser blocks the tab.
+  async function openJobCardPdf(download) {
+    setError(null);
+    try {
+      const doc = await buildJobCardPdf({ settings, job, items, times: timeEntries, checklist });
+      if (download) { doc.save(jobCardFileName(job)); return; }
+      const url = pdfToObjectUrl(doc);
+      const w = window.open(url, "_blank");
+      if (!w) doc.save(jobCardFileName(job));
+    } catch (e) {
+      setError("Couldn't build the job card PDF: " + (e?.message || String(e)));
+    }
   }
 
   async function generateInvoice() {
@@ -908,6 +925,13 @@ export default function JobDetailPage() {
           {uploading ? "Uploading…" : "Add photo"}
           <input type="file" accept="image/*" capture="environment" onChange={uploadPhoto} className="hidden" disabled={uploading} />
         </label>
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <button onClick={() => openJobCardPdf(false)} className="rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+          View as PDF
+        </button>
+        <button onClick={() => openJobCardPdf(true)} className="text-sm text-zinc-500 hover:underline">download</button>
       </div>
 
       {job.status !== "Invoiced" && job.status !== "Paid" && (
