@@ -21,7 +21,7 @@ const money = (n) => "$" + Number(n || 0).toFixed(2);
 const gstOf = (inc) => Math.round(Number(inc || 0) * 3 / 23 * 100) / 100;
 const nzDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-NZ") : "");
 
-const empty = { unit_id: "", customer_id: "", monthly_rate_incl_gst: "", start_date: "", end_date: "", on_hold: false, notes: "" };
+const empty = { unit_id: "", customer_id: "", monthly_rate_incl_gst: "", power_charge_incl_gst: "", start_date: "", end_date: "", on_hold: false, notes: "" };
 
 export default function RentalsPage() {
   const [units, setUnits] = useState([]);
@@ -65,6 +65,7 @@ export default function RentalsPage() {
     setForm({
       unit_id: a.unit_id, customer_id: a.customer_id,
       monthly_rate_incl_gst: String(a.monthly_rate_incl_gst ?? ""),
+      power_charge_incl_gst: a.power_charge_incl_gst ? String(a.power_charge_incl_gst) : "",
       start_date: a.start_date || "", end_date: a.end_date || "",
       on_hold: !!a.on_hold, notes: a.notes || "",
     });
@@ -79,6 +80,8 @@ export default function RentalsPage() {
     if (!form.customer_id) return setError("Pick the tenant. Add them under Customers first if they're not listed.");
     const rate = Number(form.monthly_rate_incl_gst);
     if (!(rate > 0)) return setError("Enter the monthly rent the tenant pays.");
+    const power = form.power_charge_incl_gst === "" ? 0 : Number(form.power_charge_incl_gst);
+    if (!Number.isFinite(power) || power < 0) return setError("Power charge must be a number, or leave it blank.");
     if (!form.start_date) return setError("Enter the date the tenancy starts.");
     if (form.end_date && form.end_date < form.start_date) return setError("The end date can't be before the start date.");
 
@@ -86,6 +89,7 @@ export default function RentalsPage() {
       unit_id: form.unit_id,
       customer_id: form.customer_id,
       monthly_rate_incl_gst: rate,
+      power_charge_incl_gst: Number(form.power_charge_incl_gst) || 0,
       start_date: form.start_date,
       end_date: form.end_date || null,
       on_hold: !!form.on_hold,
@@ -147,8 +151,10 @@ export default function RentalsPage() {
     load();
   }
 
-  const rate = Number(form.monthly_rate_incl_gst);
-  const gst = rate > 0 ? gstOf(rate) : 0;
+  const rate = Number(form.monthly_rate_incl_gst) || 0;
+  const powerAmt = Number(form.power_charge_incl_gst) || 0;
+  const billTotal = rate + powerAmt;
+  const gst = billTotal > 0 ? gstOf(billTotal) : 0;
   const vacant = units.filter((u) => !currentFor(u.id)).length;
 
   return (
@@ -191,15 +197,22 @@ export default function RentalsPage() {
           Tenant not listed? <Link href="/customers" className="underline hover:text-zinc-700">Add them under Customers</Link> first.
         </p>
 
-        <div>
-          <input value={form.monthly_rate_incl_gst} onChange={set("monthly_rate_incl_gst")} type="number" step="0.01" min="0"
-                 placeholder="Monthly rent the tenant pays (GST inclusive)" className={input} />
-          {rate > 0 && (
-            <p className="mt-1 text-xs text-zinc-500">
-              Invoice will read {money(rate - gst)} + {money(gst)} GST = <span className="font-medium text-zinc-700">{money(rate)}</span>
-            </p>
-          )}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="text-xs font-medium text-zinc-600">Monthly rent (GST inclusive)
+            <input value={form.monthly_rate_incl_gst} onChange={set("monthly_rate_incl_gst")} type="number" step="0.01" min="0"
+                   placeholder="what the tenant pays" className={input} />
+          </label>
+          <label className="text-xs font-medium text-zinc-600">Power each month (GST inclusive, optional)
+            <input value={form.power_charge_incl_gst} onChange={set("power_charge_incl_gst")} type="number" step="0.01" min="0"
+                   placeholder="leave blank if none" className={input} />
+          </label>
         </div>
+        {billTotal > 0 && (
+          <p className="-mt-1 text-xs text-zinc-500">
+            Invoiced each month: {money(billTotal - gst)} + {money(gst)} GST = <span className="font-medium text-zinc-700">{money(billTotal)}</span>
+            {powerAmt > 0 && <> · shown as two lines, rent {money(rate)} and power {money(powerAmt)}</>}
+          </p>
+        )}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm text-zinc-600">Starts
@@ -271,7 +284,7 @@ export default function RentalsPage() {
                     </p>
                     <p className="truncate text-sm text-zinc-500">
                       {a
-                        ? `${a.customers?.company_name ? a.customers?.name + " · " : ""}${money(a.monthly_rate_incl_gst)}/month · ${upcoming ? "starts" : "since"} ${nzDate(a.start_date)} · ${a.end_date ? "ends " + nzDate(a.end_date) : "open-ended"}`
+                        ? `${a.customers?.company_name ? a.customers?.name + " · " : ""}${money(Number(a.monthly_rate_incl_gst) + Number(a.power_charge_incl_gst || 0))}/month${Number(a.power_charge_incl_gst) > 0 ? ` (incl ${money(a.power_charge_incl_gst)} power)` : ""} · ${upcoming ? "starts" : "since"} ${nzDate(a.start_date)} · ${a.end_date ? "ends " + nzDate(a.end_date) : "open-ended"}`
                         : "No tenant"}
                     </p>
                   </div>
