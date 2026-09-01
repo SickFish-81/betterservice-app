@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
@@ -109,12 +110,14 @@ export default function CustomersPage() {
                 ) : (
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-medium text-zinc-900">{c.name}</p>
+                      <Link href={`/customers/${c.id}`} className="font-medium text-zinc-900 hover:text-red-700">{c.name}</Link>
+                      {c.company_name && <p className="text-sm text-zinc-500">{c.company_name}</p>}
                       <p className="truncate text-sm text-zinc-500">{[c.phone, c.email].filter(Boolean).join(" · ")}</p>
                       {c.address && <p className="truncate text-sm text-zinc-500">{c.address}</p>}
                       {c.no_reminders && <p className="mt-0.5 text-xs font-medium text-amber-600">Reminders off</p>}
                     </div>
                     <div className="flex shrink-0 gap-3 text-sm">
+                      <Link href={`/customers/${c.id}`} className="text-zinc-600 hover:text-zinc-900">machines</Link>
                       <button onClick={() => startEdit(c)} className="font-medium text-red-600 hover:text-red-700">edit</button>
                       <button onClick={() => removeCustomer(c)} className="text-zinc-500 hover:text-red-600">remove</button>
                     </div>
