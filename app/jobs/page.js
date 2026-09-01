@@ -12,8 +12,48 @@ const STATUS_STYLES = {
   "Invoiced": "bg-zinc-100 text-zinc-700",
   "Paid": "bg-emerald-50 text-emerald-700",
 };
+// Once a job is invoiced or paid it's finished. It stays on the list for
+// history, but collapsed to one line so the workshop only sees live work.
+const DONE = new Set(["Invoiced", "Paid"]);
+
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
+
+function JobCard({ j }) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-300">
+      <div className="flex items-center justify-between gap-3">
+        <Link href={`/jobs/${j.id}`} className="text-lg font-semibold text-zinc-900 hover:text-red-700">Job #{j.job_number}</Link>
+        <span className={`rounded-full px-3 py-1 text-sm font-medium ${STATUS_STYLES[j.status] || "bg-zinc-100 text-zinc-700"}`}>
+          {j.status}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-zinc-700">{j.customers?.name} · {j.machines?.type} {j.machines?.make} {j.machines?.model}</p>
+      {j.reported_problem && <p className="mt-1 text-sm text-zinc-500">{j.reported_problem}</p>}
+      <div className="mt-3">
+        <Link href={`/jobs/${j.id}`} className="text-sm font-medium text-red-600 hover:text-red-700">Open →</Link>
+      </div>
+    </div>
+  );
+}
+
+function JobLine({ j }) {
+  return (
+    <Link href={`/jobs/${j.id}`} className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600 transition hover:border-zinc-300 hover:bg-white">
+      <span className="w-16 shrink-0 font-medium text-zinc-800">#{j.job_number}</span>
+      <span className="flex-1 truncate">{j.customers?.name} · {j.machines?.make} {j.machines?.model}</span>
+      <span className="shrink-0 text-xs font-medium text-zinc-500">{j.status}</span>
+    </Link>
+  );
+}
+
+function SectionHeading({ children, count }) {
+  return (
+    <h2 className="mt-6 mb-2 flex items-baseline gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      {children}<span className="font-normal normal-case tracking-normal text-zinc-400">({count})</span>
+    </h2>
+  );
+}
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState([]);
@@ -30,6 +70,7 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showNew, setShowNew] = useState(false);
+  const [showDone, setShowDone] = useState(false);
 
   async function loadData() {
     setLoading(true);
@@ -76,6 +117,11 @@ export default function JobsPage() {
     setProblem(""); setMachineId(""); setCustomerId(""); setShowNew(false); loadData();
   }
 
+  // Three buckets: not started, in the workshop, finished.
+  const newJobs = jobs.filter((j) => j.status === "New");
+  const doneJobs = jobs.filter((j) => DONE.has(j.status));
+  const openJobs = jobs.filter((j) => j.status !== "New" && !DONE.has(j.status));
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
       <div className="flex items-start justify-between gap-3">
@@ -88,29 +134,49 @@ export default function JobsPage() {
 
       {error && !showNew && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}
 
-      <div className="mt-6 flex flex-col gap-3">
-        {loading ? (
-          <p className="text-zinc-500">Loading…</p>
-        ) : jobs.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-zinc-500">No job cards yet. Tap “+ New job card” to start one.</p>
-        ) : (
-          jobs.map((j) => (
-            <div key={j.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-300">
-              <div className="flex items-center justify-between gap-3">
-                <Link href={`/jobs/${j.id}`} className="text-lg font-semibold text-zinc-900 hover:text-red-700">Job #{j.job_number}</Link>
-                <span className={`rounded-full px-3 py-1 text-sm font-medium ${STATUS_STYLES[j.status] || "bg-zinc-100 text-zinc-700"}`}>
-                  {j.status}
-                </span>
+      {loading ? (
+        <p className="mt-6 text-zinc-500">Loading…</p>
+      ) : jobs.length === 0 ? (
+        <p className="mt-6 rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-zinc-500">No job cards yet. Tap “+ New job card” to start one.</p>
+      ) : (
+        <>
+          {newJobs.length > 0 && (
+            <>
+              <SectionHeading count={newJobs.length}>New</SectionHeading>
+              <div className="flex flex-col gap-3">
+                {newJobs.map((j) => (<JobCard key={j.id} j={j} />))}
               </div>
-              <p className="mt-1 text-sm text-zinc-700">{j.customers?.name} · {j.machines?.type} {j.machines?.make} {j.machines?.model}</p>
-              {j.reported_problem && <p className="mt-1 text-sm text-zinc-500">{j.reported_problem}</p>}
-              <div className="mt-3">
-                <Link href={`/jobs/${j.id}`} className="text-sm font-medium text-red-600 hover:text-red-700">Open →</Link>
+            </>
+          )}
+
+          {openJobs.length > 0 && (
+            <>
+              <SectionHeading count={openJobs.length}>In the workshop</SectionHeading>
+              <div className="flex flex-col gap-3">
+                {openJobs.map((j) => (<JobCard key={j.id} j={j} />))}
               </div>
-            </div>
-          ))
-        )}
-      </div>
+            </>
+          )}
+
+          {doneJobs.length > 0 && (
+            <>
+              <button
+                onClick={() => setShowDone((v) => !v)}
+                className="mt-6 mb-2 flex w-full items-baseline gap-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-700"
+              >
+                Finished
+                <span className="font-normal normal-case tracking-normal text-zinc-400">({doneJobs.length})</span>
+                <span className="ml-auto font-normal normal-case tracking-normal text-zinc-400">{showDone ? "hide" : "show"}</span>
+              </button>
+              {showDone && (
+                <div className="flex flex-col gap-1.5">
+                  {doneJobs.map((j) => (<JobLine key={j.id} j={j} />))}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
 
       {showNew && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center" onClick={() => setShowNew(false)}>
