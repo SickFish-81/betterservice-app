@@ -8,11 +8,15 @@ const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-90
 const area = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 
-function Field({ label, value, onChange, placeholder }) {
+const money = (n) => "$" + Number(n || 0).toFixed(2);
+
+// ...rest lets a caller add type="number", step, min and so on without needing
+// a second component for the sake of one attribute.
+function Field({ label, value, onChange, placeholder, ...rest }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
       <span className="font-medium text-zinc-700">{label}</span>
-      <input value={value || ""} onChange={onChange} placeholder={placeholder} className={input} />
+      <input value={value ?? ""} onChange={onChange} placeholder={placeholder} className={input} {...rest} />
     </label>
   );
 }
@@ -97,6 +101,37 @@ export default function SettingsPage() {
           <p className="-mt-2 text-xs text-zinc-500">
             Applied to new invoices. You can still change the terms on any individual invoice before sending it.
           </p>
+
+          <div className="mt-2 border-t border-zinc-100 pt-4">
+            <p className="text-sm font-semibold text-zinc-800">Charge-out rates</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              The starting point for every job. Both can still be changed on an individual job before its
+              invoice goes out, so this is the usual figure, not a rule.
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field
+                label="Labour rate ($ per hour, excl GST)"
+                type="number" step="1" min="0"
+                value={s.labour_rate ?? ""}
+                onChange={(e) => set("labour_rate", e.target.value)}
+                placeholder="115"
+              />
+              <Field
+                label="Parts markup (% on what it cost)"
+                type="number" step="1" min="0"
+                value={s.parts_markup_percent ?? ""}
+                onChange={(e) => set("parts_markup_percent", e.target.value)}
+                placeholder="30"
+              />
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">
+              A part that cost {money(100)} is charged at{" "}
+              <span className="font-medium text-zinc-700">
+                {money(100 * (1 + (Number(s.parts_markup_percent) || 30) / 100))}
+              </span>{" "}
+              excl GST at {(Number(s.parts_markup_percent) || 30)}%.
+            </p>
+          </div>
 
           <Field
             label="Send a copy of every invoice to"

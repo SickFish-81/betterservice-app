@@ -39,7 +39,7 @@ export default function JobDetailPage() {
   const [senderId, setSenderId] = useState("");
   const [labourDesc, setLabourDesc] = useState("");
   const [hours, setHours] = useState("1");
-  const [labourRate, setLabourRate] = useState("115");   // $/hr — editable, e.g. welding at 50
+  const [labourRate, setLabourRate] = useState("");      // $/hr — blank means the shop rate; override for e.g. welding at 50
   const [partId, setPartId] = useState("");
   const [partQty, setPartQty] = useState("1");
   const [partPrice, setPartPrice] = useState("");   // blank = use the part's own price
@@ -89,7 +89,7 @@ export default function JobDetailPage() {
   const [eNotes, setENotes] = useState("");
   const [eCustNotes, setECustNotes] = useState("");
   const [billHours, setBillHours] = useState("");
-  const [billRate, setBillRate] = useState("115");
+  const [billRate, setBillRate] = useState("");          // blank means the shop rate
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -188,11 +188,11 @@ export default function JobDetailPage() {
   async function addLabour(e) {
     e.preventDefault();
     if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
-    const rate = Number(labourRate);
+    const rate = Number(labourRate === "" ? shopRate : labourRate);
     if (!Number.isFinite(rate) || rate < 0) { setError("Rate must be a number."); return; }
     const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Math.max(0, Number(hours) || 0), unit_price: Math.round(rate * 100) / 100 });
     if (error) { setError(error.message); return; }
-    setLabourDesc(""); setHours("1"); setLabourRate(String(shopRate)); load();
+    setLabourDesc(""); setHours("1"); setLabourRate(""); load();
   }
 
   // A part ordered in from a supplier for this job — not stock, so nothing is
@@ -371,7 +371,7 @@ export default function JobDetailPage() {
     if (unbilledEntries.length === 0) return;
     if (charge) {
       const h = Number(billHours === "" ? unbilledHours : billHours);
-      const r = Number(billRate);
+      const r = Number(billRate === "" ? shopRate : billRate);
       if (!(h > 0)) { setError("Hours must be more than zero."); return; }
       if (!Number.isFinite(r) || r < 0) { setError("Rate must be a number."); return; }
       if (!window.confirm(`Add ${h} h at $${r}/hr = $${(h * r).toFixed(2)} + GST as labour on this job?`)) return;
@@ -658,7 +658,7 @@ export default function JobDetailPage() {
                 <input value={billHours} onChange={(e) => setBillHours(e.target.value)} type="number" step="0.25" min="0" placeholder={String(unbilledHours)} className="mt-1 block w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-zinc-900" />
               </label>
               <label className="text-xs font-medium text-amber-900">Rate $/h
-                <input value={billRate || String(shopRate)} onChange={(e) => setBillRate(e.target.value)} type="number" step="1" min="0" className="mt-1 block w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-zinc-900" />
+                <input value={billRate} onChange={(e) => setBillRate(e.target.value)} type="number" step="1" min="0" placeholder={String(shopRate)} className="mt-1 block w-24 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm text-zinc-900" />
               </label>
               <button onClick={() => billAllTime(true)} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">Bill as labour</button>
               <button onClick={() => billAllTime(false)} className="pb-2 text-xs text-amber-800 underline hover:text-amber-900">don&apos;t charge this time</button>
@@ -814,6 +814,7 @@ export default function JobDetailPage() {
               type="number"
               min="0"
               step="0.01"
+              placeholder={String(shopRate)}
               title="The shop rate comes from Settings. Change it here for work charged differently — welding, sublet, a quoted rate."
               className={input}
             />
