@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 import { useOwner } from "./RoleContext";
 
@@ -53,6 +53,7 @@ const groups = [
 
 export default function NavBar({ email }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false); // mobile sheet
   const [menu, setMenu] = useState(null);  // open desktop dropdown label
   const owner = useOwner();
@@ -114,6 +115,12 @@ export default function NavBar({ email }) {
 
         {/* Desktop right cluster */}
         <div className="ml-auto hidden items-center gap-2 text-sm sm:flex">
+          {/* Type and hit enter. The results live on /search, so the box only
+              has to carry the words there. */}
+          <form onSubmit={(e) => { e.preventDefault(); const v = new FormData(e.currentTarget).get("q"); if (String(v).trim()) router.push(`/search?q=${encodeURIComponent(String(v).trim())}`); }}>
+            <input name="q" type="search" placeholder="Search…" aria-label="Search"
+              className="w-40 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:w-56 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+          </form>
           <Link href="/" className="text-zinc-500 hover:text-zinc-700">View site ↗</Link>
           <button onClick={() => supabase.auth.signOut()} className="rounded-md px-2 py-1 font-medium text-red-600 hover:bg-red-50">Sign out</button>
         </div>
@@ -131,6 +138,7 @@ export default function NavBar({ email }) {
       {/* Mobile sheet */}
       {open && (
         <nav className="mx-auto max-w-4xl border-t border-zinc-100 px-4 py-2 text-sm sm:hidden">
+          <Link href="/search" onClick={() => setOpen(false)} className={itemCls(isActive("/search"))}>Search</Link>
           <Link href="/jobs" onClick={() => setOpen(false)} className={itemCls(isActive("/jobs"))}>Job Cards</Link>
           {visibleGroups.map((g) => (
             <div key={g.label} className="mt-2">

@@ -9,6 +9,7 @@ import { useOwner } from "../RoleContext";
 const money = (n) => "$" + Math.round(Number(n || 0)).toLocaleString();
 
 const cards = [
+  { href: "/search", title: "Search", desc: "Find a customer, machine, job card, invoice or part." },
   { href: "/jobs", title: "Job Cards", desc: "Take a job from first contact to a filed invoice." },
   { href: "/counter-sales", title: "Counter Sale", desc: "Sell parts & accessories over the counter, no job card.", ownerOnly: true },
   { href: "/invoices", title: "Invoices", desc: "What's billed and what's still owing.", ownerOnly: true },
