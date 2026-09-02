@@ -22,6 +22,27 @@ const oldSiteRedirects = [
 ];
 
 const nextConfig = {
+  // The site answers on two addresses — betterservice.co.nz and the
+  // betterservice-app.vercel.app one, which is handy to keep for testing. Same
+  // server, same build, same database: there is no older copy. But to Google
+  // it's the same site at two addresses, which splits the ranking between them
+  // and lets it show whichever it prefers.
+  //
+  // Every page already carries a canonical tag pointing at betterservice.co.nz.
+  // This is the belt to that pair of braces: anything served on the vercel.app
+  // host is marked noindex, so it stays fully usable for us and invisible to
+  // search engines. A redirect would also fix the SEO, but it would take the
+  // address away.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "betterservice-app.vercel.app" }],
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+    ];
+  },
+
   async redirects() {
     return oldSiteRedirects.map(([source, destination]) => ({
       source,
