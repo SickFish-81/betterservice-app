@@ -10,7 +10,7 @@ import AttentionBanner from "./AttentionBanner";
 import TimesheetNudge from "./TimesheetNudge";
 import { RoleContext } from "./RoleContext";
 
-const PUBLIC_EXACT = ["/", "/login", "/reset", "/batteries", "/book", "/enquiry"];
+const PUBLIC_EXACT = ["/", "/login", "/reset", "/batteries", "/book", "/enquiry", "/flip-recessed-bike-mounts"];
 function isPublic(p) {
   return PUBLIC_EXACT.includes(p) || p === "/for-sale" || p.startsWith("/for-sale/");
 }

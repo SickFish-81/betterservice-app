@@ -1,4 +1,10 @@
 import Link from "next/link";
+
+export const metadata = {
+  description:
+    "Betterservice ATV, 556 Te Puke Highway — motorcycle and ATV servicing, repairs, WOF-ready checks and used quads. Quick turnaround. Phone or text 021 08327787.",
+  alternates: { canonical: "/" },
+};
 import HeroVideo from "./HeroVideo";
 
 const LOGO = "/logo.png";

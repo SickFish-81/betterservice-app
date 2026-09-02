@@ -1,5 +1,12 @@
 import Link from "next/link";
 
+export const metadata = {
+  title: "Bosch batteries",
+  description:
+    "Bosch batteries for motorcycles, ATVs, cars and boats, fitted and tested at Betterservice ATV in Te Puke.",
+  alternates: { canonical: "/batteries" },
+};
+
 const PRODUCT_IMG = "/battery.jpg";
 
 const categories = [
