@@ -478,10 +478,10 @@ export default function JobDetailPage() {
     }
     // Don't re-send client-side money — the invoice already holds the server-computed totals.
     await supabase.from("invoices").update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath }).eq("id", invoice.id);
-    if (job.machine_id) {
-      const todayNZ = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" });
-      await supabase.from("machines").update({ last_service_date: todayNZ }).eq("id", job.machine_id);
-    }
+    // The machine's service date is stamped in the database from the invoice
+    // itself (trg_stamp_machine_service_date). Doing it here as well meant it
+    // was only recorded if this exact path ran to the end — and it recorded
+    // today rather than the invoice date.
     if (res.emailError) setError("Invoice filed & marked sent, but the email to the customer didn't go: " + res.emailError);
     load();
   }
