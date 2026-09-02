@@ -40,15 +40,50 @@ Craig makes, on a URL that's been indexed for years. Options: build a page for i
 on the new site (best — keeps the traffic and the product is his), redirect to
 flipbikes.co.nz (loses the value to another domain), or let it 404.
 
-## Before touching DNS
+## The live DNS, checked 2 Sep 2026
 
-- [ ] **Write down the current MX records.** Craig's email is on this domain
-      (`craig@betterservice.co.nz`), and so is the invoice sender
-      (`admin@betterservice.co.nz`). Point the **A record** at Vercel and leave
-      **MX** alone, or the mail dies with the website.
-- [ ] **Check the SPF / DKIM TXT records** that Resend uses to send invoices.
-      They must survive the move or invoice emails start landing in spam.
-- [ ] Add the domain in Vercel, then update the Supabase **Site URL** and
-      **Redirect URLs** to the new domain (keep the vercel.app entries so
-      preview deployments still work).
-- [ ] Tell the team they'll be signed out once — sessions are per-domain.
+Nameservers are **HostPapa** (`ns1.hostpapa.com`, `ns2.hostpapa.com`), so every
+change below is made in the HostPapa DNS panel.
+
+| Record | Current value | Move it? |
+|---|---|---|
+| `A` @ | `66.102.132.100` (old site) | **YES → Vercel** |
+| `CNAME` www | `betterservice.co.nz` | **YES → Vercel** |
+| `MX` @ | `mx.betterservice.co.nz.cust.a.hostedemail.com` | **NO — Craig's mail** |
+| `TXT` @ (SPF) | `v=spf1 include:_spf.mlsend.com ip4:66.102.132.100 +ip4:65.39.193.20 +include:_spf.hostedemail.com ~all` | **NO** |
+| `TXT` @ | `mailerlite-domain-verification=…` | **NO** |
+| `TXT` `resend._domainkey` | Resend's DKIM public key | **NO — invoice email** |
+| `TXT` `send` | `v=spf1 include:amazonses.com ~all` | **NO — Resend** |
+| `MX` `send` | `feedback-smtp.ap-northeast-1.amazonses.com` | **NO — Resend bounces** |
+| `TXT` `_dmarc` | `v=DMARC1; p=none;` | **NO** |
+
+**Why the email survives.** Resend sends the rent invoices as
+`admin@betterservice.co.nz`, but none of the records that make that work sit on
+the A record. The bounce path and its SPF live on the `send.` subdomain, and the
+signature that proves the mail is really from this domain is the DKIM key at
+`resend._domainkey`. Craig's own mailbox is on the root `MX`. Change the A record
+and the www CNAME, leave the rest alone, and nothing that carries mail moves.
+
+The SPF at the root still lists `ip4:66.102.132.100` — the old web server, which
+could send from the PHP contact form. Once the site is off that box the entry is
+stale but harmless. Tidy it up later, not during the move.
+
+## Still to do at the move
+
+- [ ] Add `betterservice.co.nz` and `www.betterservice.co.nz` in Vercel, and use
+      the A / CNAME values Vercel gives you.
+- [ ] Update Supabase **Site URL** and **Redirect URLs** to the new domain —
+      keep the `.vercel.app` entries so preview deploys still log in. This is
+      what sent the password reset to the wrong place last time.
+- [ ] Tell the team they'll be signed out once. A login session belongs to the
+      domain it was created on, so moving domain ends it.
+- [ ] After it resolves: check `/robots.txt`, `/sitemap.xml`, and that
+      `https://betterservice.co.nz/atv-servicing.php` lands on the homepage.
+- [ ] Submit the domain in Google Search Console and upload the sitemap.
+
+## Done (in the code, waiting on DNS)
+
+- 308 redirects for all seven old URLs — `next.config.mjs`
+- `/flip-recessed-bike-mounts` — unlinked, indexable, holds the old page's copy
+- Per-page titles and descriptions on all six public pages
+- `robots.txt` excluding every staff route; `sitemap.xml` listing the public six
