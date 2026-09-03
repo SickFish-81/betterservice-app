@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 import Hireage from "./Hireage";
+import Approvals from "./Approvals";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
@@ -34,7 +35,20 @@ export default function RentalsPage() {
   const [tab, setTab] = useState("units");
   const [newUnit, setNewUnit] = useState({ name: "", description: "" });
   const [addingUnit, setAddingUnit] = useState(false);
+  const [pending, setPending] = useState(0);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // How many rent invoices are prepared but not yet sent. Shown on the tab so
+  // it is visible without going looking — an approval queue nobody opens is
+  // just a slower way of not invoicing.
+  useEffect(() => {
+    supabase
+      .from("invoices")
+      .select("id", { count: "exact", head: true })
+      .eq("kind", "rental")
+      .eq("sent", false)
+      .then(({ count }) => setPending(count || 0));
+  }, [tab]);
 
   async function load() {
     setLoading(true);
@@ -84,6 +98,9 @@ export default function RentalsPage() {
     if (!Number.isFinite(power) || power < 0) return setError("Power charge must be a number, or leave it blank.");
     if (!form.start_date) return setError("Enter the date the tenancy starts.");
     if (form.end_date && form.end_date < form.start_date) return setError("The end date can't be before the start date.");
+    // Deliberately a confirm, not a hard stop — an odd rate can be legitimate
+    // (the sign space isn't a storage unit). It just has to be said out loud.
+    if (rateWarning && !window.confirm(rateWarning + "\n\nSave this rate anyway?")) return;
 
     const payload = {
       unit_id: form.unit_id,
@@ -155,6 +172,25 @@ export default function RentalsPage() {
   const powerAmt = Number(form.power_charge_incl_gst) || 0;
   const billTotal = rate + powerAmt;
   const gst = billTotal > 0 ? gstOf(billTotal) : 0;
+
+  // A rent wildly out of line with the other units is almost always a typo, and
+  // the usual typo is a WEEKLY figure typed into a monthly box — which is exactly
+  // how Unit 3 was invoiced at $115 for a month whose rent is $498.33. The
+  // generator can't catch it: $115 is a perfectly valid number. Catching it has
+  // to happen here, while the person who knows the real rent is looking at it.
+  const peerRates = agreements
+    .filter((a) => a.id !== editingId && Number(a.monthly_rate_incl_gst) > 0)
+    .map((a) => Number(a.monthly_rate_incl_gst))
+    .sort((x, y) => x - y);
+  const peerMedian = peerRates.length ? peerRates[Math.floor(peerRates.length / 2)] : 0;
+  const asMonthly = (rate * 52) / 12;           // what this would be, if it were a week's rent
+  const looksWeekly = peerMedian > 0 && rate > 0 && Math.abs(asMonthly - peerMedian) <= peerMedian * 0.15;
+  const wayOff = peerMedian > 0 && rate > 0 && (rate < peerMedian * 0.6 || rate > peerMedian * 1.6);
+  const rateWarning = !wayOff
+    ? null
+    : looksWeekly
+      ? `${money(rate)} looks like a WEEKLY rent. The other units are around ${money(peerMedian)} a month — and ${money(rate)} a week works out to ${money(asMonthly)} a month.`
+      : `${money(rate)} is a long way from the other units, which are around ${money(peerMedian)} a month.`;
   const vacant = units.filter((u) => !currentFor(u.id)).length;
 
   return (
@@ -162,12 +198,12 @@ export default function RentalsPage() {
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Rentals</h1>
       <p className="mt-1 text-zinc-600">
         {tab === "units"
-          ? "The storage units and the shed. Rent is invoiced automatically three days before each month starts, due on the 1st."
+          ? "The storage units and the shed. Rent is prepared automatically three days before each period starts — then waits under Awaiting approval until Craig sends it."
           : "Gear hired out by the day. Paid when it goes out or comes back, not on account."}
       </p>
 
       <div className="mt-5 flex gap-1 border-b border-zinc-200">
-        {[["units", "Storage units"], ["hireage", "Hireage"]].map(([k, lbl]) => (
+        {[["units", "Storage units"], ["hireage", "Hireage"], ["approvals", pending ? `Awaiting approval (${pending})` : "Awaiting approval"]].map(([k, lbl]) => (
           <button key={k} onClick={() => setTab(k)}
             className={"-mb-px border-b-2 px-4 py-2 text-sm font-medium " +
               (tab === k ? "border-red-600 text-red-700" : "border-transparent text-zinc-500 hover:text-zinc-800")}>
@@ -177,6 +213,7 @@ export default function RentalsPage() {
       </div>
 
       {tab === "hireage" && <Hireage />}
+      {tab === "approvals" && <Approvals />}
       {tab === "units" && (
       <>
 
@@ -211,6 +248,11 @@ export default function RentalsPage() {
           <p className="-mt-1 text-xs text-zinc-500">
             Invoiced each month: {money(billTotal - gst)} + {money(gst)} GST = <span className="font-medium text-zinc-700">{money(billTotal)}</span>
             {powerAmt > 0 && <> · shown as two lines, rent {money(rate)} and power {money(powerAmt)}</>}
+          </p>
+        )}
+        {rateWarning && (
+          <p className="-mt-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <span className="font-semibold">Check this rate.</span> {rateWarning}
           </p>
         )}
 

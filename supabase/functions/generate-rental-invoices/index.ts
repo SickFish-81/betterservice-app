@@ -1,4 +1,4 @@
-// generate-rental-invoices: bill the storage units and the shed, automatically.
+// generate-rental-invoices: PREPARE the rent invoices. It does not send them.
 //
 // Runs DAILY, not monthly, and that is deliberate. Rent is issued three days
 // before the period it covers, and a once-a-month job that fails is a month of
@@ -17,7 +17,15 @@
 // cards, and returns null when an agreement isn't billable for that period
 // (not started, ended, on hold, or already invoiced).
 //
-// Call with ?dry=1 to see exactly what it would send, without sending anything.
+// WHAT CHANGED (2 Sep 2026): this used to email the tenant in the same breath as
+// creating the invoice. A unit whose rent had been entered as a weekly figure
+// went out at a quarter of its value, and the tenant had it before any human
+// had looked. Now the invoice is created, its PDF is filed, and it STOPS —
+// sent=false, which is the same awaiting-approval state a job-card invoice sits
+// in. Craig approves and sends from Rentals > Awaiting approval, which calls
+// send-rental-invoice. This job's email to Craig is a request, not a receipt.
+//
+// Call with ?dry=1 to see what it would prepare, without writing anything.
 //
 // Needs: SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET, RESEND_API_KEY.
 
@@ -39,11 +47,6 @@ async function sb(path: string, opts: RequestInit = {}) {
     headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", ...(opts.headers || {}) },
   });
 }
-function b64(bytes: Uint8Array) {
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
 function esc(s: unknown) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 }
@@ -58,35 +61,6 @@ function applyTemplate(tpl: unknown, vars: Record<string, unknown>) {
     Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k] ?? "") : `{${k}}`);
 }
 
-// Craig's welcome-and-conditions letter, rendered from the editable template in
-// Settings. pdf-lib neither wraps nor paginates, so both are done here.
-async function buildLetterPdf(body: string) {
-  const { PDFDocument, StandardFonts } = await import("https://esm.sh/pdf-lib@1.17.1");
-  const pdf = await PDFDocument.create();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const SIZE = 11, LEAD = 15, LEFT = 50, TOP = 790, BOTTOM = 60, WIDTH = 495;
-
-  const lines: string[] = [];
-  for (const para of String(body ?? "").split(/\r?\n/)) {
-    if (!para.trim()) { lines.push(""); continue; }
-    let line = "";
-    for (const word of para.trim().split(/\s+/)) {
-      const test = line ? line + " " + word : word;
-      if (font.widthOfTextAtSize(test, SIZE) > WIDTH && line) { lines.push(line); line = word; }
-      else line = test;
-    }
-    lines.push(line);
-  }
-
-  let page = pdf.addPage([595, 842]);
-  let y = TOP;
-  for (const ln of lines) {
-    if (y < BOTTOM) { page = pdf.addPage([595, 842]); y = TOP; }
-    if (ln) page.drawText(ln, { x: LEFT, y, size: SIZE, font });
-    y -= LEAD;
-  }
-  return await pdf.saveAsBase64();
-}
 
 async function buildInvoicePdf(shop: Record<string, string>, inv: Record<string, unknown>, customer: Record<string, string>, lines: Record<string, unknown>[]) {
   const { PDFDocument, StandardFonts } = await import("https://esm.sh/pdf-lib@1.17.1");
@@ -210,99 +184,69 @@ Deno.serve(async (req) => {
       const filed = up.ok ? path : null;
       if (!up.ok) problems.push(`${who}: PDF not filed (${up.status})`);
 
-      // The lease goes out once, with the first invoice for that agreement.
-      // A file uploaded against the agreement wins — that's the signed or
-      // lawyer-drafted version. Otherwise it's rendered from the Settings
-      // template, so Craig can reword it without a deploy.
-      const attachments: Record<string, string>[] = [{ filename: `Invoice-${String(inv.invoice_number).padStart(5, "0")}.pdf`, content: pdf64 }];
-      let leaseSent = false;
-      if (!ag.lease_sent_at) {
-        if (ag.lease_pdf_path) {
-          const lr = await fetch(`${SUPABASE_URL}/storage/v1/object/${ag.lease_pdf_path}`, {
-            headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-          });
-          if (lr.ok) {
-            attachments.push({ filename: "Lease-Agreement.pdf", content: b64(new Uint8Array(await lr.arrayBuffer())) });
-            leaseSent = true;
-          } else {
-            problems.push(`${who}: lease attachment couldn't be read (${lr.status})`);
-          }
-        } else if (shop.lease_letter_body) {
-          const letter = applyTemplate(shop.lease_letter_body, {
-            customer: ag.customers?.name || "",
-            unit: ag.rental_units?.name || "",
-            date: nzDate(inv.issued_date),
-            start: nzDate(ag.start_date),
-          });
-          attachments.push({ filename: "Lease-Agreement.pdf", content: await buildLetterPdf(letter) });
-          leaseSent = true;
-        }
-      }
-
-      let emailed = false;
-      const to = ag.customers?.email;
-      if (to && RESEND) {
-        const er = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${RESEND}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            from: `${business} <admin@betterservice.co.nz>`,
-            to: [to],
-            // Same email, same attachments — invoice, and the lease on a first
-            // one — so the shop holds exactly what the tenant received.
-            ...(bcc ? { bcc: [bcc] } : {}),
-            subject: `Rent invoice ${invNo(inv.invoice_number)} — ${covers}`,
-            html:
-              `<p>Hi ${esc(ag.customers?.name || "there")},</p>` +
-              `<p>Your rent invoice for <strong>${esc(ag.rental_units?.name)}</strong> covering <strong>${esc(covers)}</strong> is attached — <strong>${money(inv.total)}</strong>, due ${nzDate(inv.due_date)}.</p>` +
-              (leaseSent ? `<p>Your lease agreement is attached as well, for your records.</p>` : "") +
-              `<p>This is collected by automatic payment, so there's nothing to do — the invoice is for your records.</p>` +
-              `<p>Cheers,<br/>${esc(business)}</p>`,
-            attachments,
-          }),
-        });
-        emailed = er.ok;
-        if (!er.ok) problems.push(`${who}: email rejected — ${await er.text()}`);
-      } else if (!to) {
-        problems.push(`${who}: no email address on file — invoice created but not sent`);
-      } else if (!RESEND) {
-        problems.push(`${who}: RESEND_API_KEY not set — invoice created but not sent`);
-      }
-
+      // NOTHING IS SENT HERE ANY MORE.
+      //
+      // A rental invoice now waits for Craig exactly the way a job-card invoice
+      // already did: sent=false IS the awaiting-approval state, and Rentals >
+      // Awaiting approval is where it gets looked at and sent. This exists
+      // because on 2 Sep 2026 a unit was invoiced at a week's rent instead of a
+      // month's and the tenant had it before anyone had seen it.
+      //
+      // The lease attachment moved with the sending, into send-rental-invoice.
       await sb(`/rest/v1/invoices?id=eq.${inv.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ sent: emailed, sent_at: emailed ? new Date().toISOString() : null, ...(filed ? { pdf_url: filed } : {}) }),
+        body: JSON.stringify(filed ? { pdf_url: filed } : {}),
       });
-      if (leaseSent && emailed) {
-        await sb(`/rest/v1/rental_agreements?id=eq.${ag.id}`, {
-          method: "PATCH", body: JSON.stringify({ lease_sent_at: new Date().toISOString() }),
-        });
-      }
 
-      done.push({ period, covers, who, invoice: invNo(inv.invoice_number), total: money(inv.total), emailed, lease: leaseSent });
+      // Worth knowing NOW rather than at the moment Craig presses send.
+      if (!ag.customers?.email) problems.push(`${who}: no email address on file — fix that before approving`);
+
+      done.push({ period, covers, who, invoice: invNo(inv.invoice_number), total: money(inv.total), email: ag.customers?.email || null });
     }
 
-    // Tell the shop what went out. With auto-send this summary is the only
-    // safety net there is — a wrong invoice should be a same-day fix, not a
-    // month-end surprise.
-    if (!dry && done.length > 0 && RESEND && bcc) {
+    // Anything held on an earlier run and STILL not approved. This is the
+    // escalation: an approval gate that nobody looks at is worse than no gate,
+    // because the rent silently never goes out. Once a period has started, the
+    // tenant's automatic payment has already left their account against an
+    // invoice they have never seen — so that gets said loudly.
+    let waiting: Record<string, unknown>[] = [];
+    if (!dry) {
+      const w = await sb(
+        "/rest/v1/invoices?kind=eq.rental&sent=eq.false&select=invoice_number,total,period_start,customers(name),rental_agreement_id&order=period_start.asc"
+      );
+      if (w.ok) waiting = (await w.json()) || [];
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const overdue = waiting.filter((v: Record<string, any>) => v.period_start && String(v.period_start) <= today);
+
+    // Craig's one email. Nothing has gone to a tenant — this is the ask, not a receipt.
+    if (!dry && (done.length > 0 || overdue.length > 0) && RESEND && bcc) {
       await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           from: `${business} <admin@betterservice.co.nz>`,
           to: [bcc],
-          subject: `Rent invoices sent — ${done.length} invoice(s)`,
+          subject: overdue.length
+            ? `Rent invoices need approving — ${overdue.length} already past its start date`
+            : `Rent invoices ready to approve — ${done.length}`,
           html:
-            `<p>The rent run has just gone out:</p><ul>` +
-            done.map((d) => `<li>${esc(d.who)} — ${esc(d.invoice)} ${esc(d.total)} <em>(${esc(d.covers)})</em>${d.emailed ? "" : " <strong>(not emailed)</strong>"}${d.lease ? " + lease" : ""}</li>`).join("") +
-            `</ul>` +
-            (problems.length ? `<p><strong>Needs a look:</strong></p><ul>${problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : "<p>No problems.</p>"),
+            (done.length
+              ? `<p><strong>Prepared this morning. Nothing has been sent yet</strong> — open Rentals &rsaquo; Awaiting approval to check and send:</p><ul>` +
+                done.map((d) => `<li>${esc(d.who)} — ${esc(d.invoice)} ${esc(d.total)} <em>(${esc(d.covers)})</em>${d.email ? "" : " <strong>(no email address on file)</strong>"}</li>`).join("") +
+                `</ul>`
+              : "") +
+            (overdue.length
+              ? `<p style="color:#b45309"><strong>These are past the date their period started and still have not been sent:</strong></p><ul>` +
+                overdue.map((v: Record<string, any>) => `<li>${esc(v.customers?.name || "tenant")} — ${esc(invNo(v.invoice_number))} ${esc(money(v.total))}, period started ${esc(nzDate(v.period_start))}</li>`).join("") +
+                `</ul><p>The automatic payment may already have been taken against an invoice the tenant has never seen.</p>`
+              : "") +
+            (problems.length ? `<p><strong>Needs a look:</strong></p><ul>${problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""),
         }),
       });
     }
 
-    return json({ ok: true, dry, due: due.length, generated: done.length, done, problems });
+    return json({ ok: true, dry, due: due.length, generated: done.length, held: done.length, awaiting_approval: waiting.length, overdue: overdue.length, done, problems });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
