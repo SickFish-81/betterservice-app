@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import { makeOptions, modelOptions, typeOptions } from "../../../lib/machineOptions";
 import { useOwner } from "../../RoleContext";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
@@ -46,7 +47,9 @@ export default function CustomerPage() {
   }
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
-  const opts = (field) => [...new Set(allMachines.map((x) => x[field]).filter(Boolean))].sort();
+  // Suggestions come from the reference list AND the shop's own machines — it
+  // used to be only the latter, so a new shop was offered nothing to pick from.
+  // Models narrow to whichever make has been typed.
 
   function startEdit(m) {
     setEditingId(m.id);
@@ -199,9 +202,9 @@ export default function CustomerPage() {
         </>
       )}
 
-      <datalist id="c-types">{opts("type").map((x) => <option key={x} value={x} />)}</datalist>
-      <datalist id="c-makes">{opts("make").map((x) => <option key={x} value={x} />)}</datalist>
-      <datalist id="c-models">{opts("model").map((x) => <option key={x} value={x} />)}</datalist>
+      <datalist id="c-types">{typeOptions(allMachines).map((x) => <option key={x} value={x} />)}</datalist>
+      <datalist id="c-makes">{makeOptions(allMachines).map((x) => <option key={x} value={x} />)}</datalist>
+      <datalist id="c-models">{modelOptions(allMachines, form.make).map((x) => <option key={x} value={x} />)}</datalist>
     </main>
   );
 }

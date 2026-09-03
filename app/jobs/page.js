@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
+import { makeOptions, modelOptions, typeOptions } from "../../lib/machineOptions";
 
 const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
@@ -208,9 +209,12 @@ export default function JobsPage() {
                     <input value={nmMake} onChange={(e) => setNmMake(e.target.value)} placeholder="Make" list="nm-makes" className={input} />
                     <input value={nmModel} onChange={(e) => setNmModel(e.target.value)} placeholder="Model" list="nm-models" className={input} />
                   </div>
-                  <datalist id="nm-types">{[...new Set(machines.map((m) => m.type).filter(Boolean))].map((v) => <option key={v} value={v} />)}</datalist>
-                  <datalist id="nm-makes">{[...new Set(machines.map((m) => m.make).filter(Boolean))].map((v) => <option key={v} value={v} />)}</datalist>
-                  <datalist id="nm-models">{[...new Set(machines.map((m) => m.model).filter(Boolean))].map((v) => <option key={v} value={v} />)}</datalist>
+                  {/* The full make/model list, not just the bikes already on file
+                      — this is where a machine gets added with a customer at the
+                      counter, so it's the box that most needs the suggestions. */}
+                  <datalist id="nm-types">{typeOptions(machines).map((v) => <option key={v} value={v} />)}</datalist>
+                  <datalist id="nm-makes">{makeOptions(machines).map((v) => <option key={v} value={v} />)}</datalist>
+                  <datalist id="nm-models">{modelOptions(machines, nmMake).map((v) => <option key={v} value={v} />)}</datalist>
                   <button type="button" onClick={addMachineInline} className="mt-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700">Add machine</button>
                 </div>
               )}
