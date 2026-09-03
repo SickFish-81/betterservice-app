@@ -302,7 +302,10 @@ export default function JobDetailPage() {
     setUploading(true); setError(null);
     const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = id + "/" + Date.now() + "-" + safe;
-    const { error: upErr } = await supabase.storage.from("job-photos").upload(path, file, { contentType: file.type, upsert: true });
+    // Same bug as the For Sale photos: upsert:true needs an UPDATE policy this
+    // bucket doesn't grant, so every job photo was rejected too. Zero have ever
+    // been uploaded. The path is unique, so upsert was never needed.
+    const { error: upErr } = await supabase.storage.from("job-photos").upload(path, file, { contentType: file.type });
     if (upErr) { setError("Photo upload failed: " + upErr.message); setUploading(false); return; }
     const { data: pub } = supabase.storage.from("job-photos").getPublicUrl(path);
     await supabase.from("job_photos").insert({ job_card_id: id, url: pub.publicUrl, path });

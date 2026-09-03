@@ -103,9 +103,18 @@ export default function SecondhandPage() {
       // Date.now() alone repeats inside one loop, which would overwrite the
       // previous photo — the name needs something per-file as well.
       const path = `${listing.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+      // No upsert. upsert:true makes Storage run INSERT ... ON CONFLICT DO
+      // UPDATE, and Postgres checks that statement against the UPDATE policy as
+      // well as the INSERT one — even when nothing actually conflicts. This
+      // bucket only grants INSERT and DELETE, so every upload was rejected with
+      // 42501 "new row violates row-level security policy". Storage reports
+      // that to the browser as a 400, which reads like a bad file rather than a
+      // permission, so it went unnoticed: not one photo has ever been uploaded.
+      // The path already carries a timestamp and a random suffix, so there is
+      // nothing to overwrite and nothing to gain from upsert.
       const { error: upErr } = await supabase.storage
         .from("listing-photos")
-        .upload(path, file, { contentType: file.type, upsert: true });
+        .upload(path, file, { contentType: file.type });
       if (upErr) { failed.push(file.name); continue; }
       const { data: pub } = supabase.storage.from("listing-photos").getPublicUrl(path);
       await supabase.from("secondhand_photos").insert({ listing_id: listing.id, url: pub.publicUrl, path });
