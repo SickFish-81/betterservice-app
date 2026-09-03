@@ -27,6 +27,16 @@
 -- Credited, and reverts if the credit note is ever deleted.
 
 
+-- 'Credited' has to be a legal status before anything can be set to it.
+-- invoices_status_check allowed only Unpaid / Part-paid / Paid, so the first
+-- attempt at this migration failed on its own backfill — which is the check
+-- constraint doing exactly its job: refusing a value the schema never agreed
+-- to. Widen it first, then use it.
+alter table public.invoices drop constraint if exists invoices_status_check;
+alter table public.invoices add constraint invoices_status_check
+  check (status = any (array['Unpaid', 'Part-paid', 'Paid', 'Credited']));
+
+
 -- How much has been credited against an invoice.
 create or replace function public.invoice_credited_total(p_invoice_id uuid)
 returns numeric
