@@ -81,17 +81,45 @@ export default function SecondhandPage() {
     load();
   }
 
+  // Photos of a bike for sale are usually already on the phone — taken in
+  // daylight, at the right angle, before it was pushed into the shed. Listing
+  // one is also a several-photos job, so the picker takes as many as are
+  // selected and uploads them one after another.
+  //
+  // One failure doesn't abandon the rest: the good ones are kept and the names
+  // of the bad ones are reported, rather than losing five uploads to a sixth
+  // that was too big.
   async function uploadPhoto(listing, e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    // Read the list now — clearing the input below empties e.target.files.
+    e.target.value = "";
+    if (files.length === 0) return;
+
     setUploadingId(listing.id); setError(null);
-    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = listing.id + "/" + Date.now() + "-" + safe;
-    const { error: upErr } = await supabase.storage.from("listing-photos").upload(path, file, { contentType: file.type, upsert: true });
-    if (upErr) { setError("Photo upload failed: " + upErr.message); setUploadingId(null); return; }
-    const { data: pub } = supabase.storage.from("listing-photos").getPublicUrl(path);
-    await supabase.from("secondhand_photos").insert({ listing_id: listing.id, url: pub.publicUrl, path });
-    setUploadingId(null); e.target.value = ""; load();
+    const failed = [];
+
+    for (const file of files) {
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      // Date.now() alone repeats inside one loop, which would overwrite the
+      // previous photo — the name needs something per-file as well.
+      const path = `${listing.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+      const { error: upErr } = await supabase.storage
+        .from("listing-photos")
+        .upload(path, file, { contentType: file.type, upsert: true });
+      if (upErr) { failed.push(file.name); continue; }
+      const { data: pub } = supabase.storage.from("listing-photos").getPublicUrl(path);
+      await supabase.from("secondhand_photos").insert({ listing_id: listing.id, url: pub.publicUrl, path });
+    }
+
+    if (failed.length) {
+      setError(
+        failed.length === files.length
+          ? "None of those photos would upload. They may be too large."
+          : `Uploaded ${files.length - failed.length} of ${files.length}. Wouldn't upload: ${failed.join(", ")}`
+      );
+    }
+    setUploadingId(null);
+    load();
   }
 
   async function removePhoto(photo) {
@@ -151,8 +179,12 @@ export default function SecondhandPage() {
 
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
-                  {uploadingId === listing.id ? "Uploading…" : "Add photo"}
-                  <input type="file" accept="image/*" capture="environment" onChange={(e) => uploadPhoto(listing, e)} className="hidden" disabled={uploadingId === listing.id} />
+                  {uploadingId === listing.id ? "Uploading…" : "Add photos"}
+                  {/* No capture attribute: capture="environment" sends a phone
+                      straight to the camera and hides the photo library, so a
+                      picture taken earlier couldn't be used. Without it the
+                      phone offers the library AND the camera. */}
+                  <input type="file" accept="image/*" multiple onChange={(e) => uploadPhoto(listing, e)} className="hidden" disabled={uploadingId === listing.id} />
                 </label>
                 <select value={CATEGORIES.includes(listing.category) ? listing.category : "Other"} onChange={(e) => updateCategory(listing, e.target.value)} className="rounded-lg border border-zinc-300 px-2 py-1 text-xs text-zinc-700">
                   {CATEGORIES.map((c) => (<option key={c} value={c}>{c}</option>))}
