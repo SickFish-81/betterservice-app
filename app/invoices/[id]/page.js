@@ -195,31 +195,43 @@ export default function InvoiceViewPage() {
     if (!window.confirm(already)) return;
 
     setBusy("email");
-    const { data: { session } } = await supabase.auth.getSession();
-    const { data: res, error: fErr } = await supabase.functions.invoke("send-invoice", {
-      body: {
-        to,
-        customerName: job?.customers?.name,
-        invoiceNumber: invoice.invoice_number,
-        total: invoice.total,
-        pdfBase64: pdfToBase64(docRef),
-        accessToken: session?.access_token || null,
-      },
-    });
-    setBusy("");
-    if (fErr || res?.error) {
-      let detail = res?.error || fErr?.message || "Unknown error";
-      try { if (fErr?.context?.json) { const b = await fErr.context.json(); if (b?.error) detail = b.error; } } catch (_e) {}
-      setError("Couldn't send it: " + detail);
-      return;
+    // Everything from here is wrapped, because it wasn't. Encoding the PDF and
+    // posting it can both throw, and an unhandled throw in an async click
+    // handler is invisible: no message, and the button stuck on "Sending…"
+    // forever. That is exactly how a 2.6 MB invoice failed on Craig's iPad
+    // while looking like nothing had happened at all.
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data: res, error: fErr } = await supabase.functions.invoke("send-invoice", {
+        body: {
+          to,
+          customerName: job?.customers?.name,
+          invoiceNumber: invoice.invoice_number,
+          total: invoice.total,
+          pdfBase64: pdfToBase64(docRef),
+          accessToken: session?.access_token || null,
+        },
+      });
+      if (fErr || res?.error) {
+        let detail = res?.error || fErr?.message || "Unknown error";
+        try { if (fErr?.context?.json) { const b = await fErr.context.json(); if (b?.error) detail = b.error; } } catch (_e) {}
+        setError("Couldn't send it: " + detail);
+        return;
+      }
+      // Money is never re-sent from the browser — the invoice already holds the
+      // server-computed totals and the lock trigger would reject a change anyway.
+      await supabase.from("invoices")
+        .update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath })
+        .eq("id", invoice.id);
+      setNote(res.emailError ? `Filed, but the email didn't go: ${res.emailError}` : `Sent to ${to}.`);
+      load();
+    } catch (e) {
+      setError("Couldn't send it: " + (e?.message || String(e)));
+    } finally {
+      // In a finally, so the button always comes back. A stuck "Sending…" reads
+      // as "still working" and invites a second click.
+      setBusy("");
     }
-    // Money is never re-sent from the browser — the invoice already holds the
-    // server-computed totals and the lock trigger would reject a change anyway.
-    await supabase.from("invoices")
-      .update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath })
-      .eq("id", invoice.id);
-    setNote(res.emailError ? `Filed, but the email didn't go: ${res.emailError}` : `Sent to ${to}.`);
-    load();
   }
 
   if (loading) return <main className="mx-auto max-w-3xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
