@@ -26,6 +26,7 @@ export default function InvoiceViewPage() {
   const [items, setItems] = useState([]);
   const [settings, setSettings] = useState(null);
   const [payments, setPayments] = useState([]);
+  const [credits, setCredits] = useState([]);
   const [owner, setOwner] = useState(false);
   const [senders, setSenders] = useState([]);
   const [senderId, setSenderId] = useState("");
@@ -58,7 +59,7 @@ export default function InvoiceViewPage() {
     // have to know the difference.
     const viaJob = !!inv.job_card_id;
 
-    const [{ data: j }, { data: li }, { data: pays }, { data: staff }] = await Promise.all([
+    const [{ data: j }, { data: li }, { data: pays }, { data: staff }, { data: cns }] = await Promise.all([
       viaJob
         ? supabase.from("job_cards").select("*, customers(*), machines(*)").eq("id", inv.job_card_id).maybeSingle()
         : supabase.from("customers").select("*").eq("id", inv.customer_id).maybeSingle()
@@ -68,10 +69,13 @@ export default function InvoiceViewPage() {
         : supabase.from("invoice_line_items").select("*").eq("invoice_id", inv.id).order("sort").order("created_at"),
       supabase.from("payments").select("*").eq("invoice_id", inv.id).order("created_at"),
       supabase.from("staff").select("id,name,can_send_invoices,role").eq("can_send_invoices", true),
+      // A credit note settles an invoice just as a payment does. Reading only
+      // payments made a fully credited invoice keep reading "Unpaid".
+      supabase.from("credit_notes").select("*").eq("invoice_id", inv.id).order("created_at"),
     ]);
 
     setInvoice(inv); setJob(j || null); setItems(li || []); setSettings(st || null);
-    setPayments(pays || []); setOwner(isOwner === true); setSenders(staff || []);
+    setPayments(pays || []); setOwner(isOwner === true); setSenders(staff || []); setCredits(cns || []);
     setEmailTo(j?.customers?.email || "");
 
     // Default "sent by" to whoever is signed in — that's the right answer almost
@@ -134,9 +138,12 @@ export default function InvoiceViewPage() {
   }, [invoice, job, items, settings]);
 
   const paid = useMemo(() => payments.reduce((s, p) => s + Number(p.amount || 0), 0), [payments]);
+  const credited = useMemo(() => credits.reduce((s, c) => s + Number(c.total || 0), 0), [credits]);
+  // What's actually owed: the total, less what's been paid AND less what's been
+  // credited. A credit note cancels the debt as surely as a payment clears it.
   const balance = useMemo(
-    () => Math.round((Number(invoice?.total || 0) - paid) * 100) / 100,
-    [invoice, paid],
+    () => Math.round((Number(invoice?.total || 0) - paid - credited) * 100) / 100,
+    [invoice, paid, credited],
   );
 
   // Terms are stored, not held in the page — the database trigger derives due_date
@@ -242,8 +249,15 @@ export default function InvoiceViewPage() {
     </main>
   );
 
-  const status = balance <= 0 ? "Paid" : paid > 0 ? "Part paid" : "Unpaid";
-  const statusTone = balance <= 0 ? "bg-green-50 text-green-700" : paid > 0 ? "bg-amber-50 text-amber-800" : "bg-zinc-100 text-zinc-600";
+  // Credited outranks Paid: if the whole thing was written off, saying "Paid"
+  // would imply money came in that never did.
+  const fullyCredited = credited > 0 && balance <= 0 && paid <= 0;
+  const status = fullyCredited ? "Credited" : balance <= 0 ? "Paid" : paid > 0 || credited > 0 ? "Part paid" : "Unpaid";
+  const statusTone = fullyCredited
+    ? "bg-violet-50 text-violet-700"
+    : balance <= 0 ? "bg-green-50 text-green-700"
+    : (paid > 0 || credited > 0) ? "bg-amber-50 text-amber-800"
+    : "bg-zinc-100 text-zinc-600";
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">

@@ -11,6 +11,7 @@ const invNo = (n) => String(n ?? 0).padStart(4, "0");
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState([]);
   const [paidMap, setPaidMap] = useState({});
+  const [creditMap, setCreditMap] = useState({});
   const [filter, setFilter] = useState("unpaid"); // "unpaid" | "all"
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -33,13 +34,20 @@ export default function InvoicesPage() {
     const pm = {};
     (pays || []).forEach((p) => { pm[p.invoice_id] = (pm[p.invoice_id] || 0) + Number(p.amount); });
     setPaidMap(pm);
+    // Credit notes reduce what's owed too, so a part-credited invoice doesn't
+    // keep showing its full balance — or let someone be asked for it.
+    const { data: cns } = await supabase.from("credit_notes").select("invoice_id, total");
+    const cm = {};
+    (cns || []).forEach((c) => { if (c.invoice_id) cm[c.invoice_id] = (cm[c.invoice_id] || 0) + Number(c.total); });
+    setCreditMap(cm);
     setInvoices((invs || []).map((i) => ({ ...i, job: jobMap[i.job_card_id] || null })));
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
 
   const paidOf = (inv) => paidMap[inv.id] || 0;
-  const balanceOf = (inv) => Math.round((Number(inv.total || 0) - paidOf(inv)) * 100) / 100;
+  const creditedOf = (inv) => creditMap[inv.id] || 0;
+  const balanceOf = (inv) => Math.round((Number(inv.total || 0) - paidOf(inv) - creditedOf(inv)) * 100) / 100;
 
   function startPayment(inv) {
     setError(null);
@@ -62,14 +70,18 @@ export default function InvoicesPage() {
     setPayingId(null); setPayAmount(""); setPayMethod(DEFAULT_PAYMENT_METHOD); setBusy(false); load();
   }
 
-  const shown = filter === "unpaid" ? invoices.filter((i) => i.status !== "Paid") : invoices;
-  const outstanding = invoices.filter((i) => i.status !== "Paid").reduce((s, i) => s + balanceOf(i), 0);
+  // Credited is settled, the same as Paid — it just settled by being written
+  // off rather than by being banked. Counting it as outstanding overstates what
+  // the shop is owed.
+  const settled = (i) => i.status === "Paid" || i.status === "Credited";
+  const shown = filter === "unpaid" ? invoices.filter((i) => !settled(i)) : invoices;
+  const outstanding = invoices.filter((i) => !settled(i)).reduce((s, i) => s + balanceOf(i), 0);
 
   const tab = (key, label) =>
     <button onClick={() => setFilter(key)} className={filter === key ? "rounded-md bg-red-600 px-3 py-1 font-medium text-white" : "px-3 py-1 font-medium text-zinc-600 hover:text-zinc-900"}>{label}</button>;
 
   const badge = (status) => {
-    const map = { "Paid": "bg-emerald-50 text-emerald-700", "Part-paid": "bg-amber-50 text-amber-700", "Unpaid": "bg-zinc-100 text-zinc-600" };
+    const map = { "Paid": "bg-emerald-50 text-emerald-700", "Credited": "bg-violet-50 text-violet-700", "Part-paid": "bg-amber-50 text-amber-700", "Unpaid": "bg-zinc-100 text-zinc-600" };
     return <span className={"rounded-full px-2.5 py-1 text-xs font-medium " + (map[status] || map.Unpaid)}>{status}</span>;
   };
 
