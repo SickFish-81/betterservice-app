@@ -16,6 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import SentConfirmation from "../SentConfirmation";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const nzDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-NZ") : "");
@@ -30,6 +31,7 @@ export default function Approvals() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
+  const [sent, setSent] = useState(null);   // confirmation after a rent invoice goes
 
   async function load() {
     setLoading(true);
@@ -75,7 +77,12 @@ export default function Approvals() {
       setError("Not sent: " + detail);
       return;
     }
-    setNote(`${invNo(inv.invoice_number)} sent to ${res.to}${res.lease ? " with the lease agreement" : ""}.`);
+    setSent({
+      invoiceNumber: inv.invoice_number,
+      to: res.to,
+      total: inv.total,
+      extra: res.lease ? "The lease agreement went with it." : null,
+    });
     load();
   }
 
@@ -169,6 +176,15 @@ export default function Approvals() {
 
       {note && <p className="mt-3 text-sm text-emerald-700">{note}</p>}
       {error && <p className="mt-3 text-sm text-red-600">Error: {error}</p>}
+
+      <SentConfirmation
+        open={!!sent}
+        onClose={() => setSent(null)}
+        invoiceNumber={sent?.invoiceNumber}
+        to={sent?.to}
+        total={sent?.total}
+        extra={sent?.extra}
+      />
     </div>
   );
 }

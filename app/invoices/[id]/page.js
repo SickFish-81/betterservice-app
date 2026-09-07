@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import SentConfirmation from "../../SentConfirmation";
 import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName, invNo } from "../../../lib/invoicePdf";
 import { PAYMENT_TERMS, termsLabel } from "../../../lib/paymentTerms";
 
@@ -39,6 +40,7 @@ export default function InvoiceViewPage() {
   const [savingTerms, setSavingTerms] = useState(false);
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
+  const [sent, setSent] = useState(null);   // the confirmation to show after a send
   const [emailTo, setEmailTo] = useState("");
   const frame = useRef(null);
 
@@ -230,7 +232,15 @@ export default function InvoiceViewPage() {
       await supabase.from("invoices")
         .update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath })
         .eq("id", invoice.id);
-      setNote(res.emailError ? `Filed, but the email didn't go: ${res.emailError}` : `Sent to ${to}.`);
+      // Say so on screen, unmissably. The green line below used to be the only
+      // sign, and on a phone it sits under the fold.
+      setSent({
+        invoiceNumber: invoice.invoice_number,
+        to,
+        copyTo: settings?.invoice_bcc || res.copiedTo || null,
+        total: invoice.total,
+        problem: res.emailError || null,
+      });
       load();
     } catch (e) {
       setError("Couldn't send it: " + (e?.message || String(e)));
@@ -350,6 +360,16 @@ export default function InvoiceViewPage() {
       )}
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       {note && <p className="mt-3 text-sm text-green-700">{note}</p>}
+
+      <SentConfirmation
+        open={!!sent}
+        onClose={() => setSent(null)}
+        invoiceNumber={sent?.invoiceNumber}
+        to={sent?.to}
+        copyTo={sent?.copyTo}
+        total={sent?.total}
+        problem={sent?.problem}
+      />
 
       <div className="mt-6 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">

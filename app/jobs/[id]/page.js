@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import SentConfirmation from "../../SentConfirmation";
 import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName } from "../../../lib/invoicePdf";
 import { buildJobCardPdf, jobCardFileName } from "../../../lib/jobCardPdf";
 import { useOwner } from "../../RoleContext";
@@ -93,6 +94,7 @@ export default function JobDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [sent, setSent] = useState(null);   // confirmation after approve & send
 
   async function load() {
     setLoading(true);
@@ -485,7 +487,15 @@ export default function JobDetailPage() {
     // itself (trg_stamp_machine_service_date). Doing it here as well meant it
     // was only recorded if this exact path ran to the end — and it recorded
     // today rather than the invoice date.
-    if (res.emailError) setError("Invoice filed & marked sent, but the email to the customer didn't go: " + res.emailError);
+    // Previously this said nothing at all when it worked — the screen simply
+    // carried on, which reads as "nothing happened" and invites a second click.
+    setSent({
+      invoiceNumber: invoice.invoice_number,
+      to: job.customers?.email || null,
+      copyTo: settings?.invoice_bcc || res.copiedTo || null,
+      total: invoice.total,
+      problem: res.emailError || null,
+    });
     load();
   }
 
@@ -1001,6 +1011,16 @@ export default function JobDetailPage() {
       {error && <p className="mt-3 text-sm text-red-600">Error: {error}</p>}
 
       {owner && <button onClick={deleteJob} className="mt-6 text-sm text-red-500 hover:underline">Delete this job card</button>}
+
+      <SentConfirmation
+        open={!!sent}
+        onClose={() => setSent(null)}
+        invoiceNumber={sent?.invoiceNumber}
+        to={sent?.to}
+        copyTo={sent?.copyTo}
+        total={sent?.total}
+        problem={sent?.problem}
+      />
     </main>
   );
 }
