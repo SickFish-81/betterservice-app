@@ -13,7 +13,32 @@
 // The credit link at the foot is deliberate: they made it, and saying so is
 // both honest and the reason a buyer trusts it.
 
+import fs from "node:fs";
+import path from "node:path";
 import Link from "next/link";
+
+// Two product photos, shown only if they're actually there.
+//
+// This page is a server component, so it runs at build time and can simply LOOK
+// on disk. That matters: pointing an <img> at a file that hasn't been added yet
+// gives every visitor a broken-image icon, which is worse than no photo at all,
+// and it happens the moment someone pushes before the pictures land. Checking
+// first means the page is correct in both states — drop the files into public/
+// and they appear on the next deploy; leave them out and nobody can tell they
+// were ever planned.
+//
+// To add them: put snapd-1.jpg and snapd-2.jpg in public/. Roughly square is
+// best — they sit side by side in a narrow strip.
+const PHOTOS = [
+  { src: "/snapd-1.jpg", alt: "Snap-D stainless shackle" },
+  { src: "/snapd-2.jpg", alt: "Snap-D shackle fitted to a trailer coupling" },
+].filter((p) => {
+  try {
+    return fs.existsSync(path.join(process.cwd(), "public", p.src.replace(/^\//, "")));
+  } catch {
+    return false;   // never let a missing file break the whole page
+  }
+});
 
 export const metadata = {
   title: "Snap-D shackles",
@@ -71,6 +96,22 @@ export default function SnapDShackles() {
           </div>
         </div>
       </section>
+
+      {PHOTOS.length > 0 && (
+        <section className="mx-auto max-w-5xl px-4 pt-10">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {PHOTOS.map((ph) => (
+              <img
+                key={ph.src}
+                src={ph.src}
+                alt={ph.alt}
+                loading="lazy"
+                className="h-56 w-full rounded-xl border border-zinc-200 bg-white object-contain p-3 shadow-sm"
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mx-auto max-w-5xl px-4 py-14">
         <h2 className="text-2xl font-bold tracking-tight text-zinc-900">Why they're worth the swap</h2>
