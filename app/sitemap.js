@@ -13,6 +13,7 @@ export default function sitemap() {
     { url: `${BASE}/book`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${BASE}/batteries`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/flip-recessed-bike-mounts`, lastModified: now, changeFrequency: "yearly", priority: 0.6 },
+    { url: `${BASE}/snap-d-shackles`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${BASE}/enquiry`, lastModified: now, changeFrequency: "yearly", priority: 0.5 },
   ];
 }
