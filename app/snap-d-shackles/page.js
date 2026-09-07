@@ -29,21 +29,32 @@ import Link from "next/link";
 //
 // To add them: put snapd-1.jpg and snapd-2.jpg in public/. Roughly square is
 // best — they sit side by side in a narrow strip.
-const PHOTOS = [
-  { src: "/snapd-1.jpg", alt: "Snap-D stainless shackle" },
-  { src: "/snapd-2.jpg", alt: "Snap-D shackle fitted to a trailer coupling" },
-].filter((p) => {
-  try {
-    return fs.existsSync(path.join(process.cwd(), "public", p.src.replace(/^\//, "")));
-  } catch {
-    return false;   // never let a missing file break the whole page
+const WANTED = [
+  ["snapd-d-shackle", "Snap-D stainless D shackle with captive pin"],
+  ["snapd-bow-shackle", "Snap-D stainless bow shackle with captive pin"],
+  ["snapd-jetski-pack", "Snap-D JetSki pack — D shackle, long D shackle and retaining clips"],
+];
+
+// Resolve each photo to whichever extension actually landed in public/, so it
+// doesn't matter whether they were saved as .png or .jpg. Missing ones are
+// simply dropped.
+const PHOTOS = WANTED.map(([name, alt]) => {
+  for (const ext of ["png", "jpg", "jpeg", "webp"]) {
+    try {
+      if (fs.existsSync(path.join(process.cwd(), "public", `${name}.${ext}`))) {
+        return { src: `/${name}.${ext}`, alt };
+      }
+    } catch {
+      /* never let a filesystem hiccup break the page */
+    }
   }
-});
+  return null;
+}).filter(Boolean);
 
 export const metadata = {
   title: "Snap-D shackles",
   description:
-    "Snap-D captive-pin shackles in stock at Betterservice ATV, Te Puke. NZ-made stainless D and bow shackles that lock with a half turn — tow rated for caravans, floats, boats and bike trailers.",
+    "Snap-D captive-pin shackles in stock at Betterservice ATV, Te Puke. NZ-designed stainless D and bow shackles that lock with a half turn — tow rated for caravans, floats, boats and bike trailers.",
   alternates: { canonical: "/snap-d-shackles" },
 };
 
@@ -83,7 +94,7 @@ export default function SnapDShackles() {
           <p className="text-sm font-semibold uppercase tracking-wider text-red-400">In stock now</p>
           <h1 className="mt-2 text-4xl font-bold tracking-tight sm:text-5xl">Snap-D shackles</h1>
           <p className="mt-4 max-w-2xl text-lg text-zinc-300">
-            The NZ-made stainless shackle that locks with a half turn — no fiddly pin, nothing to drop,
+            The NZ-designed stainless shackle that locks with a half turn — no fiddly pin, nothing to drop,
             nothing to seize up. On the shelf at Betterservice, 556 Te Puke Highway.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
@@ -99,7 +110,7 @@ export default function SnapDShackles() {
 
       {PHOTOS.length > 0 && (
         <section className="mx-auto max-w-5xl px-4 pt-10">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             {PHOTOS.map((ph) => (
               <img
                 key={ph.src}
@@ -137,8 +148,11 @@ export default function SnapDShackles() {
           ))}
         </div>
         <p className="mt-4 text-sm text-zinc-500">
-          Sizes and ratings vary — the right shackle depends on what you're towing. Bring the trailer or
-          the old shackle in and Craig will match it.
+          Sizes run from 8mm up, rated by maximum towing mass — the right one depends on what you're
+          towing. Bring the trailer or the old shackle in and Craig will match it.
+        </p>
+        <p className="mt-2 text-sm font-medium text-zinc-700">
+          These are rated for towing, not for lifting.
         </p>
 
         <h2 className="mt-14 text-2xl font-bold tracking-tight text-zinc-900">What people use them on</h2>
@@ -159,7 +173,7 @@ export default function SnapDShackles() {
         </div>
 
         <p className="mt-8 text-center text-sm text-zinc-500">
-          Snap-D is designed and made in New Zealand by{" "}
+          Snap-D is designed in New Zealand by{" "}
           <a href="https://snapd.nz/" target="_blank" rel="noopener noreferrer" className="font-medium text-red-600 hover:underline">
             Snap-D
           </a>
