@@ -8,6 +8,10 @@
 // exists to prevent. Do not add a noindex tag, and do not disallow it in
 // robots.js. Linking it from the nav later is fine, if Craig wants it visible.
 //
+// No prices on this page, ever. Ben's rule: figures are not shown to the
+// public on a Betterservice page. The shop at flipbikes.co.nz is where
+// pricing lives, which also means it can never go stale here.
+//
 // It is a FEEDER page. Craig sells FLIP from his own shop at flipbikes.co.nz,
 // so every buy action here points there rather than duplicating the checkout.
 // Do NOT set a cross-domain canonical to flipbikes.co.nz — that would drop this
@@ -36,31 +40,24 @@ export const metadata = pageMeta({
 const PRODUCTS = [
   {
     name: "Starter Pack",
-    price: "$270",
     img: "/flip-starter-pack.webp",
     alt: "FLIP starter pack — one standard bike chock, two D rings and two tie downs",
     blurb: "One standard chock, two recessed D rings and two tie downs. Everything you need for one bike.",
   },
   {
     name: "FLIP G3",
-    price: "$179",
-    was: "$229",
     img: "/flip-g3.webp",
     alt: "FLIP G3 recessed bike chock, folded flat",
     blurb: "The third-generation chock — the one most riders end up with.",
   },
   {
     name: "FLIP Standard",
-    price: "$150",
-    was: "$170",
     img: "/flip-standard.webp",
     alt: "FLIP Standard recessed bike chock, folded flat",
     blurb: "The original recessed chock. Straightforward and proven.",
   },
   {
     name: "FLIP Road Bike",
-    price: "$249",
-    was: "$289",
     img: "/flip-g3.webp",
     alt: "FLIP Road Bike recessed chock",
     blurb: "Sized for road bikes, right up to a full-dress Harley.",
@@ -178,17 +175,13 @@ export default function FlipMounts() {
               />
               <h3 className="mt-3 font-semibold text-zinc-900">{p.name}</h3>
               <p className="mt-1 flex-1 text-sm text-zinc-600">{p.blurb}</p>
-              <p className="mt-3">
-                <span className="text-lg font-bold text-zinc-900">{p.price}</span>
-                {p.was && <span className="ml-2 text-sm text-zinc-400 line-through">{p.was}</span>}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-red-600 group-hover:underline">Buy at flipbikes.co.nz →</p>
+              <p className="mt-3 text-sm font-semibold text-red-600 group-hover:underline">See it at flipbikes.co.nz →</p>
             </a>
           ))}
         </div>
         <p className="mt-4 text-sm text-zinc-500">
-          Also available: heavy-duty recessed D rings ($25 each) and tie downs ($59.50 a pair). Prices are in NZD
-          and were current at the time of writing — flipbikes.co.nz has the live pricing and shipping.
+          Also available: heavy-duty recessed D rings and tie downs. Current pricing and shipping are on
+          flipbikes.co.nz.
         </p>
       </section>
 
