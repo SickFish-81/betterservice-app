@@ -1,10 +1,12 @@
 import Link from "next/link";
 
-export const metadata = {
+import { pageMeta } from "../lib/seo";
+
+export const metadata = pageMeta({
   description:
     "Betterservice ATV, 556 Te Puke Highway — motorcycle and ATV servicing, repairs, WOF-ready checks and used quads. Quick turnaround. Phone or text 021 08327787.",
-  alternates: { canonical: "/" },
-};
+  path: "/",
+});
 import HeroVideo from "./HeroVideo";
 
 const LOGO = "/logo.png";
@@ -29,9 +31,48 @@ const services = [
   { title: "Honest advice", desc: "25+ years in off-road bikes and ATVs — straight-up advice and a fair price.", icon: <Svg><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></Svg> },
 ];
 
+// Structured data for the local business.
+//
+// This is how Google learns the shop's name, address and phone as FACTS rather
+// than as words it has to guess at from the page. It's what feeds the map pack
+// and the business panel beside the search results — the single highest-value
+// SEO addition for a shop whose customers search "atv repair near me".
+//
+// Deliberately absent: openingHours, geo coordinates and priceRange. All three
+// are recommended by Google, but inventing them would be worse than omitting
+// them — wrong hours in structured data means someone drives to a closed shop.
+// Add them here once Craig confirms.
+const BUSINESS_LD = {
+  "@context": "https://schema.org",
+  "@type": ["AutoRepair", "MotorcycleRepair"],
+  "@id": "https://betterservice.co.nz/#business",
+  name: "Betterservice ATV",
+  url: "https://betterservice.co.nz",
+  telephone: "+642108327787",
+  image: "https://betterservice.co.nz/og-default.jpg",
+  logo: "https://betterservice.co.nz/logo.png",
+  description:
+    "Motorcycle and ATV servicing, repairs and used quad sales in Te Puke, Bay of Plenty. Over 25 years in the trade.",
+  address: {
+    "@type": "PostalAddress",
+    streetAddress: "556 Te Puke Highway",
+    addressLocality: "Te Puke",
+    addressRegion: "Bay of Plenty",
+    addressCountry: "NZ",
+  },
+  areaServed: [
+    { "@type": "Place", name: "Te Puke" },
+    { "@type": "Place", name: "Bay of Plenty" },
+  ],
+};
+
 export default function Home() {
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(BUSINESS_LD) }}
+      />
       {/* Hero */}
       <section className="relative isolate overflow-hidden">
         <div className="absolute inset-0 -z-10 bg-cover bg-center" style={{ backgroundImage: `url('${HERO}')` }} />

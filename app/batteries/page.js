@@ -1,11 +1,13 @@
 import Link from "next/link";
 
-export const metadata = {
+import { pageMeta } from "../../lib/seo";
+
+export const metadata = pageMeta({
   title: "Bosch batteries",
   description:
     "Bosch batteries for motorcycles, ATVs, cars and boats, fitted and tested at Betterservice ATV in Te Puke.",
-  alternates: { canonical: "/batteries" },
-};
+  path: "/batteries",
+});
 
 const PRODUCT_IMG = "/battery.jpg";
 

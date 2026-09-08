@@ -51,12 +51,15 @@ const PHOTOS = WANTED.map(([name, alt]) => {
   return null;
 }).filter(Boolean);
 
-export const metadata = {
+import { pageMeta } from "../../lib/seo";
+
+export const metadata = pageMeta({
   title: "Snap-D shackles",
   description:
     "Snap-D captive-pin shackles in stock at Betterservice ATV, Te Puke. NZ-designed stainless D and bow shackles that lock with a half turn — tow rated for caravans, floats, boats and bike trailers.",
-  alternates: { canonical: "/snap-d-shackles" },
-};
+  path: "/snap-d-shackles",
+  image: { url: "/snapd-d-shackle.webp", width: 1050, height: 750, alt: "Snap-D stainless D shackle with captive pin" },
+});
 
 const FEATURES = [
   [

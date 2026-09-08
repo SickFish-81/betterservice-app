@@ -23,12 +23,15 @@ import Link from "next/link";
 
 const SHOP = "https://flipbikes.co.nz/";
 
-export const metadata = {
+import { pageMeta } from "../../lib/seo";
+
+export const metadata = pageMeta({
   title: "FLIP recessed bike mounts — NZ-made trailer wheel chocks",
   description:
     "FLIP recessed bike mounts: heavy-duty NZ-made aluminium trailer wheel chocks that fold flat into the floor and pivot up to lock the front wheel. From the original designer, Te Puke.",
-  alternates: { canonical: "/flip-recessed-bike-mounts" },
-};
+  path: "/flip-recessed-bike-mounts",
+  image: { url: "/flip-hero.webp", width: 1600, height: 900, alt: "A dirt bike front wheel held in an open FLIP recessed chock" },
+});
 
 const PRODUCTS = [
   {
