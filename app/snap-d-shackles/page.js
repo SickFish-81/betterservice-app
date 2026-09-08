@@ -117,7 +117,7 @@ export default function SnapDShackles() {
                 src={ph.src}
                 alt={ph.alt}
                 loading="lazy"
-                className="h-56 w-full rounded-xl border border-zinc-200 bg-white object-contain p-3 shadow-sm"
+                className="aspect-[7/5] w-full rounded-xl border border-zinc-200 bg-white object-contain p-2 shadow-sm"
               />
             ))}
           </div>
