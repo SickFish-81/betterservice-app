@@ -38,10 +38,12 @@ const services = [
 // and the business panel beside the search results — the single highest-value
 // SEO addition for a shop whose customers search "atv repair near me".
 //
-// Deliberately absent: openingHours, geo coordinates and priceRange. All three
-// are recommended by Google, but inventing them would be worse than omitting
-// them — wrong hours in structured data means someone drives to a closed shop.
-// Add them here once Craig confirms.
+// Hours are Craig's, confirmed 9 Sep 2026: 8:00-16:30 Mon-Fri. If they ever
+// change, change them in BOTH places — here and the visible line on the page
+// — or the site and Google will disagree about when the shop is open.
+//
+// Still deliberately absent: geo coordinates and priceRange. Google recommends
+// both, but inventing them would be worse than omitting them.
 const BUSINESS_LD = {
   "@context": "https://schema.org",
   "@type": ["AutoRepair", "MotorcycleRepair"],
@@ -61,6 +63,14 @@ const BUSINESS_LD = {
     addressRegion: "Bay of Plenty",
     addressCountry: "NZ",
   },
+  openingHoursSpecification: [
+    {
+      "@type": "OpeningHoursSpecification",
+      dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+      opens: "08:00",
+      closes: "16:30",
+    },
+  ],
   areaServed: [
     { "@type": "Place", name: "Te Puke" },
     { "@type": "Place", name: "Bay of Plenty" },
@@ -122,6 +132,7 @@ export default function Home() {
           <div>
             <p className="text-zinc-700">556 Te Puke Highway, Te Puke</p>
             <p className="text-zinc-700">Phone / text: <a href="tel:02108327787" className="font-medium text-red-600 hover:underline">021 08327787</a></p>
+            <p className="mt-1 text-zinc-700">Open <span className="font-medium">Monday to Friday, 8am – 4.30pm</span></p>
             <a href="https://maps.google.com/?q=556+Te+Puke+Highway+Te+Puke" target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-red-600 hover:underline">Get directions →</a>
             <p className="mt-3 text-sm text-zinc-500">Off-road motorcycle &amp; ATV specialists — servicing, repairs, used ATV sales, parts &amp; accessories.</p>
           </div>

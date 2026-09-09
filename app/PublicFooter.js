@@ -16,6 +16,7 @@ export default function PublicFooter() {
           <p className="mt-0.5">
             Phone or text <a href="tel:+642108327787" className="font-medium text-zinc-800 hover:underline">021 08327787</a>
           </p>
+          <p className="mt-0.5">Mon–Fri, 8am – 4.30pm</p>
         </div>
 
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-zinc-600">
