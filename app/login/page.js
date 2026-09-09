@@ -27,19 +27,17 @@ export default function LoginPage() {
     setBusy(false);
   }
 
-  // Emails a one-time link that lands on /reset. redirectTo uses the current
-  // origin so it works both locally and on the live site — the URL must also be
-  // listed in Supabase (Authentication -> URL Configuration -> Redirect URLs).
-  async function forgot() {
-    setMsg(null);
-    if (!email) return setMsg("Type your email address above first, then click again.");
-    setBusy(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset`,
-    });
-    setBusy(false);
-    setMsg(error ? error.message : "Check your email for a reset link. It lasts one hour.");
-  }
+  // There is deliberately no "forgot your password" here any more.
+  //
+  // Most of the shop's logins use an address that is not a real mailbox -
+  // ants@ and bjorn@ exist only as sign-in names. A reset link sent to those
+  // can never arrive, so the button looked like it worked, silently did
+  // nothing, and left a mechanic thinking the app was broken. Worse than
+  // useless: actively misleading.
+  //
+  // Craig sets passwords instead. If self-service is ever wanted back, the fix
+  // is a change-password screen for users who are already signed in, which
+  // needs no email at all - not this button.
 
   return (
     <main className="mx-auto max-w-sm px-4 py-12">
@@ -63,12 +61,9 @@ export default function LoginPage() {
 
       {msg && <p className="mt-3 text-sm text-red-600" role="alert">{msg}</p>}
 
-      <p className="mt-4 text-sm">
-        <button type="button" onClick={forgot} disabled={busy} className="text-zinc-600 underline underline-offset-2 hover:text-zinc-900 disabled:opacity-50">
-          Forgot your password?
-        </button>
+      <p className="mt-4 text-sm text-zinc-600">
+        Forgotten your password, or need a login? Ask Craig — he can set it for you.
       </p>
-      <p className="mt-2 text-sm text-zinc-600">Need a login? Ask Craig to set one up for you.</p>
       <p className="mt-6 text-sm"><a href="/" className="text-zinc-500 hover:text-zinc-800">← Back to site</a></p>
     </main>
   );
