@@ -16,7 +16,7 @@ import { useOwner } from "../../RoleContext";
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const nz = (d) => (d ? new Date(String(d).slice(0, 10) + "T00:00:00").toLocaleDateString("en-NZ") : "—");
-const emptyMachine = { type: "ATV", make: "", model: "", vin: "", key_number: "" };
+const emptyMachine = { type: "ATV", make: "", model: "", year: "", vin: "", key_number: "" };
 
 export default function CustomerPage() {
   const { id } = useParams();
@@ -54,7 +54,7 @@ export default function CustomerPage() {
   function startEdit(m) {
     setEditingId(m.id);
     setAdding(false);
-    setForm({ type: m.type || "", make: m.make || "", model: m.model || "", vin: m.vin || "", key_number: m.key_number || "" });
+    setForm({ type: m.type || "", make: m.make || "", model: m.model || "", year: m.year ? String(m.year) : "", vin: m.vin || "", key_number: m.key_number || "" });
     setError(null);
   }
   function startAdd() {
@@ -71,6 +71,7 @@ export default function CustomerPage() {
       type: form.type.trim() || "ATV",
       make: form.make.trim(),
       model: form.model.trim(),
+      year: String(form.year || "").trim() ? Number(form.year) : null,
       vin: form.vin.trim() || null,
       key_number: form.key_number.trim() || null,
     };
@@ -115,11 +116,12 @@ export default function CustomerPage() {
         <form onSubmit={saveMachine} className="mt-3 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-medium text-zinc-600">{editingId ? "Edit machine" : "New machine for this customer"}</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <input value={form.type} onChange={set("type")} list="c-types" placeholder="Type" className={input} />
-            <input value={form.make} onChange={set("make")} list="c-makes" placeholder="Make" className={input} />
-            <input value={form.model} onChange={set("model")} list="c-models" placeholder="Model" className={input} />
+            <input value={form.type} onChange={set("type")} placeholder="Type" className={input} />
+            <input value={form.make} onChange={set("make")} placeholder="Make" className={input} />
+            <input value={form.model} onChange={set("model")} placeholder="Model" className={input} />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <input value={form.year} onChange={set("year")} placeholder="Year (optional)" inputMode="numeric" className={input} />
             <input value={form.vin} onChange={set("vin")} placeholder="VIN / serial (optional)" className={input} />
             <input value={form.key_number} onChange={set("key_number")} placeholder="Key number (optional)" className={input} />
           </div>

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
-import { makeOptions, modelOptions, typeOptions } from "../../lib/machineOptions";
 
 const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
@@ -60,12 +59,23 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [machines, setMachines] = useState([]);
-  const [customerId, setCustomerId] = useState("");
-  const [machineId, setMachineId] = useState("");
-  const [addingMachine, setAddingMachine] = useState(false);
-  const [nmType, setNmType] = useState("ATV");
-  const [nmMake, setNmMake] = useState("");
-  const [nmModel, setNmModel] = useState("");
+  // The job card used to start with two dropdowns: pick a customer, then pick
+  // one of their machines, and if the bike wasn't on file, open a sub-panel,
+  // add it, then come back. At a counter with someone waiting that is a lot of
+  // tapping to write down "Honda TRX500".
+  //
+  // Now you type. The customer name is a plain box that matches what's already
+  // on file as you go; the bike is six plain boxes, always visible. Nothing is
+  // selected from a list unless you want it to be — tapping a suggestion is a
+  // shortcut, never a requirement.
+  const [customerId, setCustomerId] = useState(""); // set only when an existing customer is chosen
+  const [custQuery, setCustQuery] = useState("");
+  const [mType, setMType] = useState("");
+  const [mMake, setMMake] = useState("");
+  const [mModel, setMModel] = useState("");
+  const [mYear, setMYear] = useState("");
+  const [mVin, setMVin] = useState("");
+  const [mKey, setMKey] = useState("");
   const [problem, setProblem] = useState("");
   const [source, setSource] = useState("Phone");
   const [loading, setLoading] = useState(true);
@@ -77,7 +87,7 @@ export default function JobsPage() {
     setLoading(true);
     const { data: j, error: jErr } = await supabase.from("job_cards").select("*, customers(name), machines(type, make, model)").order("created_at", { ascending: false });
     const { data: c } = await supabase.from("customers").select("id, name").order("name");
-    const { data: m } = await supabase.from("machines").select("id, customer_id, type, make, model");
+    const { data: m } = await supabase.from("machines").select("id, customer_id, type, make, model, year, vin, key_number");
     if (jErr) setError(jErr.message);
     else setJobs(j);
     setCustomers(c || []);
@@ -87,35 +97,106 @@ export default function JobsPage() {
 
   useEffect(() => { loadData(); }, []);
 
+  const norm = (v) => (v || "").trim().toLowerCase();
   const machinesForCustomer = machines.filter((m) => m.customer_id === customerId);
 
-  // A customer turning up with a bike that isn't on file used to mean leaving
-  // this page, adding it under Machines, and starting the job card again. Add
-  // it here instead, and select it.
-  async function addMachineInline() {
-    if (!customerId) { setError("Pick a customer first."); return; }
-    if (!nmMake.trim() && !nmModel.trim()) { setError("Give the machine a make or model."); return; }
-    const { data, error } = await supabase
-      .from("machines")
-      .insert({ customer_id: customerId, type: nmType.trim() || "ATV", make: nmMake.trim(), model: nmModel.trim() })
-      .select("id, customer_id, type, make, model")
-      .single();
-    if (error) { setError(error.message); return; }
-    setMachines((prev) => [...prev, data]);
-    setMachineId(data.id);
-    setNmMake(""); setNmModel(""); setAddingMachine(false); setError(null);
+  // Customers whose name contains what's been typed. Shown as tappable
+  // suggestions under the box — not a dropdown that has to be opened, and never
+  // something you're forced to choose from.
+  const custMatches =
+    custQuery.trim().length < 1 || customerId
+      ? []
+      : customers.filter((c) => norm(c.name).includes(norm(custQuery))).slice(0, 6);
+
+  function chooseCustomer(c) {
+    setCustomerId(c.id);
+    setCustQuery(c.name);
+    setError(null);
   }
 
+  // Fill the machine boxes from a bike already on file, so a regular doesn't
+  // get retyped. Still just filling the boxes — everything stays editable.
+  function fillFromMachine(m) {
+    setMType(m.type || "");
+    setMMake(m.make || "");
+    setMModel(m.model || "");
+    setMYear(m.year ? String(m.year) : "");
+    setMVin(m.vin || "");
+    setMKey(m.key_number || "");
+  }
 
+  function resetNewJobForm() {
+    setCustomerId(""); setCustQuery("");
+    setMType(""); setMMake(""); setMModel(""); setMYear(""); setMVin(""); setMKey("");
+    setProblem("");
+  }
+
+  // Everything typed into the form is resolved to real records here: the
+  // customer is matched by name or created, and the machine is matched against
+  // that customer's bikes or created. Matching is case-insensitive so "honda"
+  // typed at the counter doesn't become a second Honda.
   async function addJob(e) {
     e.preventDefault();
-    if (!customerId || !machineId) { setError("Pick a customer and one of their machines."); return; }
+    setError(null);
+    if (!custQuery.trim()) { setError("Enter the customer's name."); return false; }
+    if (!mMake.trim() && !mModel.trim()) { setError("Enter at least a make or a model for the bike."); return false; }
+    if (mYear.trim() && !/^\d{4}$/.test(mYear.trim())) { setError("Year should be four digits, e.g. 2019."); return false; }
+
+    // --- the customer
+    let custId = customerId;
+    if (!custId) {
+      const hit = customers.find((c) => norm(c.name) === norm(custQuery));
+      if (hit) custId = hit.id;
+      else {
+        const { data, error: cErr } = await supabase
+          .from("customers").insert({ name: custQuery.trim() }).select("id, name").single();
+        if (cErr) { setError("Couldn't add the customer: " + cErr.message); return false; }
+        custId = data.id;
+      }
+    }
+
+    // --- the machine
+    const year = mYear.trim() ? Number(mYear.trim()) : null;
+    const mine = machines.filter((m) => m.customer_id === custId);
+    const hitM = mine.find(
+      (m) =>
+        norm(m.make) === norm(mMake) &&
+        norm(m.model) === norm(mModel) &&
+        (year === null || !m.year || Number(m.year) === year)
+    );
+    let machId = hitM?.id;
+    if (!machId) {
+      const { data, error: mErr } = await supabase
+        .from("machines")
+        .insert({
+          customer_id: custId,
+          type: mType.trim() || "ATV",
+          make: mMake.trim(),
+          model: mModel.trim(),
+          year,
+          vin: mVin.trim() || null,
+          key_number: mKey.trim() || null,
+        })
+        .select("id, customer_id, type, make, model, year, vin, key_number")
+        .single();
+      if (mErr) { setError("Couldn't add the machine: " + mErr.message); return false; }
+      machId = data.id;
+    } else if ((mVin.trim() && !hitM.vin) || (mKey.trim() && !hitM.key_number)) {
+      // The bike was already on file but without a VIN or key number, and one
+      // has just been typed in. Fill the gap rather than losing it — but never
+      // overwrite an identifier that is already recorded.
+      await supabase.from("machines").update({
+        vin: hitM.vin || mVin.trim() || null,
+        key_number: hitM.key_number || mKey.trim() || null,
+      }).eq("id", machId);
+    }
+
     const todayNZ = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" });
-    const { data: existing } = await supabase.from("job_cards").select("id").eq("machine_id", machineId).eq("job_date", todayNZ);
-    if (existing && existing.length > 0) { setError("There's already a job card for this machine today."); return; }
-    const { error } = await supabase.from("job_cards").insert({ customer_id: customerId, machine_id: machineId, reported_problem: problem, source });
-    if (error) { setError(error.message); return; }
-    setProblem(""); setMachineId(""); setCustomerId(""); setShowNew(false); loadData();
+    const { data: existing } = await supabase.from("job_cards").select("id").eq("machine_id", machId).eq("job_date", todayNZ);
+    if (existing && existing.length > 0) { setError("There's already a job card for this machine today."); return false; }
+    const { error } = await supabase.from("job_cards").insert({ customer_id: custId, machine_id: machId, reported_problem: problem, source });
+    if (error) { setError(error.message); return false; }
+    resetNewJobForm(); setShowNew(false); loadData();
   }
 
   // Three buckets: not started, in the workshop, finished.
@@ -187,37 +268,73 @@ export default function JobsPage() {
               <button onClick={() => setShowNew(false)} aria-label="Close" className="rounded-md p-1 text-2xl leading-none text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">×</button>
             </div>
             <form onSubmit={addJob} className="mt-4 flex flex-col gap-3">
-              <div className="flex gap-2">
-                <select value={customerId} onChange={(e) => { setCustomerId(e.target.value); setMachineId(""); }} className={input + " flex-1"}>
-                  <option value="">Select customer…</option>
-                  {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
-                </select>
-                <Link href="/customers" title="Add a new customer" className="flex shrink-0 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50">+ New</Link>
-              </div>
-              <div className="flex gap-2">
-                <select value={machineId} onChange={(e) => setMachineId(e.target.value)} className={input + " flex-1"} disabled={!customerId}>
-                  <option value="">{customerId ? "Select machine…" : "Pick a customer first"}</option>
-                  {machinesForCustomer.map((m) => (<option key={m.id} value={m.id}>{m.type} — {m.make} {m.model}</option>))}
-                </select>
-                <button type="button" onClick={() => { setAddingMachine((v) => !v); setError(null); }} disabled={!customerId} title="Add a new machine for this customer" className="flex shrink-0 items-center rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">{addingMachine ? "cancel" : "+ New"}</button>
-              </div>
-              {addingMachine && customerId && (
-                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                  <p className="mb-2 text-xs font-medium text-zinc-600">New machine for this customer</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    <input value={nmType} onChange={(e) => setNmType(e.target.value)} placeholder="Type" list="nm-types" className={input} />
-                    <input value={nmMake} onChange={(e) => setNmMake(e.target.value)} placeholder="Make" list="nm-makes" className={input} />
-                    <input value={nmModel} onChange={(e) => setNmModel(e.target.value)} placeholder="Model" list="nm-models" className={input} />
+              {/* Customer — typed, not picked. Matches appear underneath as
+                  shortcuts; typing a name that isn't on file simply creates it. */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-500">Customer</label>
+                <div className="mt-1 flex gap-2">
+                  <input
+                    value={custQuery}
+                    onChange={(e) => { setCustQuery(e.target.value); setCustomerId(""); }}
+                    placeholder="Name — type it, new ones are added"
+                    autoComplete="off"
+                    className={input + " flex-1"}
+                  />
+                  {customerId && (
+                    <button type="button" onClick={() => { setCustomerId(""); setCustQuery(""); }}
+                      className="shrink-0 rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-50">
+                      clear
+                    </button>
+                  )}
+                </div>
+                {customerId ? (
+                  <p className="mt-1 text-xs font-medium text-emerald-700">✓ On file — this job goes on their record</p>
+                ) : custQuery.trim() ? (
+                  <p className="mt-1 text-xs text-zinc-500">New customer — will be added</p>
+                ) : null}
+                {custMatches.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {custMatches.map((c) => (
+                      <button key={c.id} type="button" onClick={() => chooseCustomer(c)}
+                        className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-700 hover:border-red-300 hover:bg-red-50">
+                        {c.name}
+                      </button>
+                    ))}
                   </div>
-                  {/* The full make/model list, not just the bikes already on file
-                      — this is where a machine gets added with a customer at the
-                      counter, so it's the box that most needs the suggestions. */}
-                  <datalist id="nm-types">{typeOptions(machines).map((v) => <option key={v} value={v} />)}</datalist>
-                  <datalist id="nm-makes">{makeOptions(machines).map((v) => <option key={v} value={v} />)}</datalist>
-                  <datalist id="nm-models">{modelOptions(machines, nmMake).map((v) => <option key={v} value={v} />)}</datalist>
-                  <button type="button" onClick={addMachineInline} className="mt-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700">Add machine</button>
+                )}
+              </div>
+
+              {/* Their bikes already on file — one tap fills the boxes below
+                  rather than making anyone retype a regular's machine. */}
+              {customerId && machinesForCustomer.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-zinc-500">Their bikes — tap to fill</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {machinesForCustomer.map((m) => (
+                      <button key={m.id} type="button" onClick={() => fillFromMachine(m)}
+                        className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-700 hover:border-red-300 hover:bg-red-50">
+                        {[m.year, m.make, m.model].filter(Boolean).join(" ") || m.type}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
+
+              {/* The bike. Six plain boxes, always open, nothing to select.
+                  Key number OR VIN — either identifies it, neither is required. */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-500">Bike</label>
+                <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <input value={mMake} onChange={(e) => setMMake(e.target.value)} placeholder="Make" autoComplete="off" className={input} />
+                  <input value={mModel} onChange={(e) => setMModel(e.target.value)} placeholder="Model" autoComplete="off" className={input} />
+                  <input value={mYear} onChange={(e) => setMYear(e.target.value)} placeholder="Year" inputMode="numeric" autoComplete="off" className={input} />
+                  <input value={mType} onChange={(e) => setMType(e.target.value)} placeholder="Type (ATV, bike…)" autoComplete="off" className={input} />
+                  <input value={mKey} onChange={(e) => setMKey(e.target.value)} placeholder="Key number" autoComplete="off" className={input} />
+                  <input value={mVin} onChange={(e) => setMVin(e.target.value)} placeholder="VIN / serial" autoComplete="off" className={input} />
+                </div>
+                <p className="mt-1 text-xs text-zinc-500">Make or model is enough to start. Key number or VIN — either, or neither.</p>
+              </div>
+
               <textarea value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="What's the problem / what needs doing?" rows={2} className={input} />
               <select value={source} onChange={(e) => setSource(e.target.value)} className={input}>
                 <option>Phone</option>

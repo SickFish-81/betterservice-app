@@ -20,12 +20,13 @@ export default function MachinesPage() {
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
   const [vin, setVin] = useState("");
+  const [year, setYear] = useState("");
   const [keyNo, setKeyNo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const [editingId, setEditingId] = useState(null);
-  const [ev, setEv] = useState({ customer_id: "", type: "ATV", make: "", model: "", vin: "", key_number: "" });
+  const [ev, setEv] = useState({ customer_id: "", type: "ATV", make: "", model: "", year: "", vin: "", key_number: "" });
 
   // Per-model parts history (lazy-loaded from parts_for_model()).
   const [openParts, setOpenParts] = useState({});     // machine id -> open?
@@ -47,20 +48,20 @@ export default function MachinesPage() {
   async function addMachine(e) {
     e.preventDefault();
     if (!customerId) { setError("Pick a customer first."); return; }
-    const { error } = await supabase.from("machines").insert({ customer_id: customerId, type, make, model, vin: vin || null, key_number: keyNo || null });
+    const { error } = await supabase.from("machines").insert({ customer_id: customerId, type, make, model, year: year.trim() ? Number(year.trim()) : null, vin: vin || null, key_number: keyNo || null });
     if (error) { setError(error.message); return; }
     setMake(""); setModel(""); setVin(""); setKeyNo(""); loadData();
   }
 
   function startEdit(m) {
     setEditingId(m.id);
-    setEv({ customer_id: m.customer_id || "", type: m.type || "ATV", make: m.make || "", model: m.model || "", vin: m.vin || "", key_number: m.key_number || "" });
+    setEv({ customer_id: m.customer_id || "", type: m.type || "ATV", make: m.make || "", model: m.model || "", year: m.year ? String(m.year) : "", vin: m.vin || "", key_number: m.key_number || "" });
     setError(null);
   }
 
   async function saveEdit(id) {
     if (!ev.customer_id) { setError("A machine needs an owner."); return; }
-    const { error } = await supabase.from("machines").update({ customer_id: ev.customer_id, type: ev.type, make: ev.make, model: ev.model, vin: ev.vin || null, key_number: ev.key_number || null }).eq("id", id);
+    const { error } = await supabase.from("machines").update({ customer_id: ev.customer_id, type: ev.type, make: ev.make, model: ev.model, year: String(ev.year || "").trim() ? Number(ev.year) : null, vin: ev.vin || null, key_number: ev.key_number || null }).eq("id", id);
     if (error) { setError(error.message); return; }
     setEditingId(null); loadData();
   }
@@ -106,10 +107,11 @@ export default function MachinesPage() {
           <option value="">Select customer…</option>
           {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
         </select>
-        <input value={type} onChange={(e) => setType(e.target.value)} placeholder="Type (pick or type new)" list="type-options" className={input} />
-        <input value={make} onChange={(e) => setMake(e.target.value)} placeholder="Make (pick or type new)" list="make-options" className={input} />
-        <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model (pick or type new)" list="model-options" className={input} />
+        <input value={type} onChange={(e) => setType(e.target.value)} placeholder="Type" className={input} />
+        <input value={make} onChange={(e) => setMake(e.target.value)} placeholder="Make" className={input} />
+        <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model" className={input} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <input value={year} onChange={(e) => setYear(e.target.value)} placeholder="Year (if known)" inputMode="numeric" className={input} />
           <input value={vin} onChange={(e) => setVin(e.target.value)} placeholder="VIN (if any)" className={input} />
           <input value={keyNo} onChange={(e) => setKeyNo(e.target.value)} placeholder="Key number (if any)" className={input} />
         </div>
@@ -136,10 +138,11 @@ export default function MachinesPage() {
                       <option value="">Select customer…</option>
                       {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
                     </select>
-                    <input value={ev.type} onChange={(e) => setEv({ ...ev, type: e.target.value })} placeholder="Type" list="type-options" className={input} />
-                    <input value={ev.make} onChange={(e) => setEv({ ...ev, make: e.target.value })} placeholder="Make" list="make-options" className={input} />
-                    <input value={ev.model} onChange={(e) => setEv({ ...ev, model: e.target.value })} placeholder="Model" list="model-options" className={input} />
+                    <input value={ev.type} onChange={(e) => setEv({ ...ev, type: e.target.value })} placeholder="Type" className={input} />
+                    <input value={ev.make} onChange={(e) => setEv({ ...ev, make: e.target.value })} placeholder="Make" className={input} />
+                    <input value={ev.model} onChange={(e) => setEv({ ...ev, model: e.target.value })} placeholder="Model" className={input} />
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <input value={ev.year} onChange={(e) => setEv({ ...ev, year: e.target.value })} placeholder="Year" inputMode="numeric" className={input} />
                       <input value={ev.vin} onChange={(e) => setEv({ ...ev, vin: e.target.value })} placeholder="VIN" className={input} />
                       <input value={ev.key_number} onChange={(e) => setEv({ ...ev, key_number: e.target.value })} placeholder="Key number" className={input} />
                     </div>
