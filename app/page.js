@@ -49,6 +49,7 @@ const BUSINESS_LD = {
   name: "Betterservice ATV",
   url: "https://betterservice.co.nz",
   telephone: "+642108327787",
+  email: "craig@betterservice.co.nz",
   image: "https://betterservice.co.nz/og-default.jpg",
   logo: "https://betterservice.co.nz/logo.png",
   description:
