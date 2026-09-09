@@ -58,7 +58,8 @@ export const metadata = pageMeta({
   description:
     "Snap-D captive-pin shackles in stock at Betterservice ATV, Te Puke. NZ-designed stainless D and bow shackles that lock with a half turn — tow rated for caravans, floats, boats and bike trailers.",
   path: "/snap-d-shackles",
-  image: { url: "/snapd-d-shackle.webp", width: 1050, height: 750, alt: "Snap-D stainless D shackle with captive pin" },
+  // JPEG at 1200x630 for the same reason as the FLIP page - see lib/seo.js.
+  image: { url: "/og-snapd.jpg", width: 1200, height: 630, alt: "Snap-D stainless D shackles with captive pins" },
 });
 
 const FEATURES = [

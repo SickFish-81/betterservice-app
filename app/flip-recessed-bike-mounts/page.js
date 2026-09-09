@@ -34,7 +34,9 @@ export const metadata = pageMeta({
   description:
     "FLIP recessed bike mounts: heavy-duty NZ-made aluminium trailer wheel chocks that fold flat into the floor and pivot up to lock the front wheel. From the original designer, Te Puke.",
   path: "/flip-recessed-bike-mounts",
-  image: { url: "/flip-hero.webp", width: 1600, height: 900, alt: "A dirt bike front wheel held in an open FLIP recessed chock" },
+  // JPEG, not the WebP on the page: LinkedIn, Slack and Signal don't render
+  // WebP in link previews, so a shared link would show no picture at all.
+  image: { url: "/og-flip.jpg", width: 1200, height: 630, alt: "A dirt bike front wheel held in an open FLIP recessed chock" },
 });
 
 const PRODUCTS = [
