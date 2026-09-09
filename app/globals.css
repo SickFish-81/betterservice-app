@@ -19,3 +19,58 @@ body {
   font-size: 16px;
   line-height: 1.5;
 }
+
+/* ---------------------------------------------------------------------------
+   Press feedback.
+
+   Craig and the mechanics work off an iPad. Every button in this app was
+   styled with `hover:`, and hover does not exist on a touchscreen — so a tap
+   produced no visible change at all. You press "Add part", nothing moves, and
+   you cannot tell whether the app took it. The natural response is to press
+   again, which on a stock part means drawing the same item off the shelf twice.
+
+   So this is one global rule rather than a class on each button: it covers
+   every button in the app, on every screen, including ones built later.
+
+   Why it's built this way:
+   - `filter: brightness()` is the obvious way to "illuminate", but it does
+     nothing to a button that is already white, and it creates a stacking
+     context that can clip absolutely-positioned children. Avoided.
+   - The glow ring is the part that reads on EVERY button, dark or white.
+   - The white wash lifts the coloured buttons (zinc-900, red, emerald, amber).
+   - `touch-action: manipulation` drops the browser's 300ms wait for a possible
+     double-tap, so the press registers instantly.
+   - `-webkit-tap-highlight-color: transparent` removes iOS's own grey box, so
+     ours is the only feedback rather than two competing ones.
+   --------------------------------------------------------------------------- */
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  /* Eased on the way back out, instant on the way in (overridden below). */
+  transition: transform 140ms ease, box-shadow 140ms ease, background-image 140ms ease;
+}
+
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: scale(0.97);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.35);
+  background-image: linear-gradient(rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.18));
+  /* No delay going in: the light must appear under the finger, not after it. */
+  transition-duration: 0s;
+}
+
+/* Someone who has asked the OS to reduce motion still gets the light, just
+   without the movement. */
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active {
+    transform: none;
+  }
+}

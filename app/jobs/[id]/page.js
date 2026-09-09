@@ -8,6 +8,7 @@ import SentConfirmation from "../../SentConfirmation";
 import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName } from "../../../lib/invoicePdf";
 import { buildJobCardPdf, jobCardFileName } from "../../../lib/jobCardPdf";
 import { useOwner } from "../../RoleContext";
+import { useActionFlash } from "../../useActionFlash";
 
 const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
@@ -64,6 +65,17 @@ export default function JobDetailPage() {
   const [pickupNotes, setPickupNotes] = useState("");
   const [pickupMsg, setPickupMsg] = useState(null);
   const [pickupSending, setPickupSending] = useState(false);
+
+  // Save confirmation for the four "add" buttons. Declared up here, above the
+  // early returns below — hooks must run in the same order on every render, and
+  // `if (loading && !job) return ...` would otherwise skip them.
+  //
+  // Each one blocks a second tap while the first save is still in flight, then
+  // flashes the button green for a moment so the mechanic can see it landed.
+  const labourAction = useActionFlash(addLabour);
+  const orderedPartAction = useActionFlash(addOrderedPart);
+  const partAction = useActionFlash(addPart);
+  const timeAction = useActionFlash(addManualTime);
   useEffect(() => {
     if (job?.customers?.address) setPickupAddr((a) => a || job.customers.address);
   }, [job?.id]);
@@ -189,11 +201,11 @@ export default function JobDetailPage() {
 
   async function addLabour(e) {
     e.preventDefault();
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return false; }
     const rate = Number(labourRate === "" ? shopRate : labourRate);
-    if (!Number.isFinite(rate) || rate < 0) { setError("Rate must be a number."); return; }
+    if (!Number.isFinite(rate) || rate < 0) { setError("Rate must be a number."); return false; }
     const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Math.max(0, Number(hours) || 0), unit_price: Math.round(rate * 100) / 100 });
-    if (error) { setError(error.message); return; }
+    if (error) { setError(error.message); return false; }
     setLabourDesc(""); setHours("1"); setLabourRate(""); load();
   }
 
@@ -224,43 +236,43 @@ export default function JobDetailPage() {
 
   async function addOrderedPart(e) {
     e.preventDefault();
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return false; }
     const q = Number(ordQty);
     const c = Number(ordCost);
-    if (!ordDesc.trim()) { setError("Name the part."); return; }
-    if (!(q > 0)) { setError("Quantity must be more than zero."); return; }
-    if (!Number.isFinite(c) || c < 0) { setError("Enter what the part cost you."); return; }
+    if (!ordDesc.trim()) { setError("Name the part."); return false; }
+    if (!(q > 0)) { setError("Quantity must be more than zero."); return false; }
+    if (!Number.isFinite(c) || c < 0) { setError("Enter what the part cost you."); return false; }
     // Resolve the typed supplier first — matched if it exists, created if not —
     // so nobody has to break off and set one up under Admin mid-job.
     let supplierId = null;
     if (ordSupplier.trim()) {
       const { data: sid, error: sErr } = await supabase.rpc("find_or_create_supplier", { p_name: ordSupplier.trim() });
-      if (sErr) { setError(sErr.message); return; }
+      if (sErr) { setError(sErr.message); return false; }
       supplierId = sid || null;
     }
     const { error } = await supabase.rpc("add_ordered_part_to_job", {
       p_job_id: id, p_description: ordDesc.trim(), p_qty: q, p_cost: c,
       p_supplier_id: supplierId, p_supplier_ref: ordRef.trim() || null,
     });
-    if (error) { setError(error.message); return; }
+    if (error) { setError(error.message); return false; }
     setOrdDesc(""); setOrdQty("1"); setOrdCost(""); setOrdRef(""); setError(null); load();
   }
 
   // Add a part FROM inventory, drawing it down from stock.
   async function addPart(e) {
     e.preventDefault();
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return false; }
     const part = parts.find((p) => p.id === partId);
-    if (!part) { setError("Pick a part from inventory."); return; }
+    if (!part) { setError("Pick a part from inventory."); return false; }
     const q = Math.max(0.01, Number(partQty) || 1);
     // Blank price = bill the part's own price. A typed price applies to THIS job only
     // and never changes the inventory record.
     const priceEntered = partPrice.trim() !== "" && Number.isFinite(Number(partPrice));
     const p = priceEntered ? Math.max(0, Number(partPrice)) : null;
-    if (partPrice.trim() !== "" && !priceEntered) { setError("Price must be a number."); return; }
+    if (partPrice.trim() !== "" && !priceEntered) { setError("Price must be a number."); return false; }
     // Atomic in the DB: inserts the line item and draws stock down together (no read-then-write race).
     const { error } = await supabase.rpc("add_part_to_job", { p_job_id: id, p_part_id: part.id, p_qty: q, p_unit_price: p });
-    if (error) { setError(error.message); return; }
+    if (error) { setError(error.message); return false; }
     setPartId(""); setPartQty("1"); setPartPrice(""); load();
   }
 
@@ -349,11 +361,11 @@ export default function JobDetailPage() {
 
   async function addManualTime(e) {
     e.preventDefault();
-    if (!timeStaffId) { setError("Pick who did the work."); return; }
+    if (!timeStaffId) { setError("Pick who did the work."); return false; }
     const h = Number(timeHours);
-    if (!(h > 0)) { setError("Enter hours greater than zero."); return; }
+    if (!(h > 0)) { setError("Enter hours greater than zero."); return false; }
     const { error } = await supabase.from("job_time_entries").insert({ job_card_id: id, staff_id: timeStaffId, hours: h, note: timeNote || null });
-    if (error) { setError(error.message); return; }
+    if (error) { setError(error.message); return false; }
     setTimeHours(""); setTimeNote(""); load();
   }
 
@@ -743,7 +755,7 @@ export default function JobDetailPage() {
           <button onClick={startTimer} type="button" className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700">Start timer</button>
         </div>
 
-        <form onSubmit={addManualTime} className="mt-2 flex flex-wrap items-end gap-2 border-t border-zinc-100 pt-3">
+        <form onSubmit={timeAction.run} className="mt-2 flex flex-wrap items-end gap-2 border-t border-zinc-100 pt-3">
           <div className="w-24">
             <label className="block text-xs font-medium text-zinc-500">Or add hours</label>
             <input value={timeHours} onChange={(e) => setTimeHours(e.target.value)} type="number" min="0" step="0.25" placeholder="2.5" className={input} />
@@ -752,7 +764,7 @@ export default function JobDetailPage() {
             <label className="block text-xs font-medium text-zinc-500">Note (optional)</label>
             <input value={timeNote} onChange={(e) => setTimeNote(e.target.value)} placeholder="e.g. diagnostics" className={input} />
           </div>
-          <button className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Add time</button>
+          <button disabled={timeAction.busy} className={`rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 ${timeAction.className}`}>{timeAction.label("Add time", { ok: "✓ Added" })}</button>
         </form>
         {staff.length === 0 && <p className="mt-2 text-xs text-amber-600">Add people on the Staff page to log time.</p>}
       </div>
@@ -809,7 +821,7 @@ export default function JobDetailPage() {
       </div>
 
       {invoice && <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white p-3 text-xs text-zinc-500">Invoice #{invNo(invoice.invoice_number)} generated — labour &amp; parts are locked{invoice.sent || !owner ? "." : "; use Discard below to edit."}</p>}
-      <form onSubmit={addLabour} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+      <form onSubmit={labourAction.run} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="min-w-[8rem] flex-1">
           <label className="block text-xs font-medium text-zinc-500">Labour</label>
           <input value={labourDesc} onChange={(e) => setLabourDesc(e.target.value)} placeholder="e.g. Full service" className={input} />
@@ -833,11 +845,11 @@ export default function JobDetailPage() {
             />
           </div>
         )}
-        <button disabled={!!invoice} className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">Add labour</button>
+        <button disabled={!!invoice || labourAction.busy} className={`rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 ${labourAction.className}`}>{labourAction.label("Add labour")}</button>
       </form>
 
       {!invoice && (
-        <form onSubmit={addOrderedPart} className="mt-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+        <form onSubmit={orderedPartAction.run} className="mt-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Part ordered in for this job</p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="min-w-[12rem] flex-1 text-xs font-medium text-zinc-600">Part
@@ -861,7 +873,7 @@ export default function JobDetailPage() {
             <label className="w-40 text-xs font-medium text-zinc-600">Their invoice / docket
               <input value={ordRef} onChange={(e) => setOrdRef(e.target.value)} placeholder="optional" className={input} />
             </label>
-            <button type="submit" className="rounded-lg bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-700">Add part</button>
+            <button type="submit" disabled={orderedPartAction.busy} className={`rounded-lg bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 ${orderedPartAction.className}`}>{orderedPartAction.label("Add part")}</button>
           </div>
           {Number(ordCost) > 0 && Number(ordQty) > 0 && (
             <p className="mt-2 text-xs text-zinc-500">
@@ -873,7 +885,7 @@ export default function JobDetailPage() {
         </form>
       )}
 
-      <form onSubmit={addPart} className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+      <form onSubmit={partAction.run} className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="min-w-[10rem] flex-1">
           <label className="block text-xs font-medium text-zinc-500">Part (from inventory)</label>
           <select
@@ -908,7 +920,7 @@ export default function JobDetailPage() {
             />
           </div>
         )}
-        <button className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50" disabled={parts.length === 0 || !!invoice}>Add part</button>
+        <button className={`rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 ${partAction.className}`} disabled={parts.length === 0 || !!invoice || partAction.busy}>{partAction.label("Add part")}</button>
         {parts.length === 0 && <p className="w-full text-xs text-amber-600">No parts in inventory yet — add some on the Parts page.</p>}
       </form>
 
