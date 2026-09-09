@@ -18,6 +18,11 @@ export const metadata = {
   },
   description:
     "Motorcycle and ATV servicing, repairs and used quad sales in Te Puke. Over 25 years in the Bay of Plenty.",
+  // Google Search Console ownership. Next renders this as the
+  // <meta name="google-site-verification"> tag Google looks for on the home
+  // page. Leave it in place permanently — removing it un-verifies the property
+  // and we lose the search performance data and the ability to request indexing.
+  verification: { google: "00FaYS65Pmq4xwbjytAaIeRIxN8uxfrS0gZmcsL5t3k" },
 };
 
 export default function RootLayout({ children }) {
