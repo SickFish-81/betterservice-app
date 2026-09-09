@@ -38,12 +38,11 @@ const services = [
 // and the business panel beside the search results — the single highest-value
 // SEO addition for a shop whose customers search "atv repair near me".
 //
-// Hours are Craig's, confirmed 9 Sep 2026: 8:00-16:30 Mon-Fri. If they ever
-// change, change them in BOTH places — here and the visible line on the page
-// — or the site and Google will disagree about when the shop is open.
-//
-// Still deliberately absent: geo coordinates and priceRange. Google recommends
-// both, but inventing them would be worse than omitting them.
+// Hours: 8:00-17:00 Mon-Fri, closed weekends. Taken from Craig's own Google
+// Business Profile on 9 Sep 2026, which is the version customers actually
+// see. He'd said 4.30 verbally; the listing said 5pm and the listing wins.
+// If they ever change, change them in BOTH places - here and the visible
+// line on the page - AND on the Google listing, or the three disagree.
 const BUSINESS_LD = {
   "@context": "https://schema.org",
   "@type": ["AutoRepair", "MotorcycleRepair"],
@@ -68,7 +67,7 @@ const BUSINESS_LD = {
       "@type": "OpeningHoursSpecification",
       dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
       opens: "08:00",
-      closes: "16:30",
+      closes: "17:00",
     },
   ],
   areaServed: [
@@ -132,7 +131,7 @@ export default function Home() {
           <div>
             <p className="text-zinc-700">556 Te Puke Highway, Te Puke</p>
             <p className="text-zinc-700">Phone / text: <a href="tel:02108327787" className="font-medium text-red-600 hover:underline">021 08327787</a></p>
-            <p className="mt-1 text-zinc-700">Open <span className="font-medium">Monday to Friday, 8am – 4.30pm</span></p>
+            <p className="mt-1 text-zinc-700">Open <span className="font-medium">Monday to Friday, 8am – 5pm</span></p>
             <a href="https://maps.google.com/?q=556+Te+Puke+Highway+Te+Puke" target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-red-600 hover:underline">Get directions →</a>
             <p className="mt-3 text-sm text-zinc-500">Off-road motorcycle &amp; ATV specialists — servicing, repairs, used ATV sales, parts &amp; accessories.</p>
           </div>
