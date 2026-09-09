@@ -18,6 +18,10 @@ export default function StaffPage() {
   const [error, setError] = useState(null);
   const [logins, setLogins] = useState({});     // email -> true when an Auth account exists
   const [newLogin, setNewLogin] = useState(null); // {name,email,password} shown once, never stored
+  // The password an owner types for a staff member. Held in component state
+  // only, cleared the moment it has been used, and never written anywhere.
+  const [pwFor, setPwFor] = useState("");   // staff id whose password box is open
+  const [pw, setPw] = useState("");
   const [busy, setBusy] = useState("");
 
   async function load() {
@@ -48,17 +52,32 @@ export default function StaffPage() {
 
   // Create this person's sign-in. The Edge Function checks server-side that you're
   // an owner and that the address is on the staff list before it creates anything.
-  async function createLogin(s) {
+  // Create a login, or set the password on one that already exists. Both go
+  // through the same Edge Function, which checks server-side that you're an
+  // owner and that the person is on the staff list before it touches anything.
+  //
+  // Staff addresses here are not real mailboxes, so there is no "email them a
+  // link" option: an owner sets the password and passes it on. That is also why
+  // this exists at all rather than sending people to the Supabase dashboard.
+  async function submitLogin(s, mode) {
     if (!s.email) { setError(`Give ${s.name} a login email first.`); return; }
-    if (!window.confirm(`Create a login for ${s.name} (${s.email})?\n\nYou'll get a temporary password to pass on. They should change it once they're in.`)) return;
+    const typed = pw.trim();
+    if (mode === "reset" && !typed) { setError("Type the new password first."); return; }
+    if (typed && typed.length < 8) { setError("Password must be at least 8 characters."); return; }
+    const what = mode === "reset"
+      ? `Set a new password for ${s.name} (${s.email})?\n\nTheir old one stops working straight away.`
+      : `Create a login for ${s.name} (${s.email})?`;
+    if (!window.confirm(what)) return;
+
     setBusy(s.id); setError(null); setNewLogin(null);
     const { data: sess } = await supabase.auth.getSession();
     const { data, error } = await supabase.functions.invoke("create-staff-login", {
-      body: { email: s.email, accessToken: sess?.session?.access_token },
+      body: { email: s.email, accessToken: sess?.session?.access_token, password: typed || undefined, mode },
     });
     setBusy("");
     if (error || data?.error) { setError(data?.error || error.message); return; }
     setNewLogin(data);
+    setPw(""); setPwFor("");   // don't leave it sitting in a box on screen
     load();
   }
 
@@ -114,7 +133,7 @@ export default function StaffPage() {
           Can send invoices
         </label>
         <button type="submit" className={btn}>Add staff member</button>
-        <p className="text-xs text-zinc-500">Adding someone here sets their access and role — it doesn&apos;t create their login. Their sign-in (email + password) is created separately in Supabase Auth using the same email; until that exists, they can&apos;t log in.</p>
+        <p className="text-xs text-zinc-500">Adding someone here sets their access and role. Once they&apos;re on the list, use the button on their row to create their sign-in and set a password, then pass it on to them. Staff can&apos;t reset their own password, so that button is also how you change it later.</p>
       </form>
 
       {error && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}
@@ -171,18 +190,55 @@ export default function StaffPage() {
                     Can send invoices
                   </label>
                   <div className="flex flex-wrap items-center gap-3">
-                    {s.email && logins[s.email.toLowerCase()] ? (
-                      <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">can sign in</span>
-                    ) : (
-                      <button
-                        onClick={() => createLogin(s)}
-                        disabled={busy === s.id || !s.email}
-                        title={s.email ? "Creates their sign-in account" : "Add a login email first"}
-                        className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-                      >
-                        {busy === s.id ? "Creating…" : "No login — create one"}
-                      </button>
-                    )}
+                    {(() => {
+                      const hasLogin = !!(s.email && logins[s.email.toLowerCase()]);
+                      const open = pwFor === s.id;
+                      return (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {hasLogin && (
+                            <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">can sign in</span>
+                          )}
+                          {open ? (
+                            <>
+                              <input
+                                type="text"
+                                value={pw}
+                                onChange={(e) => setPw(e.target.value)}
+                                placeholder={hasLogin ? "New password" : "Password (blank = pick one for me)"}
+                                autoComplete="off"
+                                className="w-56 rounded-lg border border-zinc-300 px-2 py-1 text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none"
+                              />
+                              <button
+                                onClick={() => submitLogin(s, hasLogin ? "reset" : "create")}
+                                disabled={busy === s.id}
+                                className="rounded-lg bg-zinc-900 px-2 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                              >
+                                {busy === s.id ? "Saving…" : hasLogin ? "Set password" : "Create login"}
+                              </button>
+                              <button
+                                onClick={() => { setPwFor(""); setPw(""); }}
+                                className="text-xs text-zinc-500 hover:underline"
+                              >
+                                cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => { setPwFor(s.id); setPw(""); setError(null); }}
+                              disabled={!s.email}
+                              title={s.email ? (hasLogin ? "Set a new password for them" : "Create their sign-in account") : "Add a login email first"}
+                              className={
+                                hasLogin
+                                  ? "rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                                  : "rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                              }
+                            >
+                              {hasLogin ? "set password" : "No login — create one"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <label className="flex items-center gap-2 text-sm font-medium text-zinc-700">
                       <input type="checkbox" checked={s.active !== false} onChange={(e) => saveField(s, "active", e.target.checked)} className="h-4 w-4 rounded border-zinc-300 accent-red-600" />
                       Active
