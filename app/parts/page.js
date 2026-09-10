@@ -8,6 +8,16 @@ const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-90
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 
+// Margin on the sale price, which is the number that answers "are we actually
+// making anything on this". Blank rather than 0% when cost hasn't been entered,
+// because 100% margin on an unset cost is a lie the page shouldn't tell.
+function marginPct(costPrice, salePrice) {
+  const c = Number(costPrice || 0);
+  const sale = Number(salePrice || 0);
+  if (!(c > 0) || !(sale > 0)) return null;
+  return Math.round(((sale - c) / sale) * 100);
+}
+
 export default function PartsPage() {
   const owner = useOwner();
   const [parts, setParts] = useState([]);
@@ -16,7 +26,8 @@ export default function PartsPage() {
   const [lowOnly, setLowOnly] = useState(false);
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
-  const [price, setPrice] = useState("");
+  const [price, setPrice] = useState("");   // what the customer pays
+  const [cost, setCost] = useState("");     // what the shop pays its supplier
   const [qty, setQty] = useState("");
   const [minStock, setMinStock] = useState("");
   const [supplierId, setSupplierId] = useState("");
@@ -39,12 +50,14 @@ export default function PartsPage() {
     e.preventDefault();
     if (!name.trim()) return;
     const { error } = await supabase.from("parts").insert({
-      name, sku: sku || null, unit_price: Number(price || 0),
+      name, sku: sku || null,
+      unit_price: Number(price || 0),
+      cost_price: Number(cost || 0),
       qty_on_hand: Number(qty || 0), min_stock: Number(minStock || 0),
       supplier_id: supplierId || null,
     });
     if (error) { setError(error.message); return; }
-    setName(""); setSku(""); setPrice(""); setQty(""); setMinStock(""); setSupplierId(""); load();
+    setName(""); setSku(""); setPrice(""); setCost(""); setQty(""); setMinStock(""); setSupplierId(""); load();
   }
 
   // Manual stock edits are logged as an adjustment (reason "Correction") so on-hand + history stay in sync.
@@ -53,6 +66,17 @@ export default function PartsPage() {
     if (Number.isNaN(n) || n < 0 || n === Number(current)) return;
     const { error } = await supabase.rpc("record_stock_adjustment", { p_part_id: id, p_new_qty: n, p_reason: "Correction", p_note: null });
     if (error) setError(error.message);
+    load();
+  }
+
+  // Editing a price in place. Needed as much as the box on the form: every part
+  // already on file was added before there was anywhere to put a cost, so
+  // without this the only way to enter one would be to delete and re-add.
+  async function setPriceField(id, field, value, current) {
+    const n = Number(value);
+    if (Number.isNaN(n) || n < 0 || n === Number(current)) return;
+    const { error } = await supabase.from("parts").update({ [field]: n }).eq("id", id);
+    if (error) { setError(error.message); return; }
     load();
   }
 
@@ -108,8 +132,9 @@ export default function PartsPage() {
       <form onSubmit={addPart} className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Part name (e.g. Oil filter)" className={input} />
         <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU / code (optional)" className={input} />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {owner && <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Price each" className={input} />}
+        <div className={`grid grid-cols-1 gap-3 ${owner ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-2"}`}>
+          {owner && <input value={cost} onChange={(e) => setCost(e.target.value)} type="number" min="0" step="0.01" placeholder="Cost each (what you pay)" className={input} />}
+          {owner && <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Sale price each" className={input} />}
           <input value={qty} onChange={(e) => setQty(e.target.value)} type="number" min="0" step="0.01" placeholder="Qty on hand" className={input} />
           <input value={minStock} onChange={(e) => setMinStock(e.target.value)} type="number" min="0" step="0.01" placeholder="Low-stock at" className={input} />
         </div>
@@ -117,6 +142,11 @@ export default function PartsPage() {
           <option value="">Supplier (optional)</option>
           {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+        {owner && marginPct(cost, price) !== null && (
+          <p className="-mt-1 text-xs text-zinc-500">
+            Margin {marginPct(cost, price)}% · {money(Number(price) - Number(cost))} on each one
+          </p>
+        )}
         <button type="submit" className={btn}>Add part</button>
       </form>
 
@@ -144,6 +174,29 @@ export default function PartsPage() {
                   <div className="min-w-0">
                     <p className="font-medium text-zinc-900">{p.name} {p.sku && <span className="text-sm font-normal text-zinc-500">· {p.sku}</span>}</p>
                     <p className="text-sm text-zinc-500">{owner ? money(p.unit_price) + " each · " : ""}low-stock at {p.min_stock}</p>
+                    {owner && (
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600">
+                        <label className="flex items-center gap-1">
+                          cost
+                          <input type="number" min="0" step="0.01" defaultValue={p.cost_price ?? 0}
+                            onBlur={(e) => setPriceField(p.id, "cost_price", e.target.value, p.cost_price)}
+                            className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 text-right text-zinc-900 focus:border-red-500 focus:outline-none" />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          sale
+                          <input type="number" min="0" step="0.01" defaultValue={p.unit_price ?? 0}
+                            onBlur={(e) => setPriceField(p.id, "unit_price", e.target.value, p.unit_price)}
+                            className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 text-right text-zinc-900 focus:border-red-500 focus:outline-none" />
+                        </label>
+                        {marginPct(p.cost_price, p.unit_price) !== null ? (
+                          <span className={marginPct(p.cost_price, p.unit_price) < 0 ? "font-semibold text-red-600" : "text-zinc-500"}>
+                            {marginPct(p.cost_price, p.unit_price)}% margin
+                          </span>
+                        ) : (
+                          <span className="text-amber-600">no cost entered</span>
+                        )}
+                      </div>
+                    )}
                     <select value={p.supplier_id || ""} onChange={(e) => setSupplier(p.id, e.target.value)} className="mt-1 rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 focus:border-red-500 focus:outline-none">
                       <option value="">No supplier</option>
                       {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
