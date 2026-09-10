@@ -1,4 +1,13 @@
 // send-statements: on a schedule, email each customer a combined statement PDF of what they owe.
+//
+// Every statement is now written to email_log, sent or failed, so the monthly
+// run leaves a record instead of a number in a response nobody reads.
+//
+// Note on scope: outstanding_statements() joins job_cards, so this covers ATV
+// work only. Rent invoices never appear on a statement — that is presumably
+// deliberate, since rent is collected by automatic payment, but it is worth
+// knowing before anyone treats a statement as the whole picture of a customer's
+// account.
 import { PDFDocument, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -18,6 +27,12 @@ async function sb(path: string, opts: RequestInit = {}) {
     ...opts,
     headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", ...(opts.headers || {}) },
   });
+}
+// Best effort. A logging failure must never stop the run or undo a sent email.
+async function logEmail(row: Record<string, unknown>) {
+  try {
+    await sb("/rest/v1/email_log", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(row) });
+  } catch (_) { /* ignored on purpose */ }
 }
 
 async function buildStatementPdf(shop: Record<string, string>, g: Record<string, unknown>): Promise<string> {
@@ -47,6 +62,13 @@ async function buildStatementPdf(shop: Record<string, string>, g: Record<string,
   draw("Total owing", 380, 12, bold); draw(money(Number(g.total_owing)), 470, 12, bold); y -= 26;
   if (shop?.bank_account) { draw("Please pay to: " + shop.bank_account, 40, 10); y -= 14; }
   draw("Thank you for your business.", 40, 10);
+
+  // Shop strapline at the foot of every page, matching the invoice.
+  const tagline = "Betterservice = Better Price = Better Advice = Better Bikes";
+  for (const pg of pdf.getPages()) {
+    const w = font.widthOfTextAtSize(tagline, 9);
+    pg.drawText(tagline, { x: (595 - w) / 2, y: 40, size: 9, font });
+  }
   return await pdf.saveAsBase64();
 }
 
@@ -57,30 +79,64 @@ Deno.serve(async (req) => {
   }
   try {
     const shop = (await (await sb("/rest/v1/shop_settings?id=eq.1&select=*")).json())[0] || {};
+    const business = shop.business_name || "Betterservice ATV";
     const groups = await (await sb("/rest/v1/rpc/outstanding_statements", { method: "POST", body: "{}" })).json();
     if (!Array.isArray(groups) || groups.length === 0) return json({ ok: true, sent: 0, note: "Nothing outstanding." });
     if (!RESEND) return json({ ok: false, sent: 0, error: "RESEND_API_KEY not set — statements not sent.", customers: groups.length });
+
+    // outstanding_statements() returns names and addresses but no customer id,
+    // so the log rows would have nothing to join on. One small lookup up front
+    // maps address -> id for the whole run, rather than a request per customer.
+    const byEmail = new Map<string, string>();
+    try {
+      const cres = await sb("/rest/v1/customers?select=id,email&email=not.is.null");
+      if (cres.ok) {
+        for (const c of (await cres.json()) as { id: string; email: string }[]) {
+          if (c.email) byEmail.set(String(c.email).trim().toLowerCase(), c.id);
+        }
+      }
+    } catch (_) { /* the log row simply goes without a customer_id */ }
 
     let sent = 0;
     const errors: string[] = [];
     for (const g of groups) {
       if (!g.email) continue;
+      const to = String(g.email).trim();
+      const subject = `Your account statement — ${business}`;
+      const customerId = byEmail.get(to.toLowerCase()) ?? null;
+
       const pdf64 = await buildStatementPdf(shop, g);
       const r = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          from: "Betterservice ATV <admin@betterservice.co.nz>",
-          to: [g.email],
-          subject: "Your account statement — Betterservice ATV",
+          // Name comes from Settings, so renaming the business never needs a redeploy.
+          from: `${business} <admin@betterservice.co.nz>`,
+          to: [to],
+          subject,
           html: `<p>Hi ${g.customer_name || "there"},</p>` +
-            `<p>A quick statement of your account with Betterservice ATV: <strong>${money(Number(g.total_owing))}</strong> is currently outstanding across ${g.invoices.length} invoice(s). The full breakdown is attached as a PDF.</p>` +
+            `<p>A quick statement of your account with ${business}: <strong>${money(Number(g.total_owing))}</strong> is currently outstanding across ${g.invoices.length} invoice(s). The full breakdown is attached as a PDF.</p>` +
             `<p>Please arrange payment when you can, or reply to this email with any questions.</p>` +
-            `<p>Cheers,<br/>Betterservice ATV</p>`,
+            `<p>Cheers,<br/>${business}</p>`,
           attachments: [{ filename: "Statement.pdf", content: pdf64 }],
         }),
       });
-      if (r.ok) sent++; else errors.push(await r.text());
+      const rBody = await r.json().catch(() => ({} as Record<string, string>));
+
+      if (r.ok) {
+        sent++;
+        await logEmail({
+          kind: "statement", subject, to_email: to,
+          customer_id: customerId, resend_id: rBody?.id ?? null, status: "accepted",
+        });
+      } else {
+        const msg = rBody?.message || "Resend rejected the send.";
+        errors.push(`${g.customer_name} <${to}>: ${msg}`);
+        await logEmail({
+          kind: "statement", subject, to_email: to,
+          customer_id: customerId, status: "failed", error: String(msg).slice(0, 2000),
+        });
+      }
     }
     return json({ ok: true, sent, errors });
   } catch (e) {

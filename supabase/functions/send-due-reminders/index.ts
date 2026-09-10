@@ -13,6 +13,20 @@
 // chased since their last service. reminders_per_day in Settings caps how many
 // go out in a night, so a year of catch-up doesn't land in one hit.
 //
+// TWO THINGS THIS VERSION FIXES:
+//
+//   1. Nothing was recorded. Every reminder now writes a row to email_log,
+//      sent or failed, so "did Craig's customers actually get chased" is a
+//      question with an answer.
+//
+//   2. The stamp was fire-and-forget. After a successful send this marks
+//      machines.last_reminder_sent, which is the ONLY thing stopping
+//      due_for_email_reminder() picking the same person again tomorrow. The
+//      result of that write was never checked, so if it failed the customer
+//      would be emailed again the next night, and the night after that, with
+//      nothing anywhere saying why. It is now checked, and a failure is
+//      recorded on the log row and returned in the response.
+//
 // Needs: SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET, RESEND_API_KEY.
 //
 // Call with ?dry=1 to see who would be emailed, without sending anything.
@@ -34,6 +48,12 @@ async function sb(path: string, opts: RequestInit = {}) {
     ...opts,
     headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", ...(opts.headers || {}) },
   });
+}
+// Best effort. A logging failure must never stop the run or undo a sent email.
+async function logEmail(row: Record<string, unknown>) {
+  try {
+    await sb("/rest/v1/email_log", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(row) });
+  } catch (_) { /* ignored on purpose */ }
 }
 function esc(s: unknown) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
@@ -82,11 +102,16 @@ Deno.serve(async (req) => {
     let sent = 0;
     const errors: string[] = [];
     const done: Record<string, unknown>[] = [];
+    // Sends that worked but could not be stamped. These are the dangerous ones:
+    // the customer has been chased and the database does not know it, so they
+    // are in line to be chased again tomorrow.
+    const unstamped: Record<string, unknown>[] = [];
 
     for (const d of due) {
       const to = String(d.email ?? "").trim();
       if (!to) continue;
       const vars = { customer: d.customer_name, machine: d.machine_label || "bike", business, phone };
+      const subject = applyTemplate(subjectTpl, vars);
 
       const r = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -94,27 +119,51 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           from: `${business} <admin@betterservice.co.nz>`,
           to: [to],
-          subject: applyTemplate(subjectTpl, vars),
+          subject,
           html: toHtml(applyTemplate(bodyTpl, vars)),
         }),
       });
+      const rBody = await r.json().catch(() => ({} as Record<string, string>));
 
-      if (r.ok) {
-        sent++;
-        done.push({ customer: d.customer_name, machine: d.machine_label, email: to });
-        // Stamp the machine so this customer isn't chased again until they've
-        // actually been back in — the same rule due_for_email_reminder() reads.
-        await sb(`/rest/v1/machines?id=eq.${d.machine_id}`, {
-          method: "PATCH",
-          headers: { Prefer: "return=minimal" },
-          body: JSON.stringify({ last_reminder_sent: new Date().toISOString() }),
+      if (!r.ok) {
+        const msg = rBody?.message || "Resend rejected the send.";
+        errors.push(`${d.customer_name} <${to}>: ${msg}`);
+        await logEmail({
+          kind: "service_reminder", subject, to_email: to,
+          customer_id: d.customer_id ?? null, status: "failed",
+          error: String(msg).slice(0, 2000),
         });
-      } else {
-        errors.push(`${d.customer_name} <${to}>: ${await r.text()}`);
+        continue;
       }
+
+      sent++;
+      done.push({ customer: d.customer_name, machine: d.machine_label, email: to });
+
+      // Stamp the machine so this customer isn't chased again until they've
+      // actually been back in — the same rule due_for_email_reminder() reads.
+      // The result IS checked now: an unstamped send means a repeat tomorrow.
+      const stamp = await sb(`/rest/v1/machines?id=eq.${d.machine_id}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ last_reminder_sent: new Date().toISOString() }),
+      });
+      const stampRows = stamp.ok ? await stamp.json().catch(() => []) : [];
+      const stamped = Array.isArray(stampRows) && stampRows.length === 1;
+      if (!stamped) {
+        unstamped.push({ customer: d.customer_name, machine: d.machine_label, machine_id: d.machine_id });
+      }
+
+      await logEmail({
+        kind: "service_reminder", subject, to_email: to,
+        customer_id: d.customer_id ?? null,
+        resend_id: rBody?.id ?? null, status: "accepted",
+        // Not an email failure, so status stays accepted — but it is recorded,
+        // because it is the reason a customer might hear from us twice.
+        error: stamped ? null : "Sent, but machines.last_reminder_sent could not be stamped — this customer may be chased again tomorrow.",
+      });
     }
 
-    return json({ ok: true, sent, done, errors });
+    return json({ ok: true, sent, done, errors, unstamped });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
