@@ -13,7 +13,7 @@ export default function robots() {
         "/parts", "/suppliers", "/purchase-orders", "/counter-sales",
         "/credit-notes", "/bills", "/expenses", "/accounting", "/reports",
         "/rentals", "/bookings", "/timesheets", "/staff", "/settings",
-        "/templates", "/stocktake", "/secondhand", "/due", "/search",
+        "/templates", "/stocktake", "/secondhand", "/due", "/search", "/emails",
         "/login", "/reset",
       ],
     },

@@ -19,6 +19,7 @@ const groups = [
       { href: "/expenses", label: "Expenses" },
       { href: "/accounting", label: "Overview" },
       { href: "/reports", label: "Reports" },
+      { href: "/emails", label: "Emails" },
     ],
   },
   {
