@@ -28,21 +28,35 @@ export default function CustomerPage() {
   const [form, setForm] = useState(emptyMachine);
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [rentInvoices, setRentInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const set = (k) => (e) => setForm((v) => ({ ...v, [k]: e.target.value }));
 
   async function load() {
     setLoading(true);
-    const [c, m, j, am] = await Promise.all([
+    const [c, m, j, am, ri] = await Promise.all([
       supabase.from("customers").select("*").eq("id", id).maybeSingle(),
       supabase.from("machines").select("*").eq("customer_id", id).order("created_at"),
       supabase.from("job_cards").select("*, invoices(invoice_number, total, status)").eq("customer_id", id).order("created_at", { ascending: false }),
       supabase.from("machines").select("type, make, model"),
+      // Rental invoices are linked straight to the customer, not through a job
+      // card, which is exactly why they never appeared on this page before.
+      // The agreement is joined for the unit name, and left-joined on purpose:
+      // #01008 had its agreement cleared when it was credit-noted and re-billed,
+      // so an invoice CAN legitimately have no tenancy attached.
+      supabase
+        .from("invoices")
+        .select("id, invoice_number, total, status, issued_date, period_start, sent, kind, rental_agreements(rental_units(name))")
+        .eq("customer_id", id)
+        .order("issued_date", { ascending: false }),
     ]);
-    const err = c.error || m.error || j.error || am.error;
+    const err = c.error || m.error || j.error || am.error || ri.error;
     if (err) setError(err.message);
-    else { setCustomer(c.data); setMachines(m.data || []); setJobs(j.data || []); setAllMachines(am.data || []); }
+    else {
+      setCustomer(c.data); setMachines(m.data || []); setJobs(j.data || []); setAllMachines(am.data || []);
+      setRentInvoices(ri.data || []);
+    }
     setLoading(false);
   }
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
@@ -200,6 +214,35 @@ export default function CustomerPage() {
                 <span className="text-zinc-500">{nz(j.job_date || j.created_at)} · {j.status}</span>
               </li>
             ))}
+          </ul>
+        </>
+      )}
+
+      {owner && rentInvoices.length > 0 && (
+        <>
+          <h2 className="mt-8 font-semibold text-zinc-900">Rent invoices</h2>
+          <ul className="mt-2 divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 bg-white">
+            {rentInvoices.map((iv) => {
+              const unit = iv.rental_agreements?.rental_units?.name;
+              return (
+                <li key={iv.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 p-3 text-sm">
+                  <span className="min-w-0">
+                    <Link href={`/invoices/${iv.id}`} className="font-medium text-zinc-900 hover:text-red-700">
+                      #{String(iv.invoice_number).padStart(5, "0")}
+                    </Link>
+                    {unit && <span className="ml-2 text-zinc-600">{unit}</span>}
+                    {iv.period_start && <span className="ml-2 text-zinc-500">covers {nz(iv.period_start)}</span>}
+                  </span>
+                  <span className="shrink-0 text-right">
+                    {/* Not sent is worth seeing here: a rent invoice sits waiting
+                        for Craig to approve it, and this is where he'd notice. */}
+                    {!iv.sent && <span className="mr-2 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">not sent</span>}
+                    <span className="text-xs text-zinc-500">{iv.status}</span>
+                    <span className="ml-2 font-medium text-zinc-800">{money(iv.total)}</span>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}
