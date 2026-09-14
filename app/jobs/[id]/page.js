@@ -101,6 +101,10 @@ export default function JobDetailPage() {
   const [eProblem, setEProblem] = useState("");
   const [eNotes, setENotes] = useState("");
   const [eCustNotes, setECustNotes] = useState("");
+  // The CUSTOMER's details, not the job's. Editable from here because the
+  // job card is where you are standing when you find out the number is wrong.
+  const [ePhone, setEPhone] = useState("");
+  const [eEmail, setEEmail] = useState("");
   const [billHours, setBillHours] = useState("");
   const [billRate, setBillRate] = useState("");          // blank means the shop rate
 
@@ -188,14 +192,32 @@ export default function JobDetailPage() {
     setEProblem(job.reported_problem || "");
     setENotes(job.notes || "");
     setECustNotes(job.customer_notes || "");
+    setEPhone(job.customers?.phone || "");
+    setEEmail(job.customers?.email || "");
     setEditing(true);
   }
 
   async function saveDetails() {
+    const mail = eEmail.trim();
+    if (mail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) {
+      setError("That email address doesn't look right.");
+      return;
+    }
     await supabase.from("job_cards").update({
       customer_id: eCustomer || null, machine_id: eMachine || null,
       reported_problem: eProblem, notes: eNotes, customer_notes: eCustNotes,
     }).eq("id", id);
+
+    // The phone and email belong to the CUSTOMER, not this job card, so they
+    // are saved separately — and against whichever customer the card is set to,
+    // which may have just been changed in the dropdown above.
+    const target = eCustomer || job.customer_id;
+    if (target) {
+      const { error: cErr } = await supabase.from("customers")
+        .update({ phone: ePhone.trim() || null, email: mail || null })
+        .eq("id", target);
+      if (cErr) { setError("Saved the job, but couldn't save the customer's details: " + cErr.message); return; }
+    }
     setEditing(false); sayThanks(); load();
   }
 
@@ -604,6 +626,10 @@ export default function JobDetailPage() {
               <option value="">{eCustomer ? "Select machine…" : "Pick a customer first"}</option>
               {eMachines.map((m) => (<option key={m.id} value={m.id}>{m.type} — {m.make} {m.model}</option>))}
             </select>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <input value={ePhone} onChange={(e) => setEPhone(e.target.value)} placeholder="Customer phone" inputMode="tel" autoComplete="off" className={input} />
+              <input value={eEmail} onChange={(e) => setEEmail(e.target.value)} placeholder="Customer email" inputMode="email" autoComplete="off" className={input} />
+            </div>
             <textarea value={eProblem} onChange={(e) => setEProblem(e.target.value)} rows={2} placeholder="Reported problem / what needs doing" className={input} />
             <textarea value={eNotes} onChange={(e) => setENotes(e.target.value)} rows={2} placeholder="Shop notes — internal, also texted with the pick-up message" className={input} />
             <textarea value={eCustNotes} onChange={(e) => setECustNotes(e.target.value)} rows={3} placeholder="Notes for the customer — prints on the invoice (e.g. brakes 1/2 worn, clutch adjusted to spec)" className={input} />
@@ -614,7 +640,17 @@ export default function JobDetailPage() {
           </div>
         ) : (
           <>
-            <p className="mt-2 font-medium text-zinc-900">{job.customers?.name} <span className="font-normal text-zinc-500">· {job.customers?.phone}</span></p>
+            <p className="mt-2 font-medium text-zinc-900">
+              {job.customers?.name}
+              {job.customers?.phone
+                ? <span className="font-normal text-zinc-500"> · {job.customers.phone}</span>
+                : <span className="font-normal text-amber-600"> · no phone number</span>}
+            </p>
+            <p className="text-sm">
+              {job.customers?.email
+                ? <span className="text-zinc-600">{job.customers.email}</span>
+                : <span className="text-amber-600">No email address — this job can&apos;t be invoiced by email until one is added.</span>}
+            </p>
             <p className="text-sm text-zinc-600">{job.machines?.type} {job.machines?.make} {job.machines?.model}{job.machines?.vin ? " · VIN " + job.machines.vin : ""}{job.machines?.key_number ? " · Key " + job.machines.key_number : ""}</p>
             {job.customers?.address && <p className="mt-1 text-sm text-zinc-600"><span className="font-medium text-zinc-700">Address:</span> {job.customers.address}</p>}
             {job.reported_problem && <p className="mt-3 rounded-lg bg-zinc-50 p-3 text-sm text-zinc-700">{job.reported_problem}</p>}

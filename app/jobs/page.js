@@ -70,6 +70,8 @@ export default function JobsPage() {
   // shortcut, never a requirement.
   const [customerId, setCustomerId] = useState(""); // set only when an existing customer is chosen
   const [custQuery, setCustQuery] = useState("");
+  const [custPhone, setCustPhone] = useState("");
+  const [custEmail, setCustEmail] = useState("");
   const [mType, setMType] = useState("");
   const [mMake, setMMake] = useState("");
   const [mModel, setMModel] = useState("");
@@ -86,7 +88,7 @@ export default function JobsPage() {
   async function loadData() {
     setLoading(true);
     const { data: j, error: jErr } = await supabase.from("job_cards").select("*, customers(name), machines(type, make, model)").order("created_at", { ascending: false });
-    const { data: c } = await supabase.from("customers").select("id, name").order("name");
+    const { data: c } = await supabase.from("customers").select("id, name, phone, email").order("name");
     const { data: m } = await supabase.from("machines").select("id, customer_id, type, make, model, year, vin, key_number");
     if (jErr) setError(jErr.message);
     else setJobs(j);
@@ -111,6 +113,10 @@ export default function JobsPage() {
   function chooseCustomer(c) {
     setCustomerId(c.id);
     setCustQuery(c.name);
+    // Carry what's already on file into the boxes. A regular with a blank
+    // phone can then have it filled in from here rather than being a dead end.
+    setCustPhone(c.phone || "");
+    setCustEmail(c.email || "");
     setError(null);
   }
 
@@ -126,7 +132,7 @@ export default function JobsPage() {
   }
 
   function resetNewJobForm() {
-    setCustomerId(""); setCustQuery("");
+    setCustomerId(""); setCustQuery(""); setCustPhone(""); setCustEmail("");
     setMType(""); setMMake(""); setMModel(""); setMYear(""); setMVin(""); setMKey("");
     setProblem("");
   }
@@ -143,15 +149,43 @@ export default function JobsPage() {
     if (mYear.trim() && !/^\d{4}$/.test(mYear.trim())) { setError("Year should be four digits, e.g. 2019."); return false; }
 
     // --- the customer
+    //
+    // Phone and email are written here, at the counter, while the person is
+    // standing in front of you. The first version of this form created a
+    // customer from a name alone, which meant a new walk-in had no way of being
+    // phoned when the bike was ready or emailed their invoice, and no way to
+    // fix that without leaving the job card. That was wrong.
+    const phone = custPhone.trim();
+    const mail = custEmail.trim();
+    if (mail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) {
+      setError("That email address doesn't look right.");
+      return false;
+    }
+
     let custId = customerId;
     if (!custId) {
       const hit = customers.find((c) => norm(c.name) === norm(custQuery));
       if (hit) custId = hit.id;
       else {
         const { data, error: cErr } = await supabase
-          .from("customers").insert({ name: custQuery.trim() }).select("id, name").single();
+          .from("customers")
+          .insert({ name: custQuery.trim(), phone: phone || null, email: mail || null })
+          .select("id, name").single();
         if (cErr) { setError("Couldn't add the customer: " + cErr.message); return false; }
         custId = data.id;
+      }
+    }
+
+    // An existing customer whose details were blank, now filled in. Only ever
+    // fills a gap: a number already on file is never overwritten from here,
+    // because this form is not where you'd expect to change someone's details.
+    if (custId) {
+      const known = customers.find((c) => c.id === custId);
+      const patch = {};
+      if (phone && !known?.phone) patch.phone = phone;
+      if (mail && !known?.email) patch.email = mail;
+      if (Object.keys(patch).length) {
+        await supabase.from("customers").update(patch).eq("id", custId);
       }
     }
 
@@ -292,6 +326,18 @@ export default function JobsPage() {
                 ) : custQuery.trim() ? (
                   <p className="mt-1 text-xs text-zinc-500">New customer — will be added</p>
                 ) : null}
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <input value={custPhone} onChange={(e) => setCustPhone(e.target.value)}
+                    placeholder="Phone" inputMode="tel" autoComplete="off" className={input} />
+                  <input value={custEmail} onChange={(e) => setCustEmail(e.target.value)}
+                    placeholder="Email" inputMode="email" autoComplete="off" className={input} />
+                </div>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {customerId
+                    ? "Blank boxes here will be added to their record. Anything already on file is left alone."
+                    : "Worth getting now — the phone number to call when it's ready, the email for the invoice."}
+                </p>
+
                 {custMatches.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {custMatches.map((c) => (
