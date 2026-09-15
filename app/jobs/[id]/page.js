@@ -43,6 +43,7 @@ export default function JobDetailPage() {
   const [hours, setHours] = useState("1");
   const [labourRate, setLabourRate] = useState("");      // $/hr — blank means the shop rate; override for e.g. welding at 50
   const [partId, setPartId] = useState("");
+  const [partQ, setPartQ] = useState("");           // search box over the inventory list
   const [partQty, setPartQty] = useState("1");
   const [partPrice, setPartPrice] = useState("");   // blank = use the part's own price
   const [ordDesc, setOrdDesc] = useState("");
@@ -295,7 +296,7 @@ export default function JobDetailPage() {
     // Atomic in the DB: inserts the line item and draws stock down together (no read-then-write race).
     const { error } = await supabase.rpc("add_part_to_job", { p_job_id: id, p_part_id: part.id, p_qty: q, p_unit_price: p });
     if (error) { setError(error.message); return false; }
-    setPartId(""); setPartQty("1"); setPartPrice(""); load();
+    setPartId(""); setPartQ(""); setPartQty("1"); setPartPrice(""); load();
   }
 
   // Removing a stocked part puts it back on the shelf.
@@ -595,6 +596,13 @@ export default function JobDetailPage() {
   const shopRate = Number(settings?.labour_rate ?? 115);
   const readyByName = (staff || []).find((x) => x.id === job?.ready_by)?.name || "";
   const markupPct = Number(settings?.parts_markup_percent ?? 30);
+
+  // Search box over the inventory dropdown — the list got long enough to scroll.
+  // Matches name or SKU, same as the Parts page.
+  const partTerm = partQ.trim().toLowerCase();
+  const shownParts = partTerm
+    ? parts.filter((p) => (p.name + " " + (p.sku || "")).toLowerCase().includes(partTerm))
+    : parts;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -922,8 +930,33 @@ export default function JobDetailPage() {
       )}
 
       <form onSubmit={partAction.run} className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
-        <div className="min-w-[10rem] flex-1">
+        <div className="min-w-[14rem] flex-1 basis-full sm:basis-auto">
           <label className="block text-xs font-medium text-zinc-500">Part (from inventory)</label>
+          <input
+            value={partQ}
+            onChange={(e) => {
+              const q = e.target.value;
+              setPartQ(q);
+              const term = q.trim().toLowerCase();
+              const hits = term
+                ? parts.filter((p) => (p.name + " " + (p.sku || "")).toLowerCase().includes(term))
+                : parts;
+              // Narrowed to one part? Pick it, so a good search needs no second click.
+              if (term && hits.length === 1) {
+                setPartId(hits[0].id);
+                setPartPrice(String(hits[0].unit_price ?? ""));
+                return;
+              }
+              // If what's picked no longer matches what's typed, drop the pick so the
+              // dropdown never shows a part the search has filtered away.
+              const sel = parts.find((p) => p.id === partId);
+              if (sel && term && !hits.some((p) => p.id === sel.id)) {
+                setPartId(""); setPartPrice("");
+              }
+            }}
+            placeholder="Search parts by name or SKU…"
+            className={`${input} mb-1.5`}
+          />
           <select
             value={partId}
             onChange={(e) => {
@@ -932,10 +965,14 @@ export default function JobDetailPage() {
               setPartPrice(sel ? String(sel.unit_price ?? "") : "");
             }}
             className={input}
+            size={partTerm && shownParts.length > 1 ? Math.min(shownParts.length + 1, 8) : undefined}
           >
-            <option value="">Select a part…</option>
-            {parts.map((p) => (<option key={p.id} value={p.id}>{p.name}{owner ? ` — ${money(p.unit_price)}` : ""} ({p.qty_on_hand} in stock)</option>))}
+            <option value="">{partTerm ? `Select from ${shownParts.length} match${shownParts.length === 1 ? "" : "es"}…` : "Select a part…"}</option>
+            {shownParts.map((p) => (<option key={p.id} value={p.id}>{p.name}{owner ? ` — ${money(p.unit_price)}` : ""} ({p.qty_on_hand} in stock)</option>))}
           </select>
+          {partTerm && shownParts.length === 0 && (
+            <p className="mt-1 text-xs text-amber-600">No parts match “{partQ.trim()}”.</p>
+          )}
         </div>
         <div className="w-16">
           <label className="block text-xs font-medium text-zinc-500">Qty</label>

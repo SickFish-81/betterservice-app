@@ -10,6 +10,10 @@ const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-90
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const poNo = (n) => "PO-" + String(n ?? 0).padStart(4, "0");
+
+// Shared by every parts picker in the app: match on name or SKU.
+const partMatches = (p, term) => (p.name + " " + (p.sku || "")).toLowerCase().includes(term);
+const emptyLine = () => ({ part_id: "", qty: "1", cost: "", job_id: "", q: "" });
 const STATUS_STYLES = {
   Draft: "bg-zinc-100 text-zinc-700",
   Ordered: "bg-amber-50 text-amber-700",
@@ -24,7 +28,7 @@ export default function PurchaseOrdersPage() {
   const [parts, setParts] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [supplierId, setSupplierId] = useState("");
-  const [lines, setLines] = useState([{ part_id: "", qty: "1", cost: "", job_id: "" }]);
+  const [lines, setLines] = useState([emptyLine()]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -38,7 +42,7 @@ export default function PurchaseOrdersPage() {
     if (error) setError(error.message); else setOrders(data || []);
     const { data: sup } = await supabase.from("suppliers").select("id, name, is_active").order("name");
     setSuppliers((sup || []).filter((s) => s.is_active));
-    const { data: pr } = await supabase.from("parts").select("id, name").order("name");
+    const { data: pr } = await supabase.from("parts").select("id, name, sku").order("name");
     setParts(pr || []);
     const { data: jb } = await supabase.from("job_cards").select("id, job_number, status, customers(name)").not("status", "in", "(Invoiced,Paid)").order("job_number", { ascending: false });
     setJobs(jb || []);
@@ -47,7 +51,21 @@ export default function PurchaseOrdersPage() {
   useEffect(() => { load(); }, []);
 
   const setLine = (i, k) => (e) => setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, [k]: e.target.value } : l)));
-  const addLine = () => setLines((ls) => [...ls, { part_id: "", qty: "1", cost: "", job_id: "" }]);
+  const patchLine = (i, patch) => setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  // Typing in a line's search box. Narrow to one part and it picks itself.
+  // Cost is left alone — that's what the supplier charges, not the shelf price.
+  function searchLine(i, q) {
+    const term = q.trim().toLowerCase();
+    if (!term) { patchLine(i, { q }); return; }
+    const hits = parts.filter((p) => partMatches(p, term));
+    if (hits.length === 1) { patchLine(i, { q, part_id: hits[0].id }); return; }
+    // Drop a pick the search has filtered away, so the line never shows a hidden part.
+    const sel = parts.find((x) => x.id === lines[i].part_id);
+    if (sel && !hits.some((p) => p.id === sel.id)) { patchLine(i, { q, part_id: "" }); return; }
+    patchLine(i, { q });
+  }
+  const addLine = () => setLines((ls) => [...ls, emptyLine()]);
   const removeLine = (i) => setLines((ls) => (ls.length > 1 ? ls.filter((_, idx) => idx !== i) : ls));
 
   const validLines = lines.filter((l) => l.part_id && Number(l.qty) > 0);
@@ -68,7 +86,7 @@ export default function PurchaseOrdersPage() {
     const { error: itErr } = await supabase.from("purchase_order_items").insert(rows);
     setSaving(false);
     if (itErr) { setError(itErr.message); return; }
-    setSupplierId(""); setLines([{ part_id: "", qty: "1", cost: "", job_id: "" }]); load();
+    setSupplierId(""); setLines([emptyLine()]); load();
   }
 
   const orderVal = (o) => (o.purchase_order_items || []).reduce((s, it) => s + Number(it.qty_ordered) * Number(it.unit_cost || 0), 0);
@@ -87,10 +105,27 @@ export default function PurchaseOrdersPage() {
           {lines.map((l, i) => (
             <div key={i} className="rounded-lg border border-zinc-200 p-2">
               <div className="flex items-center gap-2">
-                <select value={l.part_id} onChange={setLine(i, "part_id")} className={input + " flex-1"}>
-                  <option value="">Part…</option>
-                  {parts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                {(() => {
+                  const term = l.q.trim().toLowerCase();
+                  const shown = term ? parts.filter((p) => partMatches(p, term)) : parts;
+                  return (
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <input
+                        value={l.q}
+                        onChange={(e) => searchLine(i, e.target.value)}
+                        placeholder="Search parts by name or SKU…"
+                        aria-label="Search parts"
+                        className="w-full rounded-lg border border-zinc-300 px-2 py-2 text-sm placeholder:text-zinc-400"
+                      />
+                      <select value={l.part_id} onChange={setLine(i, "part_id")} className={input}
+                              size={term && shown.length > 1 ? Math.min(shown.length + 1, 6) : undefined}>
+                        <option value="">{term ? `Part — ${shown.length} match${shown.length === 1 ? "" : "es"}…` : "Part…"}</option>
+                        {shown.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      {term && shown.length === 0 && <span className="text-xs text-amber-600">No parts match “{l.q.trim()}”.</span>}
+                    </div>
+                  );
+                })()}
                   <input value={l.qty} onChange={setLine(i, "qty")} type="number" min="0" step="0.01" placeholder="Qty" className="w-16 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
                 <input value={l.cost} onChange={setLine(i, "cost")} type="number" min="0" step="0.01" placeholder="Cost ea" className="w-24 rounded-lg border border-zinc-300 px-2 py-2.5 text-right" />
                 <button type="button" onClick={() => removeLine(i)} aria-label="remove line" className="px-1 text-zinc-400 hover:text-red-500">✕</button>

@@ -12,7 +12,10 @@ const money = (n) => "$" + Number(n || 0).toFixed(2);
 const saleNo = (n) => "CS-" + String(n ?? 0).padStart(5, "0");
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-const emptyLine = () => ({ part_id: "", description: "", qty: "1", price: "" });
+const emptyLine = () => ({ part_id: "", description: "", qty: "1", price: "", q: "" });
+
+// Shared by every parts picker in the app: match on name or SKU.
+const partMatches = (p, term) => (p.name + " " + (p.sku || "")).toLowerCase().includes(term);
 
 export default function CounterSalePage() {
   const [customers, setCustomers] = useState([]);
@@ -33,7 +36,7 @@ export default function CounterSalePage() {
     setCustomers(cust || []);
     const cash = (cust || []).find((c) => c.name === "Cash Sale");
     setCustomerId((prev) => prev || (cash ? cash.id : ""));
-    const { data: pr } = await supabase.from("parts").select("id, name, unit_price, qty_on_hand").order("name");
+    const { data: pr } = await supabase.from("parts").select("id, name, sku, unit_price, qty_on_hand").order("name");
     setParts(pr || []);
     const { data: st } = await supabase.from("shop_settings").select("*").eq("id", 1).single();
     setSettings(st || null);
@@ -52,6 +55,27 @@ export default function CounterSalePage() {
     if (!partId) { setLine(i, { part_id: "", price: "" }); return; }
     const p = parts.find((x) => x.id === partId);
     setLine(i, { part_id: partId, description: p?.name || "", price: p ? String(p.unit_price) : "" });
+  }
+  // Typing in a line's search box. Narrow to one part and it picks itself.
+  function searchLine(i, q) {
+    const term = q.trim().toLowerCase();
+    if (!term) { setLine(i, { q }); return; }
+    const hits = parts.filter((p) => partMatches(p, term));
+    if (hits.length === 1) {
+      const p = hits[0];
+      setLine(i, { q, part_id: p.id, description: p.name, price: String(p.unit_price) });
+      return;
+    }
+    // Drop a pick the search has filtered away, so the row never shows a hidden part.
+    const sel = parts.find((x) => x.id === lines[i].part_id);
+    if (sel && !hits.some((p) => p.id === sel.id)) {
+      // Clear the description too, but only if it's still the name we auto-filled —
+      // anything typed by hand is the operator's own and stays put.
+      const wasAutoFilled = lines[i].description === sel.name;
+      setLine(i, { q, part_id: "", price: "", ...(wasAutoFilled ? { description: "" } : {}) });
+      return;
+    }
+    setLine(i, { q });
   }
   const addLine = () => setLines((ls) => [...ls, emptyLine()]);
   const removeLine = (i) => setLines((ls) => (ls.length > 1 ? ls.filter((_, idx) => idx !== i) : ls));
@@ -133,10 +157,27 @@ export default function CounterSalePage() {
         <div className="flex flex-col gap-2">
           {lines.map((l, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">
-              <select value={l.part_id} onChange={(e) => pickPart(i, e.target.value)} className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-2 py-2 text-sm">
-                <option value="">Custom item…</option>
-                {parts.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.qty_on_hand})</option>)}
-              </select>
+              {(() => {
+                const term = l.q.trim().toLowerCase();
+                const shown = term ? parts.filter((p) => partMatches(p, term)) : parts;
+                return (
+                  <div className="flex min-w-0 flex-1 basis-full flex-col gap-1 sm:basis-0">
+                    <input
+                      value={l.q}
+                      onChange={(e) => searchLine(i, e.target.value)}
+                      placeholder="Search parts by name or SKU…"
+                      aria-label="Search parts"
+                      className="min-w-0 rounded-lg border border-zinc-300 px-2 py-2 text-sm placeholder:text-zinc-400"
+                    />
+                    <select value={l.part_id} onChange={(e) => pickPart(i, e.target.value)} className="min-w-0 rounded-lg border border-zinc-300 px-2 py-2 text-sm"
+                            size={term && shown.length > 1 ? Math.min(shown.length + 1, 6) : undefined}>
+                      <option value="">{term ? `Custom item — ${shown.length} match${shown.length === 1 ? "" : "es"}…` : "Custom item…"}</option>
+                      {shown.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.qty_on_hand})</option>)}
+                    </select>
+                    {term && shown.length === 0 && <span className="text-xs text-amber-600">No parts match — type a description instead.</span>}
+                  </div>
+                );
+              })()}
               <input value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} placeholder="Description" className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-2 py-2 text-sm" />
               <input value={l.qty} onChange={(e) => setLine(i, { qty: e.target.value })} type="number" min="0" step="0.01" aria-label="Quantity" className="w-14 rounded-lg border border-zinc-300 px-2 py-2 text-right text-sm" />
               <input value={l.price} onChange={(e) => setLine(i, { price: e.target.value })} type="number" min="0" step="0.01" placeholder="Price" aria-label="Unit price" className="w-20 rounded-lg border border-zinc-300 px-2 py-2 text-right text-sm" />
