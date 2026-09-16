@@ -107,7 +107,11 @@ async function buildInvoicePdf(shop: Record<string, string>, inv: Record<string,
   draw("GST 15%", 380); draw(money(inv.gst), 470); y -= 16;
   draw("Total", 380, 12, bold); draw(money(inv.total), 470, 12, bold); y -= 26;
 
-  draw("Rent is collected by automatic payment on the due date.", 40, 9); y -= 12;
+  // Craig's wording, 16 Sep 2026. It used to say rent WAS collected by automatic
+  // payment, which reads as though one is already in place — not true for every
+  // tenant, and it told the ones who pay by hand that there was nothing to do.
+  draw("Please pay into the account below by the due date.", 40, 9); y -= 11;
+  draw("An automatic payment is preferred.", 40, 9); y -= 12;
   if (shop?.bank_account) { draw("Bank account: " + shop.bank_account, 40, 10); y -= 14; }
   draw("Thank you.", 40, 10);
   return await pdf.saveAsBase64();
@@ -239,7 +243,7 @@ Deno.serve(async (req) => {
             (overdue.length
               ? `<p style="color:#b45309"><strong>These are past the date their period started and still have not been sent:</strong></p><ul>` +
                 overdue.map((v: Record<string, any>) => `<li>${esc(v.customers?.name || "tenant")} — ${esc(invNo(v.invoice_number))} ${esc(money(v.total))}, period started ${esc(nzDate(v.period_start))}</li>`).join("") +
-                `</ul><p>The automatic payment may already have been taken against an invoice the tenant has never seen.</p>`
+                `</ul><p>Where a tenant pays by automatic payment, it may already have been taken against an invoice they have never seen.</p>`
               : "") +
             (problems.length ? `<p><strong>Needs a look:</strong></p><ul>${problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""),
         }),

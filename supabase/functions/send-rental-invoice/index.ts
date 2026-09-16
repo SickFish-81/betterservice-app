@@ -230,7 +230,7 @@ Deno.serve(async (req) => {
           `<p>Hi ${esc(ag.customers?.name || "there")},</p>` +
           `<p>Your rent invoice for <strong>${esc(ag.rental_units?.name)}</strong> is attached — <strong>${money(inv.total)}</strong>, due ${nzDate(inv.due_date)}.</p>` +
           (leaseSent ? `<p>Your lease agreement is attached as well, for your records.</p>` : "") +
-          `<p>This is collected by automatic payment, so there's nothing to do — the invoice is for your records.</p>` +
+          `<p>Please pay into our account by the due date — the account number is on the invoice. An automatic payment is preferred.</p>` +
           `<p>Cheers,<br/>${esc(business)}</p>`,
         attachments,
       }),

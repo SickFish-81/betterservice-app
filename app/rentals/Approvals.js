@@ -153,8 +153,8 @@ export default function Approvals() {
 
                   {late && (
                     <p className="mt-2 text-sm font-medium text-amber-900">
-                      This period has already started. If it's collected by automatic payment, the money may have left
-                      the tenant's account against an invoice they haven't seen.
+                      This period has already started. If the tenant pays by automatic payment, the money may have
+                      left their account against an invoice they haven't seen.
                     </p>
                   )}
                   {noEmail && (
@@ -217,8 +217,8 @@ export default function Approvals() {
             {/* The three-day gap in words, every time, rather than something to
                 remember. This is the bit that gets miscounted. */}
             <p className="mt-3 text-sm text-zinc-600">
-              Rent is invoiced three days before the period starts, and is due on the day it starts — so the
-              automatic payment has somewhere to land. Issued {nzDate(confirming.issued_date)}, due{" "}
+              Rent is invoiced three days before the period starts, and is due on the day it starts — so it can be
+              paid before the period begins. Issued {nzDate(confirming.issued_date)}, due{" "}
               {nzDate(confirming.due_date)}.
             </p>
 

@@ -5,8 +5,8 @@
 //
 // Note on scope: outstanding_statements() joins job_cards, so this covers ATV
 // work only. Rent invoices never appear on a statement — that is presumably
-// deliberate, since rent is collected by automatic payment, but it is worth
-// knowing before anyone treats a statement as the whole picture of a customer's
+// deliberate, since rent is invoiced on its own cycle, but it is worth knowing
+// before anyone treats a statement as the whole picture of a customer's
 // account.
 import { PDFDocument, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 
