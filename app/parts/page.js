@@ -31,6 +31,12 @@ export default function PartsPage() {
   const [qty, setQty] = useState("");
   const [minStock, setMinStock] = useState("");
   const [supplierId, setSupplierId] = useState("");
+  // A part open for editing its details (as opposed to its prices, which are
+  // edited in place below).
+  const [editingId, setEditingId] = useState(null);
+  const [eName, setEName] = useState("");
+  const [eSku, setESku] = useState("");
+  const [eMin, setEMin] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -82,6 +88,37 @@ export default function PartsPage() {
 
   async function setSupplier(id, value) {
     await supabase.from("parts").update({ supplier_id: value || null }).eq("id", id);
+    load();
+  }
+
+  // ---- Editing a part's details -----------------------------------------------
+  //
+  // Prices, stock on hand and the supplier could all be changed in place, but the
+  // NAME, the SKU and the low-stock level could not. A part added with a typo in
+  // its name could only be fixed by deleting it and adding it again — which is
+  // not a safe thing to do to a part that has been used on jobs.
+  function startEdit(part) {
+    setError(null);
+    setEditingId(part.id);
+    setEName(part.name || "");
+    setESku(part.sku || "");
+    setEMin(String(part.min_stock ?? 0));
+  }
+
+  function cancelEdit() { setEditingId(null); setError(null); }
+
+  async function saveEdit(part) {
+    setError(null);
+    const name = eName.trim();
+    if (!name) { setError("A part needs a name."); return; }
+    const min = Number(eMin);
+    if (!Number.isFinite(min) || min < 0) { setError("Low-stock level must be a number, zero or more."); return; }
+    const { error } = await supabase
+      .from("parts")
+      .update({ name, sku: eSku.trim() || null, min_stock: min })
+      .eq("id", part.id);
+    if (error) { setError(error.message); return; }
+    setEditingId(null);
     load();
   }
 
@@ -172,8 +209,28 @@ export default function PartsPage() {
               return (
                 <li key={p.id} className="flex items-center justify-between gap-3 p-4">
                   <div className="min-w-0">
-                    <p className="font-medium text-zinc-900">{p.name} {p.sku && <span className="text-sm font-normal text-zinc-500">· {p.sku}</span>}</p>
-                    <p className="text-sm text-zinc-500">{owner ? money(p.unit_price) + " each · " : ""}low-stock at {p.min_stock}</p>
+                    {editingId === p.id ? (
+                      <div className="flex flex-col gap-2">
+                        <input value={eName} onChange={(e) => setEName(e.target.value)} placeholder="Part name" aria-label="Part name" className={input} />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input value={eSku} onChange={(e) => setESku(e.target.value)} placeholder="SKU / code (optional)" aria-label="SKU" className="w-40 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+                          <label className="flex items-center gap-1 text-xs text-zinc-600">
+                            low-stock at
+                            <input value={eMin} onChange={(e) => setEMin(e.target.value)} type="number" min="0" step="1" aria-label="Low-stock level" className="w-16 rounded-lg border border-zinc-300 px-2 py-1.5 text-right text-sm text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+                          </label>
+                          <button onClick={() => saveEdit(p)} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">Save</button>
+                          <button onClick={cancelEdit} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="font-medium text-zinc-900">
+                          {p.name} {p.sku && <span className="text-sm font-normal text-zinc-500">· {p.sku}</span>}
+                          <button onClick={() => startEdit(p)} className="ml-2 align-middle text-xs font-medium text-zinc-500 hover:text-zinc-800 hover:underline">edit</button>
+                        </p>
+                        <p className="text-sm text-zinc-500">{owner ? money(p.unit_price) + " each · " : ""}low-stock at {p.min_stock}</p>
+                      </>
+                    )}
                     {owner && (
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600">
                         <label className="flex items-center gap-1">

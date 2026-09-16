@@ -12,6 +12,10 @@ export default function TemplatesPage() {
   const [itemsText, setItemsText] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // A template open for editing.
+  const [editingId, setEditingId] = useState(null);
+  const [eName, setEName] = useState("");
+  const [eItems, setEItems] = useState("");
 
   async function load() {
     setLoading(true);
@@ -30,6 +34,35 @@ export default function TemplatesPage() {
     const { error } = await supabase.from("checklist_templates").insert({ name, items });
     if (error) { setError(error.message); return; }
     setName(""); setItemsText(""); load();
+  }
+
+  // ---- Editing a template ------------------------------------------------------
+  //
+  // A template could be created and deleted but never changed, so adding one task
+  // to a service checklist meant retyping the whole list. Editing is the same
+  // one-task-per-line box the add form uses.
+  //
+  // Templates are COPIED onto a job when they're applied, so editing one changes
+  // what future jobs get and leaves every existing job card exactly as it was.
+  function startEdit(t) {
+    setError(null);
+    setEditingId(t.id);
+    setEName(t.name || "");
+    setEItems((t.items || []).join("\n"));
+  }
+
+  function cancelEdit() { setEditingId(null); setError(null); }
+
+  async function saveEdit(t) {
+    setError(null);
+    const name = eName.trim();
+    if (!name) { setError("A template needs a name."); return; }
+    const items = eItems.split("\n").map((x) => x.trim()).filter(Boolean);
+    if (items.length === 0) { setError("A template needs at least one task."); return; }
+    const { error } = await supabase.from("checklist_templates").update({ name, items }).eq("id", t.id);
+    if (error) { setError(error.message); return; }
+    setEditingId(null);
+    load();
   }
 
   async function removeTemplate(id) {
@@ -60,14 +93,30 @@ export default function TemplatesPage() {
           <ul className="flex flex-col gap-3">
             {templates.map((t) => (
               <li key={t.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-zinc-900">{t.name}</span>
-                  <button onClick={() => removeTemplate(t.id)} className="text-xs text-red-500 hover:underline">remove</button>
-                </div>
-                <p className="mt-1 text-sm text-zinc-500">{(t.items || []).length} tasks</p>
-                <ul className="mt-2 list-inside list-disc text-sm text-zinc-600">
-                  {(t.items || []).map((it, i) => (<li key={i}>{it}</li>))}
-                </ul>
+                {editingId === t.id ? (
+                  <div className="flex flex-col gap-3">
+                    <input value={eName} onChange={(e) => setEName(e.target.value)} placeholder="Template name" aria-label="Template name" className={input} />
+                    <textarea value={eItems} onChange={(e) => setEItems(e.target.value)} rows={6} aria-label="Tasks, one per line" className={input} />
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => saveEdit(t)} className={btn}>Save changes</button>
+                      <button onClick={cancelEdit} className="rounded-lg border border-zinc-300 px-4 py-2.5 font-medium text-zinc-700 transition hover:bg-zinc-50">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-semibold text-zinc-900">{t.name}</span>
+                      <div className="flex shrink-0 items-center gap-3">
+                        <button onClick={() => startEdit(t)} className="text-xs font-medium text-zinc-600 hover:underline">edit</button>
+                        <button onClick={() => removeTemplate(t.id)} className="text-xs text-red-500 hover:underline">remove</button>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-sm text-zinc-500">{(t.items || []).length} tasks</p>
+                    <ul className="mt-2 list-inside list-disc text-sm text-zinc-600">
+                      {(t.items || []).map((it, i) => (<li key={i}>{it}</li>))}
+                    </ul>
+                  </>
+                )}
               </li>
             ))}
           </ul>

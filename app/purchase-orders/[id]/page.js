@@ -36,6 +36,11 @@ export default function PurchaseOrderDetail() {
   const [emailing, setEmailing] = useState(false);
   const [error, setError] = useState(null);
   const [ok, setOk] = useState(null);
+  // A line open for correcting what was ordered (not what arrived — that's the
+  // "Now" column below).
+  const [lineEditId, setLineEditId] = useState(null);
+  const [lQty, setLQty] = useState("");
+  const [lCost, setLCost] = useState("");
 
   async function load() {
     setLoading(true);
@@ -136,12 +141,63 @@ export default function PurchaseOrderDetail() {
     load();
   }
 
+  // ---- Correcting a line on the order ------------------------------------------
+  //
+  // Ordering posts nothing to the books — only receiving does — so changing what
+  // was ordered is safe as long as nothing has arrived against that line yet.
+  // A line with stock already received is left alone: that delivery has added
+  // stock and posted a bill, and editing what it was ordered at would put the
+  // order out of step with what was actually paid for.
+  //
+  // Before this, a wrong quantity or cost meant cancelling the whole order and
+  // typing it out again.
+  function startLineEdit(it) {
+    setError(null); setOk(null);
+    setLineEditId(it.id);
+    setLQty(String(Number(it.qty_ordered)));
+    setLCost(String(Number(it.unit_cost ?? 0)));
+  }
+
+  function cancelLineEdit() { setLineEditId(null); setError(null); }
+
+  async function saveLine(it) {
+    setError(null);
+    const q = Number(lQty);
+    const c = Number(lCost);
+    if (!Number.isFinite(q) || q <= 0) { setError("Ordered quantity has to be more than zero — to drop the line, remove it."); return; }
+    if (!Number.isFinite(c) || c < 0) { setError("Cost has to be a number, zero or more."); return; }
+    const { error: e } = await supabase
+      .from("purchase_order_items")
+      .update({ qty_ordered: q, unit_cost: c })
+      .eq("id", it.id);
+    if (e) { setError("Couldn't save that line: " + e.message); return; }
+    setLineEditId(null);
+    setOk("Line updated.");
+    load();
+  }
+
+  async function removeLine(it) {
+    setError(null);
+    if (items.length === 1) {
+      setError("That's the only line on this order — cancel the order instead of emptying it.");
+      return;
+    }
+    if (!window.confirm("Remove " + (it.parts?.name || it.description || "this line") + " from the order?")) return;
+    const { error: e } = await supabase.from("purchase_order_items").delete().eq("id", it.id);
+    if (e) { setError("Couldn't remove that line: " + e.message); return; }
+    setOk("Line removed.");
+    load();
+  }
+
   // Only blank the page on the FIRST load. Re-fetching after an edit keeps the
   // existing content mounted, so the browser holds your scroll position.
   if (loading && !po) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-zinc-500">Loading…</p></main>;
   if (error && !po) return <main className="mx-auto max-w-2xl px-4 py-8"><p className="text-sm text-red-600" role="alert">{error}</p></main>;
   if (!po) return null;
   const canReceive = ["Draft", "Ordered", "Partially received"].includes(po.status);
+  // Editable only while the order is still open AND nothing has arrived against
+  // that particular line.
+  const lineEditable = (it) => canReceive && Number(it.qty_received || 0) === 0;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -163,8 +219,26 @@ export default function PurchaseOrderDetail() {
           const outstanding = Math.max(0, round2(Number(it.qty_ordered) - Number(it.qty_received || 0)));
           const done = outstanding === 0;
           return (
-            <div key={it.id} className="grid grid-cols-[1fr_2.5rem_2.5rem_4rem_5rem] items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm">
-              <span className="min-w-0 truncate text-zinc-800">{it.parts?.name || it.description}{it.job_cards && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">Job #{it.job_cards.job_number}</span>}</span>
+            <div key={it.id} className="border-t border-zinc-100">
+            {lineEditId === it.id ? (
+              <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm">
+                <span className="min-w-0 flex-1 truncate text-zinc-800">{it.parts?.name || it.description}</span>
+                <label className="flex items-center gap-1 text-xs text-zinc-500">ordered
+                  <input type="number" min="0" step="0.01" inputMode="decimal" value={lQty} onChange={(e) => setLQty(e.target.value)} aria-label="Quantity ordered" className="w-16 rounded border border-zinc-300 px-2 py-1 text-right text-sm text-zinc-900" />
+                </label>
+                <label className="flex items-center gap-1 text-xs text-zinc-500">cost ea
+                  <input type="number" min="0" step="0.01" inputMode="decimal" value={lCost} onChange={(e) => setLCost(e.target.value)} aria-label="Cost each" className="w-20 rounded border border-zinc-300 px-2 py-1 text-right text-sm text-zinc-900" />
+                </label>
+                <button onClick={() => saveLine(it)} className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700">Save</button>
+                <button onClick={cancelLineEdit} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">Cancel</button>
+                <button onClick={() => removeLine(it)} className="text-xs text-red-500 hover:underline">remove line</button>
+              </div>
+            ) : (
+            <div className="grid grid-cols-[1fr_2.5rem_2.5rem_4rem_5rem] items-center gap-2 px-4 py-2 text-sm">
+              <span className="min-w-0 truncate text-zinc-800">
+                {it.parts?.name || it.description}{it.job_cards && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">Job #{it.job_cards.job_number}</span>}
+                {lineEditable(it) && <button onClick={() => startLineEdit(it)} className="ml-2 align-middle text-xs font-medium text-zinc-400 hover:text-zinc-800 hover:underline">edit</button>}
+              </span>
               <span className="text-right text-zinc-500">{Number(it.qty_ordered)}</span>
               <span className={"text-right " + (done ? "font-medium text-emerald-600" : "text-zinc-500")}>{Number(it.qty_received || 0)}</span>
               {canReceive ? (
@@ -177,6 +251,8 @@ export default function PurchaseOrderDetail() {
               ) : (
                 <span className="text-right text-zinc-800">{money(it.unit_cost)}</span>
               )}
+            </div>
+            )}
             </div>
           );
         })}

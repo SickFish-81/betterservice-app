@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { PAYMENT_METHODS, DEFAULT_PAYMENT_METHOD } from "../../lib/paymentMethods";
+import { useOwner } from "../RoleContext";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const expNo = (n) => "EXP-" + String(n ?? 0).padStart(5, "0");
@@ -20,6 +21,11 @@ export default function BillsPage() {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState(DEFAULT_PAYMENT_METHOD);
   const [busy, setBusy] = useState(false);
+  // A recorded payment open for correction.
+  const [fixingId, setFixingId] = useState(null);
+  const [fixAmount, setFixAmount] = useState("");
+  const [fixMethod, setFixMethod] = useState(DEFAULT_PAYMENT_METHOD);
+  const owner = useOwner();
 
   async function load() {
     setLoading(true); setError(null);
@@ -33,7 +39,7 @@ export default function BillsPage() {
     setBills(data || []);
     const { data: pays, error: pe } = await supabase
       .from("supplier_payments")
-      .select("id, amount, paid_date, method, expenses(expense_number, supplier)")
+      .select("id, expense_id, amount, paid_date, method, expenses(expense_number, supplier)")
       .order("created_at", { ascending: false })
       .limit(20);
     if (pe) { setError(pe.message); setLoading(false); return; }
@@ -60,6 +66,54 @@ export default function BillsPage() {
     setBusy(false);
     if (error) { setError("Couldn't record payment: " + error.message); return; }
     cancelPay();
+    load();
+  }
+
+  // ---- Correcting a payment already recorded ----------------------------------
+  //
+  // Same shape as the customer side on /invoices, and for the same reason: the
+  // books are kept straight by triggers that fire on INSERT and on DELETE, not
+  // on UPDATE. Editing the row in place would change the figure on screen and
+  // leave the ledger, and the bill's paid/unpaid status, showing the old one.
+  //
+  // So a correction is a new payment followed by removing the old one, and the
+  // new one goes in first — if it fails, nothing has been lost.
+  //
+  // The DELETE half only became safe with migration 0068, which reverses the
+  // journal entry and puts the bill back to Unpaid. Without it a removed payment
+  // would leave money recorded as paid that was never paid.
+  function startFix(p) {
+    setError(null);
+    setFixingId(p.id);
+    setFixAmount(Number(p.amount).toFixed(2));
+    setFixMethod(p.method || DEFAULT_PAYMENT_METHOD);
+  }
+
+  async function saveFix(p) {
+    setError(null);
+    const amt = Math.round((Number(fixAmount) || 0) * 100) / 100;
+    if (!(amt > 0)) { setError("Enter an amount greater than zero, or remove the payment instead."); return; }
+    setBusy(true);
+    const { error: insErr } = await supabase
+      .from("supplier_payments")
+      .insert({ expense_id: p.expense_id, amount: amt, method: fixMethod });
+    if (insErr) { setError("Couldn't save the correction: " + insErr.message); setBusy(false); return; }
+    const { error: delErr } = await supabase.from("supplier_payments").delete().eq("id", p.id);
+    if (delErr) {
+      setError(
+        "The corrected payment was saved, but the original couldn't be removed (" +
+        delErr.message + "). Remove it below so the bill isn't double-counted."
+      );
+    }
+    setFixingId(null); setBusy(false); load();
+  }
+
+  async function removePayment(p) {
+    if (!window.confirm("Remove this payment of " + money(p.amount) + "? The bill will go back to unpaid.")) return;
+    setError(null); setBusy(true);
+    const { error } = await supabase.from("supplier_payments").delete().eq("id", p.id);
+    if (error) setError("Couldn't remove that payment: " + error.message);
+    setBusy(false);
     load();
   }
 
@@ -124,7 +178,26 @@ export default function BillsPage() {
                 <p className="truncate text-zinc-800">{p.expenses?.supplier || "—"} <span className="text-zinc-400">· {p.expenses?.expense_number ? expNo(p.expenses.expense_number) : ""}</span></p>
                 <p className="text-xs text-zinc-400">{p.paid_date}{p.method ? " · " + p.method : ""}</p>
               </div>
-              <span className="shrink-0 font-medium text-zinc-900">{money(p.amount)}</span>
+              {fixingId === p.id ? (
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <input value={fixAmount} onChange={(e) => setFixAmount(e.target.value)} type="number" min="0" step="0.01" aria-label="Corrected amount" className="w-24 rounded-lg border border-zinc-300 px-2 py-1 text-right text-zinc-900" />
+                  <select value={fixMethod} onChange={(e) => setFixMethod(e.target.value)} aria-label="How it was paid" className="rounded-lg border border-zinc-300 px-2 py-1 text-sm text-zinc-900">
+                    {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <button disabled={busy} onClick={() => saveFix(p)} className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">{busy ? "…" : "Save"}</button>
+                  <button onClick={() => setFixingId(null)} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">Cancel</button>
+                </div>
+              ) : (
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="font-medium text-zinc-900">{money(p.amount)}</span>
+                  {owner && (
+                    <>
+                      <button onClick={() => startFix(p)} className="text-xs font-medium text-zinc-600 hover:underline">edit</button>
+                      <button disabled={busy} onClick={() => removePayment(p)} className="text-xs text-red-500 hover:underline disabled:opacity-50">remove</button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
