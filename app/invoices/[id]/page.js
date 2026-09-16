@@ -42,6 +42,10 @@ export default function InvoiceViewPage() {
   const [note, setNote] = useState(null);
   const [sent, setSent] = useState(null);   // the confirmation to show after a send
   const [emailTo, setEmailTo] = useState("");
+  // Deleting the invoice: the panel is opened on purpose, and the number has to
+  // be typed before the button does anything.
+  const [deleting, setDeleting] = useState(false);
+  const [deleteTyped, setDeleteTyped] = useState("");
   const frame = useRef(null);
 
   async function load() {
@@ -138,6 +142,50 @@ export default function InvoiceViewPage() {
     // Blob URLs live until revoked; without this every reload leaks one.
     return () => { cancelled = true; if (revoked) URL.revokeObjectURL(revoked); };
   }, [invoice, job, items, settings]);
+
+  // ---- Deleting an invoice ------------------------------------------------------
+  //
+  // Wanted for invoices that should never have existed at all: a test, or one
+  // raised for something the customer then didn't take. That is a different
+  // thing from an invoice that was right and is now wrong, which is what a
+  // credit note is for — a credit note leaves the trail, a delete removes it.
+  //
+  // Two hard stops, both because of how the database is wired rather than
+  // taste. Deleting an invoice CASCADES to its payments, so an invoice with
+  // money recorded against it would take that record with it silently. And a
+  // credited invoice is referenced by its credit note, which would refuse the
+  // delete with a foreign-key error nobody could read. Both are blocked here
+  // with a plain explanation instead.
+  //
+  // The ledger looks after itself: a trigger reverses the invoice's journal
+  // entry on delete, so the books stay straight either way.
+  const blockedReason =
+    payments.length > 0
+      ? "There's a payment recorded against this invoice. Remove the payment first (on the Invoices list), then delete it."
+      : credits.length > 0
+      ? "This invoice has a credit note against it, so it can't be deleted — the credit note already cancels it in the books."
+      : null;
+
+  async function deleteInvoice() {
+    setError(null);
+    if (blockedReason) { setError(blockedReason); return; }
+    if (deleteTyped.trim() !== String(invoice?.invoice_number ?? "")) return;
+    setBusy("delete");
+
+    const { error: delErr } = await supabase.from("invoices").delete().eq("id", invoice.id);
+    if (delErr) { setError("Couldn't delete it: " + delErr.message); setBusy(""); return; }
+
+    // The filed PDF would otherwise sit in storage belonging to nothing.
+    // Best effort — a failure here is tidiness, not correctness.
+    if (invoice.pdf_url) {
+      try { await supabase.storage.from("invoices").remove([invoice.pdf_url]); } catch (_e) { /* ignored */ }
+    }
+    // A job card that was marked Invoiced has nothing to show for it now.
+    if (invoice.job_card_id && job?.status === "Invoiced") {
+      await supabase.from("job_cards").update({ status: "In progress" }).eq("id", invoice.job_card_id);
+    }
+    router.push("/invoices");
+  }
 
   const paid = useMemo(() => payments.reduce((s, p) => s + Number(p.amount || 0), 0), [payments]);
   const credited = useMemo(() => credits.reduce((s, c) => s + Number(c.total || 0), 0), [credits]);
@@ -360,6 +408,76 @@ export default function InvoiceViewPage() {
       )}
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       {note && <p className="mt-3 text-sm text-green-700">{note}</p>}
+
+      {owner && (
+        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4">
+          {!deleting ? (
+            <button
+              onClick={() => { setDeleting(true); setDeleteTyped(""); setError(null); }}
+              className="text-sm font-medium text-red-600 hover:underline"
+            >
+              Delete this invoice
+            </button>
+          ) : (
+            <div>
+              <p className="text-sm font-semibold text-red-700">
+                Are you really sure you want to delete invoice #{invNo(invoice.invoice_number)}?
+              </p>
+              <p className="mt-1 text-sm text-zinc-700">
+                {job?.customers?.company_name || job?.customers?.name || "This customer"} · {money(invoice.total)}
+                {invoice.issued_date ? " · issued " + new Date(invoice.issued_date + "T00:00:00").toLocaleDateString("en-NZ") : ""}
+              </p>
+
+              {blockedReason ? (
+                <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{blockedReason}</p>
+              ) : (
+                <>
+                  <p className="mt-3 text-sm text-zinc-600">
+                    This cannot be undone. The invoice, its lines and its filed PDF all go, and the
+                    invoice number {invNo(invoice.invoice_number)} will never be used again — the
+                    sequence carries on from the highest number ever issued.
+                  </p>
+                  {invoice.sent && (
+                    <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                      <strong>This invoice has already been emailed to the customer.</strong> They still
+                      hold the PDF, and after this there will be no record here of the invoice they were
+                      sent. If the invoice was correct when it went out and is only wrong now, issue a
+                      credit note instead — that cancels it and leaves the trail.
+                    </p>
+                  )}
+                  <label className="mt-3 block text-sm text-zinc-700">
+                    Type <span className="font-semibold">{invoice.invoice_number}</span> to confirm
+                    <input
+                      value={deleteTyped}
+                      onChange={(e) => setDeleteTyped(e.target.value)}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      aria-label="Type the invoice number to confirm"
+                      className="mt-1 block w-32 rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                    />
+                  </label>
+                </>
+              )}
+
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={deleteInvoice}
+                  disabled={!!blockedReason || busy === "delete" || deleteTyped.trim() !== String(invoice.invoice_number)}
+                  className={`${btn} bg-red-600 text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40`}
+                >
+                  {busy === "delete" ? "Deleting…" : "Delete it permanently"}
+                </button>
+                <button
+                  onClick={() => { setDeleting(false); setDeleteTyped(""); setError(null); }}
+                  className="text-sm font-medium text-zinc-600 hover:text-zinc-900"
+                >
+                  Keep it
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <SentConfirmation
         open={!!sent}
