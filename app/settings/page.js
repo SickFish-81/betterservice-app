@@ -99,7 +99,9 @@ export default function SettingsPage() {
             </select>
           </label>
           <p className="-mt-2 text-xs text-zinc-500">
-            Applied to new invoices. You can still change the terms on any individual invoice before sending it.
+            Applied to new workshop invoices raised from a job card — currently 7 days. Rent and hireage
+            set their own (rent is due the day the period starts, hireage on the day). You can still change
+            the terms on any individual invoice before sending it.
           </p>
 
           <div className="mt-2 border-t border-zinc-100 pt-4">

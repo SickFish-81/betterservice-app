@@ -353,6 +353,12 @@ export default function InvoiceViewPage() {
               className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm focus:border-red-500 focus:outline-none"
             >
               {PAYMENT_TERMS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              {/* A rent invoice carries days_3, which isn't in the pick list. Without
+                  this the dropdown would show blank on those, and look like nothing
+                  was set. Shown, but not selectable. */}
+              {invoice.payment_terms && !PAYMENT_TERMS.some((t) => t.key === invoice.payment_terms) && (
+                <option value={invoice.payment_terms} disabled>{termsLabel(invoice.payment_terms)}</option>
+              )}
             </select>
           </div>
           <div className="pb-1.5">
