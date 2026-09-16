@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { useActionFlash } from "../useActionFlash";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
@@ -15,6 +16,13 @@ export default function SecondhandPage() {
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("");
   const [uploadingId, setUploadingId] = useState(null);
+  // The listing currently open for editing, and the boxes it is edited in. Only
+  // one at a time, so one set of fields is enough.
+  const [editingId, setEditingId] = useState(null);
+  const [eTitle, setETitle] = useState("");
+  const [eDesc, setEDesc] = useState("");
+  const [ePrice, setEPrice] = useState("");
+  const [eCategory, setECategory] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -71,6 +79,56 @@ export default function SecondhandPage() {
     if (error) { setError(error.message); return; }
     load();
   }
+
+  // ---- Editing a listing that already exists ----------------------------------
+  //
+  // Craig's report: once a listing was created there was no way to fix a price or
+  // a typo — the only route was to delete it and build it again. That also threw
+  // away the photos, because removing a listing deletes them from storage with
+  // it, so a $50 price correction cost him the whole listing and a re-upload.
+  //
+  // Status and category already had their own quick controls; title, description
+  // and price had none at all. All four are editable here.
+  function startEdit(listing) {
+    setError(null);
+    setEditingId(listing.id);
+    setETitle(listing.title || "");
+    setEDesc(listing.description || "");
+    // Blank rather than "0" when there is no price, so the box doesn't have to be
+    // cleared before a number can be typed into it.
+    const p = Number(listing.price);
+    setEPrice(!listing.price || !Number.isFinite(p) || p === 0 ? "" : String(listing.price));
+    setECategory(CATEGORIES.includes(listing.category) ? listing.category : "");
+  }
+
+  function cancelEdit() { setEditingId(null); setError(null); }
+
+  // Returns false on every failure path, so the Save button never shows a tick
+  // for a save that didn't happen (see useActionFlash).
+  async function saveEdit(e) {
+    e?.preventDefault?.();
+    setError(null);
+    const title = eTitle.trim();
+    if (!title) { setError("A listing needs a title."); return false; }
+    if (!eCategory) { setError("Pick a category so it shows in the right For Sale section."); return false; }
+    const raw = ePrice.trim();
+    if (raw !== "" && !(Number.isFinite(Number(raw)) && Number(raw) >= 0)) {
+      setError("Price must be a number."); return false;
+    }
+    const { error } = await supabase.from("secondhand_listings").update({
+      title,
+      description: eDesc.trim() || null,
+      price: raw === "" ? 0 : Number(raw),
+      category: eCategory,
+    }).eq("id", editingId);
+    if (error) { setError(error.message); return false; }
+    setEditingId(null);
+    await load();
+  }
+
+  // Safe here: this component has no early return above it, so the hook runs on
+  // every render. saveEdit is a function declaration, so it is hoisted.
+  const editAction = useActionFlash(saveEdit);
 
   async function removeListing(listing) {
     if (!window.confirm("Remove this listing?")) return;
@@ -163,17 +221,39 @@ export default function SecondhandPage() {
         ) : (
           listings.map((listing) => (
             <div key={listing.id} className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-medium text-zinc-900">{listing.title}</p>
-                  <p className="text-sm text-zinc-500">{money(listing.price)}</p>
-                </div>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${listing.status === "Sold" ? "bg-zinc-100 text-zinc-600" : "bg-emerald-50 text-emerald-700"}`}>
-                  {listing.status}
-                </span>
-              </div>
+              {editingId === listing.id ? (
+                <form onSubmit={editAction.run} className="flex flex-col gap-3">
+                  <input value={eTitle} onChange={(e) => setETitle(e.target.value)} placeholder="Title (e.g. 2018 Honda CRF250L)" className={input} />
+                  <textarea value={eDesc} onChange={(e) => setEDesc(e.target.value)} rows={3} placeholder="Description" className={input} />
+                  <input value={ePrice} onChange={(e) => setEPrice(e.target.value)} type="number" min="0" step="0.01" placeholder="Price" className={input} />
+                  <select value={eCategory} onChange={(e) => setECategory(e.target.value)} className={input}>
+                    <option value="">— pick a category —</option>
+                    {CATEGORIES.map((c) => (<option key={c} value={c}>{c}</option>))}
+                  </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="submit" disabled={editAction.busy} className={`${btn} ${editAction.className}`}>
+                      {editAction.label("Save changes", { ok: "✓ Saved" })}
+                    </button>
+                    <button type="button" onClick={cancelEdit} className="rounded-lg border border-zinc-300 px-4 py-2.5 font-medium text-zinc-700 transition hover:bg-zinc-50">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-zinc-900">{listing.title}</p>
+                      <p className="text-sm text-zinc-500">{money(listing.price)}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${listing.status === "Sold" ? "bg-zinc-100 text-zinc-600" : "bg-emerald-50 text-emerald-700"}`}>
+                      {listing.status}
+                    </span>
+                  </div>
 
-              {listing.description && <p className="mt-2 text-sm text-zinc-600">{listing.description}</p>}
+                  {listing.description && <p className="mt-2 text-sm text-zinc-600">{listing.description}</p>}
+                </>
+              )}
 
               {listing.photos.length > 0 && (
                 <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
@@ -186,6 +266,7 @@ export default function SecondhandPage() {
                 </div>
               )}
 
+              {editingId !== listing.id && (
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
                   {uploadingId === listing.id ? "Uploading…" : "Add photos"}
@@ -201,8 +282,10 @@ export default function SecondhandPage() {
                 <button onClick={() => toggleStatus(listing)} className="text-xs font-medium text-zinc-600 hover:underline">
                   Mark as {listing.status === "Sold" ? "Available" : "Sold"}
                 </button>
+                <button onClick={() => startEdit(listing)} className="text-xs font-medium text-zinc-600 hover:underline">edit details</button>
                 <button onClick={() => removeListing(listing)} className="text-xs text-red-500 hover:underline">remove</button>
               </div>
+              )}
             </div>
           ))
         )}
