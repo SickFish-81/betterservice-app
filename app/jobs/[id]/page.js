@@ -132,7 +132,10 @@ export default function JobDetailPage() {
       { data: mach },
       { data: st },
     ] = await Promise.all([
-      supabase.from("job_cards").select("*, customers(name, phone, email, address), machines(type, make, model, vin, key_number)").eq("id", id).single(),
+      // company_name is in this select for a reason: the invoice PDF is built from
+      // this exact row, and without it a company customer's invoice is addressed to
+      // the person instead of the business they work for.
+      supabase.from("job_cards").select("*, customers(name, company_name, phone, email, address), machines(type, make, model, vin, key_number)").eq("id", id).single(),
       supabase.from("job_line_items").select("*, suppliers(name)").eq("job_card_id", id).order("created_at"),
       supabase.from("staff").select("id, name, can_send_invoices").order("name"),
       supabase.from("invoices").select("*").eq("job_card_id", id).order("created_at", { ascending: false }).limit(1),
