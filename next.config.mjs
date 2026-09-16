@@ -19,6 +19,12 @@ const oldSiteRedirects = [
   ["/FLIP-recessed-bike-mounts.php", "/flip-recessed-bike-mounts"],
   // The old site was mid-rebrand, so this address may also be indexed.
   ["/neuton-batteries.php", "/batteries"],
+  // The one Google ACTUALLY had. Search Console reported it as the site's only
+  // 404 on 16 Sep 2026 — the two guesses above never existed, and this is the
+  // address the old battery page was really at. Note the capitals: a redirect
+  // source is matched case-sensitively, which is why FLIP-recessed-bike-mounts
+  // above is spelled the way it is too.
+  ["/Neuton-Power-Batteries.php", "/batteries"],
 ];
 
 const nextConfig = {
