@@ -44,6 +44,10 @@ export default function InvoiceViewPage() {
   const [emailTo, setEmailTo] = useState("");
   // Deleting the invoice: the panel is opened on purpose, and the number has to
   // be typed before the button does anything.
+  // Issue and due date, edited by hand.
+  const [eIssue, setEIssue] = useState("");
+  const [eDue, setEDue] = useState("");
+  const [savingDates, setSavingDates] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteTyped, setDeleteTyped] = useState("");
   const frame = useRef(null);
@@ -83,6 +87,8 @@ export default function InvoiceViewPage() {
     setInvoice(inv); setJob(j || null); setItems(li || []); setSettings(st || null);
     setPayments(pays || []); setOwner(isOwner === true); setSenders(staff || []); setCredits(cns || []);
     setEmailTo(j?.customers?.email || "");
+    setEIssue(inv.issued_date || "");
+    setEDue(inv.due_date || "");
 
     // Default "sent by" to whoever is signed in — that's the right answer almost
     // every time, and it stops a send failing just because a dropdown was untouched.
@@ -195,6 +201,41 @@ export default function InvoiceViewPage() {
     () => Math.round((Number(invoice?.total || 0) - paid - credited) * 100) / 100,
     [invoice, paid, credited],
   );
+
+  // ---- Changing the dates by hand -----------------------------------------------
+  //
+  // The due date is normally derived: a database trigger works it out from the
+  // issue date and the terms, so the PDF and the overdue reports can never
+  // disagree. That is right almost always and wrong occasionally — an invoice
+  // raised on the wrong day, or a customer given a few more days by agreement.
+  //
+  // ORDER MATTERS HERE. The trigger fires on any update that touches
+  // issued_date or payment_terms, and recomputes due_date from them. It does NOT
+  // fire on an update that only touches due_date. So a hand-set due date has to
+  // be written in its own second statement, after the issue date has landed, or
+  // the trigger would overwrite it in the same breath.
+  const datesDirty = eIssue !== (invoice?.issued_date || "") || eDue !== (invoice?.due_date || "");
+
+  async function saveDates() {
+    if (!invoice || !datesDirty) return;
+    setError(null);
+    if (!eIssue) { setError("An invoice needs an issue date."); return; }
+    if (eDue && eDue < eIssue) { setError("The due date can't be before the issue date."); return; }
+    setSavingDates(true);
+
+    if (eIssue !== (invoice.issued_date || "")) {
+      const { error: e1 } = await supabase.from("invoices").update({ issued_date: eIssue }).eq("id", invoice.id);
+      if (e1) { setError("Couldn't change the issue date: " + e1.message); setSavingDates(false); return; }
+    }
+    // Second statement on purpose — see above.
+    if (eDue && eDue !== (invoice.due_date || "")) {
+      const { error: e2 } = await supabase.from("invoices").update({ due_date: eDue }).eq("id", invoice.id);
+      if (e2) { setError("Couldn't change the due date: " + e2.message); setSavingDates(false); return; }
+    }
+    setSavingDates(false);
+    setNote("Dates updated.");
+    load();
+  }
 
   // Terms are stored, not held in the page — the database trigger derives due_date
   // from them, so the PDF and every report agree without the browser doing sums.
@@ -370,6 +411,51 @@ export default function InvoiceViewPage() {
             </span>
           </div>
           {savingTerms && <span className="pb-2 text-xs text-zinc-400">saving…</span>}
+        </div>
+      )}
+
+      {owner && (
+        <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+          {invoice.kind === "rental" && invoice.pdf_url && !invoice.sent ? (
+            // A rent invoice's PDF is prepared by the nightly run and filed before
+            // it ever reaches the approvals queue. Changing the dates here would
+            // change the record without changing the document that actually gets
+            // emailed — so it is not offered. Binning it and letting tonight's run
+            // prepare the period again is the route that keeps the two in step.
+            <p className="text-sm text-zinc-600">
+              <span className="font-medium text-zinc-800">Dates are set by the rent run.</span> The PDF for this
+              invoice has already been prepared, so changing the dates here wouldn&apos;t change the document the
+              tenant receives. If they&apos;re wrong, discard it on the Rentals approvals tab and fix the tenancy —
+              tonight&apos;s run prepares that period again.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="block">
+                  <span className="block text-xs font-medium text-zinc-500">Issue date</span>
+                  <input type="date" value={eIssue} onChange={(e) => setEIssue(e.target.value)}
+                         className="mt-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-red-500 focus:outline-none" />
+                </label>
+                <label className="block">
+                  <span className="block text-xs font-medium text-zinc-500">Due date</span>
+                  <input type="date" value={eDue} min={eIssue || undefined} onChange={(e) => setEDue(e.target.value)}
+                         className="mt-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-red-500 focus:outline-none" />
+                </label>
+                <button
+                  onClick={saveDates}
+                  disabled={!datesDirty || savingDates}
+                  className={`${btn} bg-zinc-900 text-white hover:bg-zinc-700 disabled:opacity-40`}
+                >
+                  {savingDates ? "Saving…" : "Save dates"}
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">
+                Change the issue date or the terms and the due date works itself out ({termsLabel(invoice.payment_terms).toLowerCase()}).
+                Type a due date yourself and it stays exactly as typed, until the issue date or the terms change again.
+                {invoice.sent && " This invoice has already been sent — the customer's copy keeps the dates it was sent with."}
+              </p>
+            </>
+          )}
         </div>
       )}
 

@@ -32,6 +32,7 @@ export default function Approvals() {
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
   const [sent, setSent] = useState(null);   // confirmation after a rent invoice goes
+  const [confirming, setConfirming] = useState(null);  // the invoice waiting on "yes, send it"
 
   async function load() {
     setLoading(true);
@@ -61,10 +62,19 @@ export default function Approvals() {
     window.open(data.signedUrl, "_blank");
   }
 
-  async function approveAndSend(inv) {
+  // Approving is two steps on purpose. The dates are the thing that goes wrong on
+  // a rent invoice and the thing hardest to eyeball in a list, so they get a
+  // window of their own that has to be read before anything is sent: issued on,
+  // due on, and the period it covers, spelled out rather than implied.
+  function askToSend(inv) {
     if (!senderId) { setError("Choose who's sending — must be an owner who can send invoices."); return; }
-    const who = inv.customers?.company_name || inv.customers?.name || "the tenant";
-    if (!window.confirm(`Send invoice ${invNo(inv.invoice_number)} for ${money(inv.total)} to ${who}?`)) return;
+    setError(null); setNote(null);
+    setConfirming(inv);
+  }
+
+  async function approveAndSend(inv) {
+    setConfirming(null);
+    if (!senderId) { setError("Choose who's sending — must be an owner who can send invoices."); return; }
     setError(null); setNote(null); setBusy(inv.id);
     const { data: { session } } = await supabase.auth.getSession();
     const { data: res, error: fErr } = await supabase.functions.invoke("send-rental-invoice", {
@@ -158,7 +168,7 @@ export default function Approvals() {
                             className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
                       Check the PDF
                     </button>
-                    <button onClick={() => approveAndSend(inv)} disabled={!senderId || noEmail || busy === inv.id}
+                    <button onClick={() => askToSend(inv)} disabled={!senderId || noEmail || busy === inv.id}
                             className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
                       {busy === inv.id ? "Sending…" : "Approve & send"}
                     </button>
@@ -176,6 +186,71 @@ export default function Approvals() {
 
       {note && <p className="mt-3 text-sm text-emerald-700">{note}</p>}
       {error && <p className="mt-3 text-sm text-red-600">Error: {error}</p>}
+
+      {confirming && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+             role="dialog" aria-modal="true" aria-labelledby="confirm-dates-heading">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h2 id="confirm-dates-heading" className="text-lg font-bold text-zinc-900">Please confirm</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              {confirming.rental_agreements?.rental_units?.name || "Unit"} — {confirming.customers?.company_name || confirming.customers?.name}
+              {" · "}{invNo(confirming.invoice_number)}
+            </p>
+
+            <p className="mt-3 text-2xl font-bold text-zinc-900">{money(confirming.total)}</p>
+
+            <dl className="mt-4 divide-y divide-zinc-100 rounded-xl border border-zinc-200">
+              <div className="flex items-baseline justify-between gap-3 px-3 py-2.5">
+                <dt className="text-sm text-zinc-600">Issue date</dt>
+                <dd className="text-base font-semibold text-zinc-900">{nzDate(confirming.issued_date)}</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3 px-3 py-2.5">
+                <dt className="text-sm text-zinc-600">Due date</dt>
+                <dd className="text-base font-semibold text-zinc-900">{nzDate(confirming.due_date)}</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3 px-3 py-2.5">
+                <dt className="text-sm text-zinc-600">Rent period starts</dt>
+                <dd className="text-base font-semibold text-zinc-900">{nzDate(confirming.period_start)}</dd>
+              </div>
+            </dl>
+
+            {/* The three-day gap in words, every time, rather than something to
+                remember. This is the bit that gets miscounted. */}
+            <p className="mt-3 text-sm text-zinc-600">
+              Rent is invoiced three days before the period starts, and is due on the day it starts — so the
+              automatic payment has somewhere to land. Issued {nzDate(confirming.issued_date)}, due{" "}
+              {nzDate(confirming.due_date)}.
+            </p>
+
+            {confirming.due_date !== confirming.period_start && (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Heads up: the due date isn&apos;t the day the period starts. Check it&apos;s meant to be.
+              </p>
+            )}
+            {confirming.period_start && confirming.period_start <= todayISO() && (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                This period has already started, so this invoice is going out late.
+              </p>
+            )}
+
+            <p className="mt-3 text-xs text-zinc-500">
+              Sending to {confirming.customers?.email}. If a date is wrong, cancel and use Discard — fix the
+              tenancy and tonight&apos;s run prepares this period again with the right dates.
+            </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button onClick={() => approveAndSend(confirming)}
+                      className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">
+                Yes, send it
+              </button>
+              <button onClick={() => setConfirming(null)}
+                      className="rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SentConfirmation
         open={!!sent}
