@@ -23,6 +23,20 @@ export const metadata = {
   // page. Leave it in place permanently — removing it un-verifies the property
   // and we lose the search performance data and the ability to request indexing.
   verification: { google: "00FaYS65Pmq4xwbjytAaIeRIxN8uxfrS0gZmcsL5t3k" },
+  // The app can be added to a phone's Home Screen, which is not a nicety: iOS
+  // only allows push notifications to an app opened from the Home Screen, so
+  // without the manifest and the Apple icon there is no way to notify an iPhone
+  // at all. appleWebApp makes it open without Safari's chrome around it.
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "Betterservice", statusBarStyle: "default" },
+  icons: {
+    icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+};
+
+export const viewport = {
+  themeColor: "#dc2626",
 };
 
 export default function RootLayout({ children }) {

@@ -568,32 +568,73 @@ export default function JobDetailPage() {
     router.push("/jobs");
   }
 
-  // Text the assigned pick-up person the address, time and notes.
-  async function textPickup() {
+  // Send the pick-up to whoever is collecting it: a push notification on their
+  // phone AND an email.
+  //
+  // This replaced texting. Not one text was ever sent — SMS to New Zealand
+  // numbers needs a telco account, business verification and a monthly bill,
+  // for a handful of messages a month. A push costs nothing and arrives the
+  // same way; the email is the copy that is still there tomorrow when someone
+  // is standing in a yard wondering which shed.
+  //
+  // A phone number is no longer required. What IS required is that the person
+  // has pressed "Turn on notifications" on their own phone at least once, or
+  // has a real email address — and the result below says plainly which of the
+  // two actually landed, rather than claiming success for both.
+  async function dispatchPickup() {
     setError(null); setPickupMsg(null);
     const picker = staff.find((s) => s.id === job.picked_up_by);
     if (!picker) { setError("Set who's picking it up first (the “Picked up by” dropdown)."); return; }
-    if (!picker.phone) { setError(`${picker.name} has no phone number — add one on the Staff page.`); return; }
+
     const machine = [job.machines?.type, job.machines?.make, job.machines?.model].filter(Boolean).join(" ");
-    const message = [
-      `Pick-up — job #${job.job_number}: ${job.customers?.name || ""}${machine ? " — " + machine : ""}`,
+    const title = `Pick-up — job #${job.job_number}`;
+    const body = [
+      `${job.customers?.name || ""}${machine ? " — " + machine : ""}`,
       pickupAddr ? `Address: ${pickupAddr}` : null,
       pickupTime ? `Time: ${pickupTime}` : null,
       pickupNotes ? `Notes: ${pickupNotes}` : null,
+      job.customers?.phone ? `Phone: ${job.customers.phone}` : null,
     ].filter(Boolean).join("\n");
+
     setPickupSending(true);
     const { data: { session } } = await supabase.auth.getSession();
-    const { data: res, error: fErr } = await supabase.functions.invoke("send-sms", {
-      body: { to: picker.phone, body: message, customerId: job.customer_id, accessToken: session?.access_token || null },
+    const { data: res, error: fErr } = await supabase.functions.invoke("send-dispatch", {
+      body: {
+        staffId: picker.id,
+        jobId: id,
+        title,
+        body,
+        address: pickupAddr || null,
+        accessToken: session?.access_token || null,
+      },
     });
     setPickupSending(false);
+
     if (fErr || res?.error) {
       let detail = res?.error || (fErr && fErr.message) || "Unknown error";
       try { if (fErr && fErr.context && fErr.context.json) { const b = await fErr.context.json(); if (b && b.error) detail = b.error; } } catch (_e) {}
-      setError("Couldn't send the text: " + detail);
+      setError("Couldn't send it: " + detail);
       return;
     }
-    setPickupMsg(`Texted ${picker.name} at ${picker.phone}.`);
+
+    // Say exactly what happened. "Sent" when half of it failed is the fault
+    // that started this whole thread.
+    const bits = [];
+    if (res.pushed > 0) bits.push(`buzzed ${picker.name}'s phone${res.pushed > 1 ? ` (${res.pushed} devices)` : ""}`);
+    if (res.emailed) bits.push(`emailed ${res.emailTo}`);
+    if (bits.length === 0) {
+      setError(
+        `Nothing reached ${picker.name}. ` +
+        (res.devices === 0 ? "They haven't turned on notifications on their phone yet (Dashboard → Notifications). " : "") +
+        (res.emailError ? res.emailError : "")
+      );
+      return;
+    }
+    const missed =
+      res.devices === 0 ? " No phone is set up for notifications yet." :
+      res.pushed === 0 ? " The phone notification didn't go." :
+      !res.emailed && res.emailError ? ` The email didn't go: ${res.emailError}` : "";
+    setPickupMsg(`Sent — ${bits.join(" and ")}.${missed}`);
   }
 
   // Only blank the page on the FIRST load. Re-fetching after an edit keeps the
@@ -707,15 +748,16 @@ export default function JobDetailPage() {
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Pick-up dispatch</h2>
       <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
         <p className="text-sm text-zinc-600">
-          Saved on the job card as you go, and texted to whoever&apos;s set as{" "}
-          <span className="font-medium text-zinc-800">Picked up by</span> above.
+          Saved on the job card as you go. Sending buzzes the phone of whoever&apos;s set as{" "}
+          <span className="font-medium text-zinc-800">Picked up by</span> above, with a button straight to
+          Google Maps, and emails them the same details to keep.
         </p>
         <div className="mt-3 flex flex-col gap-2">
           <input value={pickupAddr} onChange={(e) => setPickupAddr(e.target.value)} onBlur={(e) => savePickupField("pickup_address", e.target.value)} placeholder="Pick-up address" className={input} />
           <input value={pickupTime} onChange={(e) => setPickupTime(e.target.value)} onBlur={(e) => savePickupField("pickup_time", e.target.value)} placeholder="Pick-up time (e.g. today, 3pm)" className={input} />
           <textarea value={pickupNotes} onChange={(e) => setPickupNotes(e.target.value)} onBlur={(e) => savePickupField("pickup_notes", e.target.value)} rows={2} placeholder="Notes (gate code, which shed, who to ask for…)" className={input} />
           <div className="flex items-center gap-3">
-            <button onClick={textPickup} disabled={pickupSending} className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">{pickupSending ? "Sending…" : "Text pick-up details"}</button>
+            <button onClick={dispatchPickup} disabled={pickupSending} className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">{pickupSending ? "Sending…" : "Send pick-up details"}</button>
             {pickupMsg && <span className="text-sm text-green-600">{pickupMsg}</span>}
           </div>
         </div>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 import { useOwner } from "../RoleContext";
+import PushSetup from "../PushSetup";
 
 const money = (n) => "$" + Math.round(Number(n || 0)).toLocaleString();
 
@@ -82,6 +83,12 @@ export default function Dashboard() {
             </Link>
           );
         })}
+      </div>
+
+      {/* Per device, not per person — and the one thing that has to be done on
+          each phone before a pick-up can buzz it. */}
+      <div className="mt-8">
+        <PushSetup />
       </div>
     </main>
   );
