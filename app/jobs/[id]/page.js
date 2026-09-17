@@ -5,7 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
 import SentConfirmation from "../../SentConfirmation";
-import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName } from "../../../lib/invoicePdf";
+// invoiceFileName is deliberately no longer imported. approveAndSend used to
+// call doc.save(invoiceFileName(...)) — downloading a copy of the PDF to the
+// device — BEFORE sending it. On an iPad that is a download prompt in the
+// middle of a click handler, and it has to succeed for the send that follows it
+// to run at all. Sending does not need a local copy: the PDF is filed on the
+// server and can be opened from the invoice any time.
+import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl } from "../../../lib/invoicePdf";
 import { buildJobCardPdf, jobCardFileName } from "../../../lib/jobCardPdf";
 import { useOwner } from "../../RoleContext";
 import { useActionFlash } from "../../useActionFlash";
@@ -66,6 +72,7 @@ export default function JobDetailPage() {
   const [pickupNotes, setPickupNotes] = useState("");
   const [pickupMsg, setPickupMsg] = useState(null);
   const [pickupSending, setPickupSending] = useState(false);
+  const [sendingInvoice, setSendingInvoice] = useState(false);
 
   // Save confirmation for the four "add" buttons. Declared up here, above the
   // early returns below — hooks must run in the same order on every render, and
@@ -527,38 +534,55 @@ export default function JobDetailPage() {
   async function approveAndSend() {
     if (!senderId) { setError("Choose who's sending — must be an owner who can send invoices."); return; }
     setError(null);
-    // One shared builder draws every invoice — see lib/invoicePdf.js. The view page
-    // uses the same one, so what you re-print is exactly what the customer got.
-    const doc = await buildInvoicePdf({ settings, invoice, job, items });
-    doc.save(invoiceFileName(invoice));
-    const pdfBase64 = pdfToBase64(doc);
-    // Pass our login token in the body so the function can file the PDF as a signed-in staff member.
-    const { data: { session } } = await supabase.auth.getSession();
-    const { data: res, error: fErr } = await supabase.functions.invoke("send-invoice", {
-      body: { to: job.customers?.email || null, customerName: job.customers?.name, invoiceNumber: invoice.invoice_number, total: invoice.total, pdfBase64, accessToken: session?.access_token || null },
-    });
-    if (fErr || res?.error) {
-      let detail = res?.error || (fErr && fErr.message) || "Unknown error";
-      try { if (fErr && fErr.context && fErr.context.json) { const b = await fErr.context.json(); if (b && b.error) detail = b.error; } } catch (_e) {}
-      setError("Couldn't file the invoice: " + detail);
-      return;
+    if (sendingInvoice) return;
+    setSendingInvoice(true);
+    // EVERYTHING from here is wrapped, because it wasn't — and that is the most
+    // likely reason no job invoice has been sent from this screen since the
+    // backlog was cleared by hand on 10 Sep. An unhandled throw inside an async
+    // click handler is completely silent: no message, no error, the screen just
+    // sits there as though the button were decoration. The invoice VIEW page had
+    // this fixed months ago; this copy of the same flow never got it.
+    try {
+      // One shared builder draws every invoice — see lib/invoicePdf.js. The view
+      // page uses the same one, so what you re-print is exactly what the
+      // customer got.
+      const doc = await buildInvoicePdf({ settings, invoice, job, items });
+      const pdfBase64 = pdfToBase64(doc);
+      // Pass our login token in the body so the function can file the PDF as a
+      // signed-in staff member.
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data: res, error: fErr } = await supabase.functions.invoke("send-invoice", {
+        body: { to: job.customers?.email || null, customerName: job.customers?.name, invoiceNumber: invoice.invoice_number, total: invoice.total, pdfBase64, accessToken: session?.access_token || null },
+      });
+      if (fErr || res?.error) {
+        let detail = res?.error || (fErr && fErr.message) || "Unknown error";
+        try { if (fErr && fErr.context && fErr.context.json) { const b = await fErr.context.json(); if (b && b.error) detail = b.error; } } catch (_e) {}
+        setError("Couldn't file the invoice: " + detail);
+        return;
+      }
+      // Don't re-send client-side money — the invoice already holds the server-computed totals.
+      await supabase.from("invoices").update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath }).eq("id", invoice.id);
+      // The machine's service date is stamped in the database from the invoice
+      // itself (trg_stamp_machine_service_date). Doing it here as well meant it
+      // was only recorded if this exact path ran to the end — and it recorded
+      // today rather than the invoice date.
+      // Previously this said nothing at all when it worked — the screen simply
+      // carried on, which reads as "nothing happened" and invites a second click.
+      setSent({
+        invoiceNumber: invoice.invoice_number,
+        to: job.customers?.email || null,
+        copyTo: settings?.invoice_bcc || res.copiedTo || null,
+        total: invoice.total,
+        problem: res.emailError || null,
+      });
+      load();
+    } catch (e) {
+      setError("Couldn't send the invoice: " + (e?.message || String(e)));
+    } finally {
+      // In a finally, so the button always comes back. A stuck "Sending…" reads
+      // as "still working" and invites a second press.
+      setSendingInvoice(false);
     }
-    // Don't re-send client-side money — the invoice already holds the server-computed totals.
-    await supabase.from("invoices").update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath }).eq("id", invoice.id);
-    // The machine's service date is stamped in the database from the invoice
-    // itself (trg_stamp_machine_service_date). Doing it here as well meant it
-    // was only recorded if this exact path ran to the end — and it recorded
-    // today rather than the invoice date.
-    // Previously this said nothing at all when it worked — the screen simply
-    // carried on, which reads as "nothing happened" and invites a second click.
-    setSent({
-      invoiceNumber: invoice.invoice_number,
-      to: job.customers?.email || null,
-      copyTo: settings?.invoice_bcc || res.copiedTo || null,
-      total: invoice.total,
-      problem: res.emailError || null,
-    });
-    load();
   }
 
   async function deleteJob() {
@@ -1157,7 +1181,7 @@ export default function JobDetailPage() {
                 {senders.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
               </select>
             </label>
-            <button onClick={approveAndSend} disabled={!senderId} className="rounded-lg bg-amber-600 px-3 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50">Approve &amp; send</button>
+            <button onClick={approveAndSend} disabled={!senderId || sendingInvoice} className="rounded-lg bg-amber-600 px-3 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50">{sendingInvoice ? "Sending…" : "Approve & send"}</button>
             <button onClick={discardInvoice} className="rounded-lg border border-amber-300 bg-white px-3 py-2 font-medium text-amber-800 hover:bg-amber-100">Discard</button>
           </div>
           {senders.length === 0 && <p className="mt-2 text-xs text-amber-800">No one can send yet — mark Craig as “can send invoices” on the Staff page.</p>}
