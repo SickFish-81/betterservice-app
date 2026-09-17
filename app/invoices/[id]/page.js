@@ -316,11 +316,35 @@ export default function InvoiceViewPage() {
         setError("Couldn't send it: " + detail);
         return;
       }
-      // Money is never re-sent from the browser — the invoice already holds the
-      // server-computed totals and the lock trigger would reject a change anyway.
-      await supabase.from("invoices")
-        .update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath })
-        .eq("id", invoice.id);
+      // THE INVOICE IS ONLY MARKED SENT IF IT GENUINELY WENT.
+      //
+      // send-invoice refuses to mark it sent unless Resend accepted the email,
+      // and reports back `emailed` and `recorded`. This page ignored both and
+      // marked it sent regardless, which undid that guard — an invoice to a
+      // customer with no email address on file filed its PDF, never emailed,
+      // and still read "sent ✓".
+      if (!res.emailed) {
+        setError(
+          `Invoice #${invNo(invoice.invoice_number)} was FILED but NOT emailed: ` +
+          (res.emailError || "the email didn't go.") +
+          " It is still marked unsent."
+        );
+        load();
+        return;
+      }
+      if (!res.recorded) {
+        const { error: markErr } = await supabase.from("invoices")
+          .update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath })
+          .eq("id", invoice.id);
+        if (markErr) {
+          setError(
+            `The customer HAS invoice #${invNo(invoice.invoice_number)} — it emailed successfully — but it could not ` +
+            `be marked as sent (${markErr.message}). It will look unsent and could be sent twice.`
+          );
+          load();
+          return;
+        }
+      }
       // Say so on screen, unmissably. The green line below used to be the only
       // sign, and on a phone it sits under the fold.
       setSent({

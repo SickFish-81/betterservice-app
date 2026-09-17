@@ -560,8 +560,40 @@ export default function JobDetailPage() {
         setError("Couldn't file the invoice: " + detail);
         return;
       }
-      // Don't re-send client-side money — the invoice already holds the server-computed totals.
-      await supabase.from("invoices").update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath }).eq("id", invoice.id);
+      // THE INVOICE IS ONLY MARKED SENT IF IT GENUINELY WENT.
+      //
+      // send-invoice already refuses to mark it sent unless Resend accepted the
+      // email, and reports back `emailed` and `recorded`. This page used to
+      // ignore both and mark it sent regardless — which undid the server's
+      // guard and is how an invoice could read "sent ✓" while the customer had
+      // nothing. The commonest case is a customer with no email address on
+      // file: the PDF files fine, the email never happens, and the old code
+      // called that a success.
+      if (!res.emailed) {
+        setError(
+          `Invoice #${invNo(invoice.invoice_number)} was FILED but NOT emailed: ` +
+          (res.emailError || "the email didn't go.") +
+          " It is still marked unsent, so it will show in the unsent list until it actually goes."
+        );
+        load();
+        return;
+      }
+      // Emailed, but the server couldn't record it. Rare, and the one case where
+      // the customer has the invoice and the books don't know — so it is said
+      // out loud rather than swallowed, and marking it is retried from here.
+      if (!res.recorded) {
+        const { error: markErr } = await supabase.from("invoices")
+          .update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath })
+          .eq("id", invoice.id);
+        if (markErr) {
+          setError(
+            `The customer HAS invoice #${invNo(invoice.invoice_number)} — it emailed successfully — but it could not be ` +
+            `marked as sent (${markErr.message}). Tell Ben: it will look unsent and could be sent twice.`
+          );
+          load();
+          return;
+        }
+      }
       // The machine's service date is stamped in the database from the invoice
       // itself (trg_stamp_machine_service_date). Doing it here as well meant it
       // was only recorded if this exact path ran to the end — and it recorded

@@ -25,6 +25,10 @@
 // in. Craig approves and sends from Rentals > Awaiting approval, which calls
 // send-rental-invoice. This job's email to Craig is a request, not a receipt.
 //
+// WHAT CHANGED (17 Sep 2026): it also reports WORKSHOP invoices that have been
+// raised and never sent. Nothing watched those, and six of them sat for a week
+// before anyone noticed.
+//
 // Call with ?dry=1 to see what it would prepare, without writing anything.
 //
 // Needs: SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET, RESEND_API_KEY.
@@ -132,7 +136,10 @@ Deno.serve(async (req) => {
     if (!dueRes.ok) return json({ error: "Couldn't work out which periods are due", detail: await dueRes.text() }, 500);
     const due = await dueRes.json();
     if (!Array.isArray(due)) return json({ error: "Unexpected reply from rental_periods_due", detail: due }, 500);
-    if (due.length === 0) return json({ ok: true, note: "No tenancy is near its billing day — nothing to do.", generated: 0 });
+    // NO EARLY RETURN HERE any more. It used to bail out the moment no tenancy
+    // was near its billing day — which is most days — and that would have
+    // skipped the unsent-workshop-invoice check added below entirely. The
+    // "nothing to do" answer now comes after everything has been looked at.
 
     const shop = (await (await sb("/rest/v1/shop_settings?id=eq.1&select=*")).json())[0] || {};
     const business = shop.business_name || "Betterservice ATV";
@@ -223,8 +230,35 @@ Deno.serve(async (req) => {
     const today = new Date().toISOString().slice(0, 10);
     const overdue = waiting.filter((v: Record<string, any>) => v.period_start && String(v.period_start) <= today);
 
+    // WORKSHOP INVOICES THAT HAVE NOT GONE OUT.
+    //
+    // Nothing watched these. Every ATV invoice ever sent went out in one
+    // four-minute burst on 10 Sep clearing a backlog; six raised after it sat
+    // unsent for a week and nobody knew until Craig happened to say so. An
+    // invoice nobody sends is money the shop has done the work for and not
+    // asked for, and it is invisible unless something says it out loud.
+    //
+    // This job already writes to Craig every morning, so it says it here rather
+    // than being another thing to remember to look at.
+    // The read runs in dry mode too, so ?dry=1 can prove the list without
+    // sending anything.
+    let unsentJobs: Record<string, any>[] = [];
+    {
+      const u = await sb(
+        "/rest/v1/invoices?kind=eq.atv&sent=eq.false&select=invoice_number,total,issued_date,job_cards(job_number,customers(name,email))&order=issued_date.asc"
+      );
+      if (u.ok) unsentJobs = (await u.json()) || [];
+    }
+
+    if (dry) {
+      return json({ ok: true, dry: true, due: due.length, wouldPrepare: done, unsentJobInvoices: unsentJobs, problems });
+    }
+    if (due.length === 0 && done.length === 0 && overdue.length === 0 && unsentJobs.length === 0) {
+      return json({ ok: true, note: "Nothing due, nothing waiting, nothing unsent.", generated: 0 });
+    }
+
     // Craig's one email. Nothing has gone to a tenant — this is the ask, not a receipt.
-    if (!dry && (done.length > 0 || overdue.length > 0) && RESEND && bcc) {
+    if (!dry && (done.length > 0 || overdue.length > 0 || unsentJobs.length > 0) && RESEND && bcc) {
       await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND}`, "Content-Type": "application/json" },
@@ -233,6 +267,8 @@ Deno.serve(async (req) => {
           to: [bcc],
           subject: overdue.length
             ? `Rent invoices need approving — ${overdue.length} already past its start date`
+            : unsentJobs.length && !done.length
+            ? `${unsentJobs.length} workshop invoice${unsentJobs.length === 1 ? "" : "s"} still not sent`
             : `Rent invoices ready to approve — ${done.length}`,
           html:
             (done.length
@@ -245,12 +281,27 @@ Deno.serve(async (req) => {
                 overdue.map((v: Record<string, any>) => `<li>${esc(v.customers?.name || "tenant")} — ${esc(invNo(v.invoice_number))} ${esc(money(v.total))}, period started ${esc(nzDate(v.period_start))}</li>`).join("") +
                 `</ul><p>Where a tenant pays by automatic payment, it may already have been taken against an invoice they have never seen.</p>`
               : "") +
+            (unsentJobs.length
+              ? `<p style="color:#b45309"><strong>Workshop invoices raised but NOT sent to the customer:</strong></p><ul>` +
+                unsentJobs.map((v: Record<string, any>) => {
+                  const c = v.job_cards?.customers;
+                  const age = v.issued_date
+                    ? Math.max(0, Math.round((Date.now() - new Date(String(v.issued_date) + "T00:00:00Z").getTime()) / 86400000))
+                    : null;
+                  return `<li>${esc(invNo(v.invoice_number))} ${esc(money(v.total))} — ${esc(c?.name || "customer")}` +
+                    (v.job_cards?.job_number ? ` (job #${esc(v.job_cards.job_number)})` : "") +
+                    (age !== null ? `, raised ${age} day${age === 1 ? "" : "s"} ago` : "") +
+                    (c?.email ? "" : " <strong>— no email address on file</strong>") +
+                    `</li>`;
+                }).join("") +
+                `</ul><p>Open the job card and press Approve &amp; send. Anything with no email address needs one added under Customers first.</p>`
+              : "") +
             (problems.length ? `<p><strong>Needs a look:</strong></p><ul>${problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""),
         }),
       });
     }
 
-    return json({ ok: true, dry, due: due.length, generated: done.length, held: done.length, awaiting_approval: waiting.length, overdue: overdue.length, done, problems });
+    return json({ ok: true, dry, due: due.length, generated: done.length, held: done.length, awaiting_approval: waiting.length, overdue: overdue.length, unsentJobInvoices: unsentJobs.length, done, problems });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
