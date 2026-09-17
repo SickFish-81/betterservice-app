@@ -77,8 +77,17 @@ export default function JobDetailPage() {
   const orderedPartAction = useActionFlash(addOrderedPart);
   const partAction = useActionFlash(addPart);
   const timeAction = useActionFlash(addManualTime);
+  // Fill the pick-up boxes from the job card when it loads. The address falls
+  // back to the customer's own address when the job has none of its own, which
+  // is right nearly every time and still editable.
+  //
+  // Keyed on job.id, so it seeds when a job opens and does NOT stamp on what is
+  // being typed each time load() refreshes the row.
   useEffect(() => {
-    if (job?.customers?.address) setPickupAddr((a) => a || job.customers.address);
+    if (!job) return;
+    setPickupAddr(job.pickup_address || job.customers?.address || "");
+    setPickupTime(job.pickup_time || "");
+    setPickupNotes(job.pickup_notes || "");
   }, [job?.id]);
 
   // Friendly confirmation toast when staff save/update a job card.
@@ -187,6 +196,21 @@ export default function JobDetailPage() {
 
   async function updateJobField(field, value) {
     await supabase.from("job_cards").update({ [field]: value }).eq("id", id);
+    sayThanks(); load();
+  }
+
+  // Saving a pick-up box. Called on blur rather than on every keystroke: the
+  // shop's wifi is not quick, and a write per character would be both slow and
+  // pointless. Writes nothing when the value hasn't changed, so tabbing through
+  // the boxes doesn't fire three needless updates and three toasts.
+  async function savePickupField(field, value) {
+    const next = value.trim();
+    if ((job?.[field] || "") === next) return;
+    const { error } = await supabase
+      .from("job_cards")
+      .update({ [field]: next || null })
+      .eq("id", id);
+    if (error) { setError("Couldn't save that: " + error.message); return; }
     sayThanks(); load();
   }
 
@@ -682,11 +706,14 @@ export default function JobDetailPage() {
 
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Pick-up dispatch</h2>
       <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <p className="text-sm text-zinc-600">Texts the address, time and notes to whoever's set as <span className="font-medium text-zinc-800">Picked up by</span> above.</p>
+        <p className="text-sm text-zinc-600">
+          Saved on the job card as you go, and texted to whoever&apos;s set as{" "}
+          <span className="font-medium text-zinc-800">Picked up by</span> above.
+        </p>
         <div className="mt-3 flex flex-col gap-2">
-          <input value={pickupAddr} onChange={(e) => setPickupAddr(e.target.value)} placeholder="Pick-up address" className={input} />
-          <input value={pickupTime} onChange={(e) => setPickupTime(e.target.value)} placeholder="Pick-up time (e.g. today, 3pm)" className={input} />
-          <textarea value={pickupNotes} onChange={(e) => setPickupNotes(e.target.value)} rows={2} placeholder="Notes (gate code, which shed, who to ask for…)" className={input} />
+          <input value={pickupAddr} onChange={(e) => setPickupAddr(e.target.value)} onBlur={(e) => savePickupField("pickup_address", e.target.value)} placeholder="Pick-up address" className={input} />
+          <input value={pickupTime} onChange={(e) => setPickupTime(e.target.value)} onBlur={(e) => savePickupField("pickup_time", e.target.value)} placeholder="Pick-up time (e.g. today, 3pm)" className={input} />
+          <textarea value={pickupNotes} onChange={(e) => setPickupNotes(e.target.value)} onBlur={(e) => savePickupField("pickup_notes", e.target.value)} rows={2} placeholder="Notes (gate code, which shed, who to ask for…)" className={input} />
           <div className="flex items-center gap-3">
             <button onClick={textPickup} disabled={pickupSending} className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">{pickupSending ? "Sending…" : "Text pick-up details"}</button>
             {pickupMsg && <span className="text-sm text-green-600">{pickupMsg}</span>}
