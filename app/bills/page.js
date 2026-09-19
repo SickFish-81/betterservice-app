@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import { PAYMENT_METHODS, DEFAULT_PAYMENT_METHOD } from "../../lib/paymentMethods";
+import { PAYMENT_METHODS, DEFAULT_SUPPLIER_METHOD } from "../../lib/paymentMethods";
 import { useOwner } from "../RoleContext";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
@@ -19,12 +19,12 @@ export default function BillsPage() {
   const [error, setError] = useState(null);
   const [payingId, setPayingId] = useState(null);
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState(DEFAULT_PAYMENT_METHOD);
+  const [method, setMethod] = useState(DEFAULT_SUPPLIER_METHOD);
   const [busy, setBusy] = useState(false);
   // A recorded payment open for correction.
   const [fixingId, setFixingId] = useState(null);
   const [fixAmount, setFixAmount] = useState("");
-  const [fixMethod, setFixMethod] = useState(DEFAULT_PAYMENT_METHOD);
+  const [fixMethod, setFixMethod] = useState(DEFAULT_SUPPLIER_METHOD);
   const owner = useOwner();
 
   async function load() {
@@ -53,7 +53,7 @@ export default function BillsPage() {
   const open = bills.filter((b) => balanceOf(b) > 0.005);
   const totalOwing = Math.round(open.reduce((s, b) => s + balanceOf(b), 0) * 100) / 100;
 
-  function startPay(b) { setPayingId(b.id); setAmount(String(balanceOf(b))); setMethod("bank"); setError(null); }
+  function startPay(b) { setPayingId(b.id); setAmount(String(balanceOf(b))); setMethod(DEFAULT_SUPPLIER_METHOD); setError(null); }
   function cancelPay() { setPayingId(null); setAmount(""); }
 
   async function pay(b) {
@@ -86,7 +86,7 @@ export default function BillsPage() {
     setError(null);
     setFixingId(p.id);
     setFixAmount(Number(p.amount).toFixed(2));
-    setFixMethod(p.method || DEFAULT_PAYMENT_METHOD);
+    setFixMethod(p.method || DEFAULT_SUPPLIER_METHOD);
   }
 
   async function saveFix(p) {
