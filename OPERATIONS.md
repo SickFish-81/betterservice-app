@@ -9,33 +9,41 @@ what to watch, not your current numbers.*
 
 ---
 
-## 1. Switching on texting (Twilio)
+## 1. Pick-up dispatch — a notification and an email (texting is off)
 
-The `send-sms` function is built and deployed; it just needs a Twilio account and
-three secrets before it can actually text. Steps:
+**Texting is not happening, and this is not a to-do.** NZ carriers do not accept
+alphanumeric sender IDs or overseas long codes for application traffic; a
+dedicated short code is the only route, at roughly five to six weeks and
+hundreds of dollars a month. That was checked in Sep 2026 and abandoned. The
+`send-sms` function and the `sms_messages` table are still deployed but nothing
+in the app calls them. Do not buy a Twilio account on the strength of this file.
 
-1. **Create a Twilio account** at twilio.com.
-2. From the **Console dashboard**, copy your **Account SID** and **Auth Token**.
-3. **Get a sender that can text NZ mobiles** — either:
-   - buy a **Twilio phone number** (SMS-capable), or
-   - register an **Alphanumeric Sender ID** (e.g. "Betterserv") — tidy for one-way
-     texts like pick-up dispatch and reminders. Note: recipients can't reply to an
-     alphanumeric sender.
-4. **Enable New Zealand** under Messaging → Geo permissions (so texts to NZ go
-   through).
-5. **Add three secrets in Supabase** (Project Settings → Edge Functions → Secrets,
-   or `supabase secrets set`):
-   - `TWILIO_ACCOUNT_SID`
-   - `TWILIO_AUTH_TOKEN`
-   - `TWILIO_FROM` — your Twilio number in `+64…` form, or your Sender ID
-6. **Test it**: on a job card, set *Picked up by* to someone who has a phone number,
-   fill in the address/time/notes, and hit **Text pick-up details**.
+What replaced it: **`send-dispatch`**, which sends a **web push notification**
+to each signed-up phone (with an "Open in Maps" button on the address) **and**
+an email, so the details are still there later. Neither failure blocks the
+other, and the response says which half landed.
 
-**Watch out for:**
-- **Trial mode** only texts numbers you've verified and adds a trial prefix — add
-  funds / upgrade to text any customer or staff number.
-- **Pay-as-you-go**: roughly a few cents per SMS to NZ mobiles — keep some credit
-  on the account or texts silently stop.
+To switch it on, per phone:
+
+1. **Supabase → Edge Function secrets**: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+   `VAPID_SUBJECT` (`mailto:admin@betterservice.co.nz`).
+2. **Vercel env var**: `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, **then redeploy** —
+   `NEXT_PUBLIC_` variables are baked in at build time, so setting it without a
+   new deploy changes nothing.
+3. On each phone, open the Dashboard and press **Turn on notifications**. This is
+   per DEVICE, not per person: a phone and an iPad both need doing.
+4. **On iPhone this only works from the Home Screen.** Safari refuses push to a
+   normal tab. Share → Add to Home Screen first, open it from there, then press
+   the button — and the press has to be a real tap, not something the page does
+   on load.
+5. **Test**: on a job card fill in the pick-up address/time/notes and hit
+   **Send pick-up details**.
+
+**Watch out for:** a phone that is wiped, reset, or has notifications denied
+leaves a dead subscription. The function deletes any subscription the push
+service rejects with 404/410, so dead rows clear themselves — but if nobody is
+getting notifications, check the Dashboard says notifications are on before
+assuming the function broke.
 
 ---
 
@@ -48,18 +56,32 @@ Project `vdwssiefdhmepdgkuoxd` (ap-southeast-1). The source of truth for all dat
 - **Storage** — the `job-photos`, `invoices` and `listing-photos` buckets grow over
   time; keep an eye on usage.
 - **Database size & egress** vs your plan.
-- **Edge function logs** — `send-invoice`, `send-reminder`, `send-sms`,
-  `send-purchase-order`, `send-statements`. Errors show up here.
+- **Edge function logs** — the ones that touch money or run unattended matter
+  most: `generate-rental-invoices`, `send-rental-invoice`, `send-due-reminders`,
+  `send-invoice`, `send-statements`, `resend-webhook`, `send-dispatch`,
+  `create-staff-login`, `send-purchase-order`, `send-reminder`. A scheduled job
+  that fails does it silently, which is the whole reason to look.
+- **Scheduled jobs** (`cron.job` in the database). As at 19 Sep 2026:
+  `daily-rent-invoices` 18:00 UTC and `daily-service-reminders` 20:00 UTC, both
+  active; `monthly-statements` **exists but is switched off** — if statements are
+  meant to go out, that is why they are not. Note the schedules are in UTC, so
+  when NZ moves to daylight time they shift an hour later in local terms.
 - **Secrets are set** (see the map below).
 - **Backups** — paid plans back up automatically; on free, take your own now and
   then (the `supabase/migrations` files are your schema; data is separate).
 
-### Twilio — texting
-- **Account balance/credit**, per-message cost, and the **delivery/error logs**.
-- The **sender number or ID** staying active, NZ enabled, and out of trial mode.
+### Twilio — not in use
+Nothing to watch. There is no Twilio account and there should not be one — see
+section 1. Listed here only so the next person doesn't go looking for it.
 
 ### Resend — email
-Sends invoices, reminders, statements and POs from `accounts@betterservice.co.nz`.
+Carries everything the app emails. Two sender addresses, deliberately:
+`accounts@betterservice.co.nz` for workshop invoices, `admin@betterservice.co.nz`
+for everything else (rent, reminders, statements, POs, pick-up dispatch). Both
+need the domain verified.
+- **Delivery status** comes back through the `resend-webhook` function into
+  `email_log`, and the Emails screen in the app is the readable view of it. If
+  that screen stops updating, suspect the webhook or its signing secret.
 - **Sending domain stays verified** — the SPF/DKIM DNS records for
   `betterservice.co.nz` must stay in place, or email quietly stops landing.
 - **Monthly send volume** vs your plan, the **API key** being valid, and
@@ -92,7 +114,10 @@ Repo `SickFish-81/betterservice-app`. The history, and what Vercel deploys.
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` / `..._ANON_KEY` | the app talking to Supabase | Vercel env vars (+ `.env.local` locally) |
 | `RESEND_API_KEY` | sending email | Supabase → Edge Function secrets |
-| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | sending SMS | Supabase → Edge Function secrets |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | signing push notifications | Supabase → Edge Function secrets |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | the browser subscribing to push | Vercel env vars — **redeploy after changing** |
+| `RESEND_WEBHOOK_SECRET` | verifying delivery reports are really from Resend | Supabase → Edge Function secrets |
+| `TWILIO_*` | nothing — texting was abandoned, see section 1 | not set, and should stay that way |
 | `CRON_SECRET` | protecting the scheduled statements/reminders | Supabase → Edge Function secrets |
 | Supabase **service role key** | server-side jobs (e.g. statements) | Supabase (never in the app or repo) |
 
@@ -101,31 +126,39 @@ is a server secret and must never end up in the repo.
 
 ---
 
-## 4. Automated SMS reminders — nearly there
+## 4. Service reminders — running, by email
 
-The `send-due-reminders` function is built and deployed. To switch it on:
+**This is already on.** `send-due-reminders` is deployed and scheduled
+(`daily-service-reminders`, 20:00 UTC daily). It needs no Twilio: it **emails**,
+through Resend, using the `reminder_email_subject` / `reminder_email_body`
+templates in Settings. It has emailed rather than texted since migration 0062.
 
-1. Set the **Twilio** secrets (section 1 above).
-2. **Schedule it daily** — in Supabase, add a Cron schedule that calls the
-   `send-due-reminders` function once a day (e.g. 9am) with the header
-   `x-cron-secret: <your CRON_SECRET>` (the same secret your statements job uses).
+Who gets one: up to `reminders_per_day` (Settings) of the most-overdue machines
+— 12 to 18 months since the last service, customer not marked *no reminders*,
+and an email address on file. Each send is stamped so the same machine isn't
+chased twice in a cycle.
 
-It texts up to `reminders_per_day` (set in Settings) of the most-overdue machines —
-12–18 months since last service, with a phone, reminders not turned off — using the
-editable `sms_due_body` template, and stamps each one so no one's texted twice a
-cycle. The manual **pick-up text** (`send-sms`) is already wired on the job card.
+If they stop: check the cron job is still active, then the function's logs, then
+that `RESEND_API_KEY` and `CRON_SECRET` are still set. A machine with no
+`last_service_date` is invisible to it — that date is stamped by the database
+when an invoice is raised, not when it is sent.
 
 ---
 
-## 5. Automatic rent invoices — deploy, dry-run, then schedule
+## 5. Automatic rent invoices — running daily, approved by hand
 
-`generate-rental-invoices` bills the ten units and the shed. Rent is issued three
-days before the month it covers (29 Aug for 1 Sep) and due on the 1st, collected by
-automatic payment. Rates are held **GST-inclusive** on the agreement; the generator
-extracts GST at 3/23 rather than adding 15%, so the invoice total is exactly the
-agreed rent.
+`generate-rental-invoices` bills the storage units and the shed — 12 units, 9
+live tenancies as at 19 Sep 2026.
 
-To switch it on:
+**Each tenancy runs on its own dates, not the calendar month.** A tenancy that
+started on the 14th is billed the 14th to the 13th, and its invoice is raised
+three days before that period starts. There are seven different start days in
+use, so there is no one "rent day". Rates are held **GST-inclusive** on the
+agreement; the generator extracts GST at 3/23 rather than adding 15%, so the
+total is exactly the agreed rent.
+
+**It is already deployed and scheduled** (`daily-rent-invoices`, 18:00 UTC
+daily). The steps below are what to check if it is ever rebuilt or moved.
 
 1. **Deploy it** — `supabase functions deploy generate-rental-invoices`.
 2. **Secrets** — needs `CRON_SECRET` and `RESEND_API_KEY` (both already set for
@@ -149,8 +182,16 @@ start, so a failed run heals itself the next morning, and the unique index on
 (agreement, period) means the same rent can never be billed twice. A once-a-month
 job that fails is a month of rent never invoiced.
 
-Each run emails a summary of what went out to the `invoice_bcc` address in Settings.
-With auto-send that summary is the only safety net — read it.
+**Nothing is sent to a tenant automatically.** The generator prepares the
+invoice, files its PDF and stops, leaving it `sent = false` in **Rentals →
+awaiting approval**. Rent reaches a tenant only when Craig approves it there. If
+you are reading this to work out whether tenants have been invoiced: they have
+not been, until someone pressed the button.
+
+Each run emails a summary to the `invoice_bcc` address in Settings. Read it as a
+request for approval, not a record of what went out. It also lists workshop
+invoices that were raised and never sent, which is the one place an invoice
+stuck in limbo will show up without anyone going looking.
 
 To stop billing one unit, tick **on hold** on its tenancy, or set an end date. A
 tenancy with an end date in the past is never billed again.
