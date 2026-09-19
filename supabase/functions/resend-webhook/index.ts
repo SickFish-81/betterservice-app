@@ -8,10 +8,10 @@
 // production version 4, pulled down verbatim on 19 Sep 2026 — not a rewrite,
 // not a reconstruction.
 //
-// Migration 0068 recorded that this had already happened three times (a live
-// trigger with no migration, a function two versions ahead of its repo copy,
-// and a policy changed in the dashboard). This was the fourth. The rule, same
-// as it has been each time: SUPABASE IS LIVE. If you change a function or the
+// This is at least the FIFTH drift of this shape by the project's own count,
+// and the sixth counting the July migration reconciliation — the commit that
+// added this file said "the fourth" and was wrong; see DECISIONS.md. The rule,
+// same as it has been every time: SUPABASE IS LIVE. If you change a function or the
 // schema in the dashboard, bring it back into this repo in the same sitting,
 // or the next person debugging at 7am works from a file that is a polite
 // fiction.
