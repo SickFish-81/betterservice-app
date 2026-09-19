@@ -96,11 +96,24 @@ export default function Dashboard() {
     })();
   }, [owner]);
 
+  // OWNER GATE — read this before adding a row.
+  //
+  // attention_summary() is gated on is_approved_staff(), NOT on owner, so the
+  // database hands these numbers to any logged-in mechanic. The old dashboard
+  // only ever showed the money ones on cards that were themselves owner-only,
+  // so nothing leaked. The "needs attention" box has no such protection: it is
+  // one list, shown to everyone, and whatever lands in it is visible to Anthony
+  // and Bjorn as well as Craig.
+  //
+  // So anything to do with money or suppliers is gated HERE, at the count, not
+  // at the row — that way the tile badge and the attention row can never
+  // disagree about who is allowed to see it. Stock and service counts are not
+  // money and stay open; their pages are open to all staff too.
   const counts = {
     low_stock: att?.low_stock || 0,
     service_due: att?.service_due || 0,
-    bills: att?.bills_count || 0,
-    bookings: att?.bookings_new || 0,
+    bills: owner ? att?.bills_count || 0 : 0,
+    bookings: owner ? att?.bookings_new || 0 : 0,
     unsent: owner ? unsent : 0,
     rent: owner ? rentWaiting : 0,
   };
@@ -113,7 +126,7 @@ export default function Dashboard() {
     counts.rent && { href: "/rentals", n: counts.rent, text: `Rent invoice${counts.rent === 1 ? "" : "s"} awaiting approval` },
     counts.bookings && { href: "/bookings", n: counts.bookings, text: `New booking request${counts.bookings === 1 ? "" : "s"}` },
     owner && att?.invoices_unpaid && { href: "/invoices", n: att.invoices_unpaid, text: `Invoice${att.invoices_unpaid === 1 ? "" : "s"} unpaid`, meta: unpaidTotal ? `${money(unpaidTotal)} owing` : null },
-    counts.bills && { href: "/bills", n: counts.bills, text: `Bill${counts.bills === 1 ? "" : "s"} to pay`, meta: att?.bills_total ? `${money(att.bills_total)} owing` : null },
+    counts.bills && { href: "/bills", n: counts.bills, text: `Bill${counts.bills === 1 ? "" : "s"} to pay`, meta: owner && att?.bills_total ? `${money(att.bills_total)} owing` : null },
     counts.low_stock && { href: "/parts", n: counts.low_stock, text: `Part${counts.low_stock === 1 ? "" : "s"} low on stock` },
     counts.service_due && { href: "/due", n: counts.service_due, text: `Machine${counts.service_due === 1 ? "" : "s"} due for a service` },
   ].filter(Boolean);
