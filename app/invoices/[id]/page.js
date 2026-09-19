@@ -78,7 +78,10 @@ export default function InvoiceViewPage() {
         ? supabase.from("job_line_items").select("*").eq("job_card_id", inv.job_card_id).order("created_at")
         : supabase.from("invoice_line_items").select("*").eq("invoice_id", inv.id).order("sort").order("created_at"),
       supabase.from("payments").select("*").eq("invoice_id", inv.id).order("created_at"),
-      supabase.from("staff").select("id,name,can_send_invoices,role").eq("can_send_invoices", true),
+      // email is in this select ONLY so the default below can match the signed-in
+      // person. Drop it and the match silently fails and "Sent by" picks whoever
+      // happens to be first in the list — which is how it behaved until 19 Sep.
+      supabase.from("staff").select("id,name,email,can_send_invoices,role").eq("can_send_invoices", true),
       // A credit note settles an invoice just as a payment does. Reading only
       // payments made a fully credited invoice keep reading "Unpaid".
       supabase.from("credit_notes").select("*").eq("invoice_id", inv.id).order("created_at"),
