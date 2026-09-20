@@ -41,6 +41,7 @@ export default function PushSetup() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [testMsg, setTestMsg] = useState(null);
+  const [wiped, setWiped] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -50,9 +51,22 @@ export default function PushSetup() {
       if (isIOS() && !isStandalone()) { setState("ios-needs-install"); return; }
       if (Notification.permission === "denied") { setState("denied"); return; }
       try {
-        const reg = await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.register("/sw.js");
+        // WAIT for the worker to be active before asking it anything. register()
+        // resolves while the worker may still be installing, and asking an
+        // installing registration for its subscription can answer "none" when
+        // one exists — which shows an already-set-up phone a "Turn on" button.
+        const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
         setState(sub ? "on" : "off");
+
+        // Permission granted but no subscription is a specific, diagnosable
+        // state, not just "off". The person said yes at some point, so the
+        // subscription existed and has since been thrown away — private
+        // browsing, "clear site data when you close all windows", or a cleaner
+        // app. Pressing the button again will appear to work and then lose it
+        // again, so say so instead of letting them loop.
+        if (!sub && Notification.permission === "granted") setWiped(true);
       } catch (_e) {
         setState("unsupported");
       }
@@ -223,6 +237,14 @@ export default function PushSetup() {
         )}
         {state === "on" && <span className="text-sm text-emerald-700">✓ this phone is set up</span>}
       </div>
+      {wiped && (
+        <p className="mt-2 text-sm text-amber-700">
+          This device has already been allowed to send notifications, but the setting has been wiped since.
+          Turning it on again will work and then be lost again. The usual causes are private/incognito
+          browsing, &ldquo;clear site data when you close all windows&rdquo;, or a phone cleaner app — worth
+          checking before pressing it again.
+        </p>
+      )}
       {testMsg && <p className="mt-2 text-sm text-zinc-600">{testMsg}</p>}
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
