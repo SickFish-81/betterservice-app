@@ -27,6 +27,12 @@ const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY") || "";
 const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY") || "";
 const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@betterservice.co.nz";
 
+// Where the "open the job card" link points. This used to be the raw
+// betterservice-app.vercel.app address — the one deliberately kept out of
+// Google — which works but looks wrong to anyone reading the email. Named
+// rather than inlined so the next link added here cannot drift from it.
+const APP_URL = "https://betterservice.co.nz";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -142,8 +148,14 @@ Deno.serve(async (req) => {
     } else {
       const html =
         `<p>${esc(body || "").replace(/\n/g, "<br/>")}</p>` +
-        (directions ? `<p><a href="${directions}">Open in Google Maps</a></p>` : "") +
-        `<p><a href="https://betterservice-app.vercel.app${esc(link)}">Open the job card</a></p>`;
+        // No address means no directions link. Say so rather than simply
+        // omitting the button: a missing button is indistinguishable from a
+        // button that failed to render, and the driver is the one who finds
+        // out, in a yard, later.
+        (directions
+          ? `<p><a href="${directions}">Open in Google Maps</a></p>`
+          : `<p><em>No pick-up address was given, so there is no map link. Add one on the job card or the customer's record.</em></p>`) +
+        `<p><a href="${APP_URL}${esc(link)}">Open the job card</a></p>`;
       const r = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND}`, "Content-Type": "application/json" },
@@ -168,6 +180,9 @@ Deno.serve(async (req) => {
       name: who.name,
       devices, pushed, pushErrors,
       emailed, emailTo: emailed ? to : null, emailError,
+      // Whether a directions link was actually attached. Reported rather than
+      // inferred, so the page never has to guess what went out.
+      mapped: !!directions,
     });
   } catch (e) {
     return json({ error: String(e) }, 500);

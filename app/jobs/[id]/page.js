@@ -690,7 +690,12 @@ export default function JobDetailPage() {
       res.devices === 0 ? " No phone is set up for notifications yet." :
       res.pushed === 0 ? " The phone notification didn't go." :
       !res.emailed && res.emailError ? ` The email didn't go: ${res.emailError}` : "";
-    setPickupMsg(`Sent — ${bits.join(" and ")}.${missed}`);
+    // Whether a map went with it comes from the function's own `mapped`, not
+    // from what this page thinks it sent. Without an address there is no
+    // directions link at all, and that used to happen in complete silence —
+    // the driver found out in a yard.
+    const noMap = res.mapped === false ? " No address, so no map link went with it." : "";
+    setPickupMsg(`Sent — ${bits.join(" and ")}.${missed}${noMap}`);
   }
 
   // Only blank the page on the FIRST load. Re-fetching after an edit keeps the
@@ -810,6 +815,19 @@ export default function JobDetailPage() {
         </p>
         <div className="mt-3 flex flex-col gap-2">
           <input value={pickupAddr} onChange={(e) => setPickupAddr(e.target.value)} onBlur={(e) => savePickupField("pickup_address", e.target.value)} placeholder="Pick-up address" className={input} />
+          {/* The box seeds itself from the customer's address, so empty here
+              means empty there too. Said before the send rather than after,
+              because after is a driver in a yard with no directions. */}
+          {!pickupAddr.trim() && (
+            <p className="-mt-1 text-sm text-amber-700">
+              No address{job.customers?.name ? ` on file for ${job.customers.name}` : ""} — it will send without a Google Maps button.
+              Type one here for this job, or add it to their{" "}
+              {job.customer_id
+                ? <Link href={`/customers/${job.customer_id}`} className="underline">customer record</Link>
+                : "customer record"}{" "}
+              so it fills in next time.
+            </p>
+          )}
           <input value={pickupTime} onChange={(e) => setPickupTime(e.target.value)} onBlur={(e) => savePickupField("pickup_time", e.target.value)} placeholder="Pick-up time (e.g. today, 3pm)" className={input} />
           <textarea value={pickupNotes} onChange={(e) => setPickupNotes(e.target.value)} onBlur={(e) => savePickupField("pickup_notes", e.target.value)} rows={2} placeholder="Notes (gate code, which shed, who to ask for…)" className={input} />
           <div className="flex items-center gap-3">
