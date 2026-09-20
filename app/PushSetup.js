@@ -40,6 +40,7 @@ export default function PushSetup() {
   const [state, setState] = useState("checking");   // checking | unsupported | ios-needs-install | off | on | denied
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [testMsg, setTestMsg] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -92,6 +93,48 @@ export default function PushSetup() {
       );
       if (iErr) throw new Error(iErr.message);
       setState("on");
+    } catch (e) {
+      setError(e.message || String(e));
+    }
+    setBusy(false);
+  }
+
+  // Show a notification from the service worker on THIS device, with no server
+  // and no push service involved.
+  //
+  // It exists because "I didn't get a notification" has two completely
+  // different causes and they look identical: either the phone won't display
+  // notifications at all, or the push never arrived. Guessing between them
+  // costs an evening. This separates them in one tap:
+  //
+  //   nothing appears  -> the phone is blocking notifications for the browser
+  //                       (on Android 13+, usually the OS-level permission for
+  //                       Chrome itself, not the website's permission)
+  //   it appears       -> display is fine, so a missing pick-up is a delivery
+  //                       problem: battery optimisation, Do Not Disturb, or
+  //                       the browser not being allowed to run in background
+  //
+  // getNotifications() afterwards is the honest part: the browser can accept
+  // showNotification() and then display nothing, so we ask what actually exists
+  // rather than assuming the call working means the person saw something.
+  async function testHere() {
+    setError(null); setTestMsg(null); setBusy(true);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification("Test — Betterservice", {
+        body: "If you can see this, this device can show notifications. Pick-ups arrive the same way.",
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
+        tag: "bs-test",
+        renotify: true,
+        data: { url: "/dashboard", mapsUrl: null },
+      });
+      const shown = await reg.getNotifications({ tag: "bs-test" });
+      setTestMsg(
+        shown.length > 0
+          ? "Sent. If you can see it, this device displays notifications fine — so a missing pick-up is a delivery problem, not a permission one."
+          : "The browser took it and then showed nothing. That is the phone blocking notifications for the browser itself — check the browser app's notification setting in the phone's own Settings.",
+      );
     } catch (e) {
       setError(e.message || String(e));
     }
@@ -172,8 +215,15 @@ export default function PushSetup() {
             {busy ? "…" : "Turn on notifications"}
           </button>
         )}
+        {state === "on" && (
+          <button onClick={testHere} disabled={busy}
+                  className="rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">
+            {busy ? "…" : "Test on this device"}
+          </button>
+        )}
         {state === "on" && <span className="text-sm text-emerald-700">✓ this phone is set up</span>}
       </div>
+      {testMsg && <p className="mt-2 text-sm text-zinc-600">{testMsg}</p>}
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
   );
