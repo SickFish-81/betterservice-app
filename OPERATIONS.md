@@ -117,12 +117,53 @@ Repo `SickFish-81/betterservice-app`. The history, and what Vercel deploys.
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | signing push notifications | Supabase → Edge Function secrets |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | the browser subscribing to push | Vercel env vars — **redeploy after changing** |
 | `RESEND_WEBHOOK_SECRET` | verifying delivery reports are really from Resend | Supabase → Edge Function secrets |
+| `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | address suggestions | Vercel env vars — **restrict it and cap its quota**, see §3b |
 | `TWILIO_*` | nothing — texting was abandoned, see section 1 | not set, and should stay that way |
 | `CRON_SECRET` | protecting the scheduled statements/reminders | Supabase → Edge Function secrets |
 | Supabase **service role key** | server-side jobs (e.g. statements) | Supabase (never in the app or repo) |
 
 Rule of thumb: anything starting `NEXT_PUBLIC_` is safe in the app; everything else
 is a server secret and must never end up in the repo.
+
+---
+
+## 3b. Google address suggestions — and the two guards that aren't in the code
+
+Address boxes on the customers page and the job card suggest real NZ addresses
+through Google's Places API. This is the only paid third-party service in the
+app, so the limits matter more than the feature.
+
+**What it costs.** Google's free allowance is 5,000 autocomplete events a
+month. The shop adds well under a hundred customers a month, so normal use is
+around 1% of free. Beyond the allowance it is roughly US$2.83 per 1,000.
+
+**Four guards are in the code** (see `app/AddressInput.js`): the script loads
+only when an address box is focused, nothing is asked below 5 characters or
+without a 350ms pause, one session token per address, and Place Details — a
+second, separately billed product — is never called.
+
+**Two guards are NOT in the code and cannot be. Do both.** A `NEXT_PUBLIC_`
+key is visible in the page source to anyone who looks, so an unrestricted key
+is a key strangers can spend:
+
+1. **Restrict the key.** Google Cloud console → APIs & Services → Credentials →
+   the key → *Application restrictions* = **Websites**, and allow only
+   `betterservice.co.nz/*` and `*.vercel.app/*`. Then *API restrictions* =
+   **Places API** only. A restricted key used from anywhere else is refused.
+2. **Cap the quota.** Google Cloud console → APIs & Services → Places API →
+   Quotas → set a **requests per day** limit. A few hundred is generous for
+   this shop. Past the cap Google refuses the calls, the box quietly becomes a
+   plain text box, and nothing breaks. Add a billing budget alert as well —
+   that one emails you, it does not stop anything.
+
+**If the key is missing, restricted wrongly, out of quota, or Google is down,**
+the address box behaves exactly as it did before there was a key: an ordinary
+text field. Address entry never depends on Google being up, and it should stay
+that way.
+
+**The env var** is `NEXT_PUBLIC_GOOGLE_MAPS_KEY` in Vercel. As with the VAPID
+key, `NEXT_PUBLIC_` values are baked in at build time — set it and then
+**redeploy**, or nothing changes.
 
 ---
 

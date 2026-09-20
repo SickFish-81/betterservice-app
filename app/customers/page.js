@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
+import AddressInput from "../AddressInput";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
@@ -75,7 +76,7 @@ export default function CustomersPage() {
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className={input} />
         <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" placeholder="Phone" className={input} />
         <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email" className={input} />
-        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (for pickup / delivery)" className={input} />
+        <AddressInput value={address} onChange={setAddress} placeholder="Address (for pickup / delivery)" className={input} />
         <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company charged (leave blank to charge this person)" className={input} />
         <button type="submit" className={btn}>Add customer</button>
       </form>
@@ -99,7 +100,7 @@ export default function CustomersPage() {
                     <input value={ev.name} onChange={(e) => setEv({ ...ev, name: e.target.value })} placeholder="Name" className={input} />
                     <input value={ev.phone} onChange={(e) => setEv({ ...ev, phone: e.target.value })} type="tel" placeholder="Phone" className={input} />
                     <input value={ev.email} onChange={(e) => setEv({ ...ev, email: e.target.value })} type="email" placeholder="Email" className={input} />
-                    <input value={ev.address} onChange={(e) => setEv({ ...ev, address: e.target.value })} placeholder="Address (for pickup / delivery)" className={input} />
+                    <AddressInput value={ev.address} onChange={(v) => setEv({ ...ev, address: v })} placeholder="Address (for pickup / delivery)" className={input} />
                     <input value={ev.company_name} onChange={(e) => setEv({ ...ev, company_name: e.target.value })} placeholder="Company charged (leave blank to charge this person)" className={input} />
                     <label className="flex items-center gap-2 py-1 text-sm text-zinc-700"><input type="checkbox" checked={!ev.no_reminders} onChange={(e) => setEv({ ...ev, no_reminders: !e.target.checked })} className="h-4 w-4 rounded border-zinc-300 accent-red-600" /> Send service reminders</label>
                     <div className="flex gap-2">

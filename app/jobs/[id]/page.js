@@ -15,6 +15,7 @@ import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl } from "../../../lib/invoi
 import { buildJobCardPdf, jobCardFileName } from "../../../lib/jobCardPdf";
 import { useOwner } from "../../RoleContext";
 import { useActionFlash } from "../../useActionFlash";
+import AddressInput from "../../AddressInput";
 
 const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
@@ -814,7 +815,7 @@ export default function JobDetailPage() {
           Google Maps, and emails them the same details to keep.
         </p>
         <div className="mt-3 flex flex-col gap-2">
-          <input value={pickupAddr} onChange={(e) => setPickupAddr(e.target.value)} onBlur={(e) => savePickupField("pickup_address", e.target.value)} placeholder="Pick-up address" className={input} />
+          <AddressInput value={pickupAddr} onChange={setPickupAddr} onBlur={(e) => savePickupField("pickup_address", e.target.value)} placeholder="Pick-up address" className={input} />
           {/* The box seeds itself from the customer's address, so empty here
               means empty there too. Said before the send rather than after,
               because after is a driver in a yard with no directions. */}
