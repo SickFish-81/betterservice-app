@@ -17,6 +17,7 @@ import { useOwner } from "../../RoleContext";
 import { useActionFlash } from "../../useActionFlash";
 import AddressInput from "../../AddressInput";
 import AddressLink from "../../AddressLink";
+import { PhoneLink, EmailLink } from "../../ContactLink";
 
 const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
@@ -782,12 +783,12 @@ export default function JobDetailPage() {
             <p className="mt-2 font-medium text-zinc-900">
               {job.customers?.name}
               {job.customers?.phone
-                ? <span className="font-normal text-zinc-500"> · {job.customers.phone}</span>
+                ? <span className="font-normal text-zinc-500"> · <PhoneLink phone={job.customers.phone} /></span>
                 : <span className="font-normal text-amber-600"> · no phone number</span>}
             </p>
             <p className="text-sm">
               {job.customers?.email
-                ? <span className="text-zinc-600">{job.customers.email}</span>
+                ? <span className="text-zinc-600"><EmailLink email={job.customers.email} /></span>
                 : <span className="text-amber-600">No email address — this job can&apos;t be invoiced by email until one is added.</span>}
             </p>
             <p className="text-sm text-zinc-600">{job.machines?.type} {job.machines?.make} {job.machines?.model}{job.machines?.vin ? " · VIN " + job.machines.vin : ""}{job.machines?.key_number ? " · Key " + job.machines.key_number : ""}</p>

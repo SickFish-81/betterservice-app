@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 import AddressInput from "../AddressInput";
 import AddressLink from "../AddressLink";
+import { PhoneLink, EmailLink } from "../ContactLink";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
@@ -114,7 +115,11 @@ export default function CustomersPage() {
                     <div className="min-w-0">
                       <Link href={`/customers/${c.id}`} className="font-medium text-zinc-900 hover:text-red-700">{c.name}</Link>
                       {c.company_name && <p className="text-sm text-zinc-500">{c.company_name}</p>}
-                      <p className="truncate text-sm text-zinc-500">{[c.phone, c.email].filter(Boolean).join(" · ")}</p>
+                      <p className="truncate text-sm text-zinc-500">
+                        <PhoneLink phone={c.phone} />
+                        {c.phone && c.email && " · "}
+                        <EmailLink email={c.email} />
+                      </p>
                       {c.address && <p className="truncate text-sm text-zinc-500"><AddressLink address={c.address} /></p>}
                       {c.no_reminders && <p className="mt-0.5 text-xs font-medium text-amber-600">Reminders off</p>}
                     </div>

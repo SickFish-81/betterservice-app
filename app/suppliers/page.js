@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { PhoneLink, EmailLink } from "../ContactLink";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
@@ -110,7 +111,15 @@ export default function SuppliersPage() {
                     {!s.is_active && <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-500">inactive</span>}
                   </p>
                   <p className="truncate text-sm text-zinc-500">
-                    {[s.contact_name, s.phone, s.email].filter(Boolean).join(" · ") || "—"}
+                    {s.contact_name || s.phone || s.email ? (
+                      <>
+                        {s.contact_name}
+                        {s.contact_name && (s.phone || s.email) && " · "}
+                        <PhoneLink phone={s.phone} />
+                        {s.phone && s.email && " · "}
+                        <EmailLink email={s.email} />
+                      </>
+                    ) : "—"}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3 text-xs">
