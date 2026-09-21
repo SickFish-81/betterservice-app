@@ -16,6 +16,7 @@ import { buildJobCardPdf, jobCardFileName } from "../../../lib/jobCardPdf";
 import { useOwner } from "../../RoleContext";
 import { useActionFlash } from "../../useActionFlash";
 import AddressInput from "../../AddressInput";
+import AddressLink from "../../AddressLink";
 
 const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
@@ -790,7 +791,7 @@ export default function JobDetailPage() {
                 : <span className="text-amber-600">No email address — this job can&apos;t be invoiced by email until one is added.</span>}
             </p>
             <p className="text-sm text-zinc-600">{job.machines?.type} {job.machines?.make} {job.machines?.model}{job.machines?.vin ? " · VIN " + job.machines.vin : ""}{job.machines?.key_number ? " · Key " + job.machines.key_number : ""}</p>
-            {job.customers?.address && <p className="mt-1 text-sm text-zinc-600"><span className="font-medium text-zinc-700">Address:</span> {job.customers.address}</p>}
+            {job.customers?.address && <p className="mt-1 text-sm text-zinc-600"><span className="font-medium text-zinc-700">Address:</span> <AddressLink address={job.customers.address} /></p>}
             {job.reported_problem && <p className="mt-3 rounded-lg bg-zinc-50 p-3 text-sm text-zinc-700">{job.reported_problem}</p>}
             {job.notes && <p className="mt-2 text-sm text-zinc-600"><span className="font-medium text-zinc-700">Notes:</span> {job.notes}</p>}
             {job.customer_notes && <p className="mt-2 text-sm text-zinc-600"><span className="font-medium text-zinc-700">For the customer:</span> {job.customer_notes}</p>}

@@ -12,6 +12,7 @@ import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
 import { makeOptions, modelOptions, typeOptions } from "../../../lib/machineOptions";
 import { useOwner } from "../../RoleContext";
+import AddressLink from "../../AddressLink";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const money = (n) => "$" + Number(n || 0).toFixed(2);
@@ -115,7 +116,7 @@ export default function CustomerPage() {
         {customer.company_name && <>Attn: {customer.name} · </>}
         {[customer.phone, customer.email].filter(Boolean).join(" · ") || "No contact details"}
       </p>
-      {customer.address && <p className="text-sm text-zinc-500">{customer.address}</p>}
+      {customer.address && <p className="text-sm text-zinc-500"><AddressLink address={customer.address} /></p>}
 
       {error && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}
 
