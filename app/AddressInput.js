@@ -96,9 +96,16 @@ export default function AddressInput({ value, onChange, onBlur, placeholder, cla
   function typed(text) {
     onChange(text);
     clearTimeout(timer.current);
-    if (!places.current || text.trim().length < MIN_CHARS) { setSuggestions([]); setOpen(false); return; }
+    if (text.trim().length < MIN_CHARS) { setSuggestions([]); setOpen(false); return; }
     timer.current = setTimeout(async () => {
       try {
+        // Wait for the library HERE rather than giving up if it hasn't loaded.
+        // It starts loading on focus, but a fast typist - or anyone pasting an
+        // address - gets here first, and the old code silently dropped that
+        // input with no retry: you typed a whole address and nothing happened.
+        // loadPlaces() is memoised, so this is a no-op once it has resolved.
+        if (!places.current) places.current = await loadPlaces();
+        if (!places.current) return;   // no key, blocked, offline: stay a plain box
         const { AutocompleteSessionToken, AutocompleteSuggestion } = places.current;
         if (!token.current) token.current = new AutocompleteSessionToken();
         const { suggestions: got } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
