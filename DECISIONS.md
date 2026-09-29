@@ -192,6 +192,47 @@ ones whose guard you could accidentally remove.
 - **"Sent by" never defaulted to the signed-in person**, because the staff query
   didn't select `email`, so the match always failed. The comment claimed
   otherwise for weeks.
+- **`machines.type` and `machines.make` are free text, and it shows.** Nothing
+  guards them, and nothing currently reads them for logic, which is the only
+  reason this has not bitten yet. **Open, deliberately — Ben is aware, 29 Sep.**
+  Counted live that day across 41 machines:
+
+  | type | n | makes filed under it |
+  |---|---|---|
+  | `atv` | 18 | honda, Honda, suzuki, Suzuki, Yamaha |
+  | `ATV` | 16 | honda, Honda, Polaris, **Trailer**, Yamaha |
+  | `bike` | 2 | Chinese, forza |
+  | `Motorcycle` | 2 | Kawasaki, Yamaha |
+  | `sxs` | 2 | kawasaki |
+  | `Road bike` | 1 | ktm |
+
+  Three separate problems. Case: `atv`/`ATV`, `honda`/`Honda`,
+  `suzuki`/`Suzuki`, `kawasaki`/`Kawasaki`. Synonyms: `bike`, `Motorcycle` and
+  `Road bike` are one category spelled three ways. And a **trailer is filed as
+  an ATV**, which is not a typo, it is the wrong category.
+
+  **The trap is the next person who writes `if (type === 'ATV')`.** Hours for
+  ATVs, kilometres for bikes, service intervals by class, a report grouped by
+  type — each looks like a one-liner and each will silently miss half the
+  fleet. The 0071 hours/odometer work sidestepped it by showing both fields on
+  every machine rather than choosing from `type`, and the comment in
+  `app/jobs/[id]/page.js` says so. That was avoidance, not a fix.
+
+  The data fix is small and obvious:
+
+  ```sql
+  update machines set type = 'ATV'        where lower(type) = 'atv';
+  update machines set type = 'SxS'        where lower(type) = 'sxs';
+  update machines set type = 'Motorcycle' where lower(type) in ('bike','motorcycle','road bike');
+  update machines set make = initcap(make) where make is not null;
+  -- then the trailer, by hand: it is not an ATV
+  ```
+
+  The *durable* fix is a constraint or a lookup table, plus making the machine
+  form choose rather than type. `lib/machineOptions.js` already derives the
+  dropdown lists from existing rows, so today it faithfully offers both `atv`
+  and `ATV` and every new machine adds to the mess. Cleaning the data without
+  closing that loop buys a few months at most.
 
 ---
 
