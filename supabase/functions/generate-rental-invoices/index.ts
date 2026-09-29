@@ -242,10 +242,22 @@ Deno.serve(async (req) => {
     // than being another thing to remember to look at.
     // The read runs in dry mode too, so ?dry=1 can prove the list without
     // sending anything.
+    //
+    // SETTLED ONES ARE EXCLUDED, added 29 Sep 2026. Without that filter this
+    // check cried wolf on every invoice it listed: on 29 Sep the whole list was
+    // three Eftpos-paid counter jobs totalling $1,685.50, none of which had an
+    // email address, so none could ever be sent. Money already in the till,
+    // nagged about daily, asking for something impossible.
+    //
+    // The reasoning above is its own answer: once it is paid, the shop HAS
+    // asked and HAS been paid. Craig prints the PDF at the counter. Keep this
+    // filter in step with the same rule in the invoices_unsent view (0072) —
+    // if the two drift, the dashboard goes quiet while this email keeps
+    // nagging, which is worse than either being wrong alone.
     let unsentJobs: Record<string, any>[] = [];
     {
       const u = await sb(
-        "/rest/v1/invoices?kind=eq.atv&sent=eq.false&select=invoice_number,total,issued_date,job_cards(job_number,customers(name,email))&order=issued_date.asc"
+        "/rest/v1/invoices?kind=eq.atv&sent=eq.false&status=not.in.(Paid,Credited)&select=invoice_number,total,issued_date,job_cards(job_number,customers(name,email))&order=issued_date.asc"
       );
       if (u.ok) unsentJobs = (await u.json()) || [];
     }
