@@ -97,6 +97,22 @@ export default function MachinesPage() {
   const types = typeOptions(machines);
   const idLine = (m) => [m.vin && "VIN " + m.vin, m.key_number && "Key " + m.key_number, m.customers?.name].filter(Boolean).join(" · ");
 
+  // The newest hours/odometer reading, stamped onto the machine from a job card
+  // by trg_stamp_machine_reading (0071). Read-only here on purpose: the job
+  // cards are the record, and a second editable copy is a second thing to
+  // disagree with the first.
+  //
+  // Date formatted by splitting the string rather than through new Date(),
+  // which parses a date-only value as UTC midnight and can land a day early.
+  const readingLine = (m) => {
+    const bits = [];
+    if (m.current_hours != null) bits.push(`${m.current_hours} h`);
+    if (m.current_km != null) bits.push(`${Number(m.current_km).toLocaleString()} km`);
+    if (!bits.length) return "";
+    const d = m.reading_taken_on ? String(m.reading_taken_on).slice(0, 10).split("-") : null;
+    return bits.join(" · ") + (d ? ` · read ${d[2]}/${d[1]}/${d[0]}` : "");
+  };
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Machines</h1>
@@ -157,6 +173,7 @@ export default function MachinesPage() {
                       <div className="min-w-0">
                         <p className="font-medium text-zinc-900">{m.type} — {m.make} {m.model}</p>
                         <p className="truncate text-sm text-zinc-500">{idLine(m) || "—"}</p>
+                        {readingLine(m) && <p className="truncate text-sm tabular-nums text-zinc-600">{readingLine(m)}</p>}
                       </div>
                       <div className="flex shrink-0 gap-3 text-sm">
                         <button onClick={() => startEdit(m)} className="font-medium text-red-600 hover:text-red-700">edit</button>

@@ -29,6 +29,14 @@ const STATUS_STYLES = {
 };
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const invNo = (n) => String(n ?? 0).padStart(4, "0");
+// A date-only column formatted WITHOUT going through Date(). "2026-09-30" fed
+// to new Date() is parsed as UTC midnight, which lands on the previous day in
+// any negative-offset timezone. Splitting the string can't drift.
+const nzDate = (d) => {
+  if (!d) return "";
+  const [y, m, day] = String(d).slice(0, 10).split("-");
+  return `${day}/${m}/${y}`;
+};
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 
 export default function JobDetailPage() {
@@ -70,6 +78,10 @@ export default function JobDetailPage() {
   const [uploading, setUploading] = useState(false);
 
   // Pick-up dispatch — text the person set as "Picked up by".
+  // Machine hours and odometer, read off the machine at this job.
+  // Deliberately NOT called `hours`: that is already labour hours above.
+  const [machineHours, setMachineHours] = useState("");
+  const [machineKm, setMachineKm] = useState("");
   const [pickupAddr, setPickupAddr] = useState("");
   const [pickupTime, setPickupTime] = useState("");
   const [pickupNotes, setPickupNotes] = useState("");
@@ -98,6 +110,8 @@ export default function JobDetailPage() {
     setPickupAddr(job.pickup_address || job.customers?.address || "");
     setPickupTime(job.pickup_time || "");
     setPickupNotes(job.pickup_notes || "");
+    setMachineHours(job.machine_hours ?? "");
+    setMachineKm(job.machine_km ?? "");
   }, [job?.id]);
 
   // Friendly confirmation toast when staff save/update a job card.
@@ -154,7 +168,7 @@ export default function JobDetailPage() {
       // company_name is in this select for a reason: the invoice PDF is built from
       // this exact row, and without it a company customer's invoice is addressed to
       // the person instead of the business they work for.
-      supabase.from("job_cards").select("*, customers(name, company_name, phone, email, address), machines(type, make, model, vin, key_number)").eq("id", id).single(),
+      supabase.from("job_cards").select("*, customers(name, company_name, phone, email, address), machines(type, make, model, vin, key_number, current_hours, current_km, reading_taken_on)").eq("id", id).single(),
       supabase.from("job_line_items").select("*, suppliers(name)").eq("job_card_id", id).order("created_at"),
       supabase.from("staff").select("id, name, can_send_invoices").order("name"),
       supabase.from("invoices").select("*").eq("job_card_id", id).order("created_at", { ascending: false }).limit(1),
@@ -220,6 +234,20 @@ export default function JobDetailPage() {
       .from("job_cards")
       .update({ [field]: next || null })
       .eq("id", id);
+    if (error) { setError("Couldn't save that: " + error.message); return; }
+    sayThanks(); load();
+  }
+
+  // Saved on blur like the pick-up fields, so there is no button to forget.
+  // Blank clears it: a reading nobody took should be null, not 0, or the machine
+  // ends up looking like it has done zero hours.
+  async function saveReading(field, value) {
+    const raw = String(value).trim();
+    const next = raw === "" ? null : Number(raw);
+    if (next !== null && !Number.isFinite(next)) { setError("That reading isn't a number."); return; }
+    if (next !== null && next < 0) { setError("A reading can't be negative."); return; }
+    if ((job?.[field] ?? null) === next) return;
+    const { error } = await supabase.from("job_cards").update({ [field]: next }).eq("id", id);
     if (error) { setError("Couldn't save that: " + error.message); return; }
     sayThanks(); load();
   }
@@ -799,6 +827,66 @@ export default function JobDetailPage() {
             <button onClick={startEdit} className="mt-3 text-sm font-medium text-red-600 hover:text-red-700">Edit details</button>
           </>
         )}
+      </div>
+
+      {/* Hours and odometer, read off the machine at this job.
+
+          These live on the JOB CARD, not the machine, so every visit keeps its
+          own reading and you can see what a machine has done between services.
+          A trigger (0071) copies the newest one onto the machine for display.
+
+          Both fields show on every machine rather than guessing from
+          machines.type, because that column is a mess: atv, ATV, bike,
+          Motorcycle and Road bike are all in there. Guessing from it would hide
+          the wrong field on some machines, and a hidden field is worse than an
+          extra one. */}
+      <h2 className="mt-6 text-lg font-semibold text-zinc-900">Hours &amp; odometer</h2>
+      <div className="mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <p className="text-sm text-zinc-600">
+          Whatever the meter reads when the machine comes in. Leave a box empty if it hasn&apos;t got that meter.
+        </p>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="text-sm font-medium text-zinc-700">Machine hours</label>
+            <input
+              value={machineHours}
+              onChange={(e) => setMachineHours(e.target.value)}
+              onBlur={(e) => saveReading("machine_hours", e.target.value)}
+              inputMode="decimal" placeholder="e.g. 412.5" className={input + " mt-1"} />
+            {job.machines?.current_hours != null && (
+              <p className="mt-1 text-xs text-zinc-500">
+                On record: {job.machines.current_hours} h
+                {job.machines.reading_taken_on ? " · " + nzDate(job.machines.reading_taken_on) : ""}
+              </p>
+            )}
+            {machineHours !== "" && job.machines?.current_hours != null
+              && Number(machineHours) < Number(job.machines.current_hours) && (
+              <p className="mt-1 text-xs text-amber-600">
+                Lower than the last reading. Fine if the meter was replaced, worth a second look otherwise.
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="text-sm font-medium text-zinc-700">Odometer (km)</label>
+            <input
+              value={machineKm}
+              onChange={(e) => setMachineKm(e.target.value)}
+              onBlur={(e) => saveReading("machine_km", e.target.value)}
+              inputMode="numeric" placeholder="e.g. 3180" className={input + " mt-1"} />
+            {job.machines?.current_km != null && (
+              <p className="mt-1 text-xs text-zinc-500">
+                On record: {Number(job.machines.current_km).toLocaleString()} km
+                {job.machines.reading_taken_on ? " · " + nzDate(job.machines.reading_taken_on) : ""}
+              </p>
+            )}
+            {machineKm !== "" && job.machines?.current_km != null
+              && Number(machineKm) < Number(job.machines.current_km) && (
+              <p className="mt-1 text-xs text-amber-600">
+                Lower than the last reading. Fine if the cluster was replaced, worth a second look otherwise.
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       <h2 className="mt-6 text-lg font-semibold text-zinc-900">Who handled it</h2>
