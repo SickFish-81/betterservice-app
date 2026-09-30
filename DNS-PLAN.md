@@ -4,6 +4,26 @@ Supersedes `CLOUDFLARE-PLAN.md`, which was written on two assumptions that
 turned out to be wrong. `DNS-RECORDS.md` is still the snapshot of how the zone
 looked when it worked. Read that one if something breaks.
 
+## Corrected 30 Sep 2026 — read the real zone
+
+`DNS-ZONE-betterservice.md` now holds the zone as cPanel actually has it, all 43
+records. **Two record types in the tables below were wrong** and are fixed:
+`mail` and `litesrv._domainkey` are CNAMEs, not an A record and a TXT key. Both
+were built from an outside-in DNS sweep, which shows what a name resolves to but
+not how it is configured. Rebuilding either from the sweep would have failed
+quietly — MailerLite DKIM into spam folders, mail pinned to an IP HostPapa can
+change.
+
+Also invisible from outside and now recorded: 8 CAA records, `_mailchannels`,
+every AAAA record, and certificate-validation leftovers for a
+`cash4bikes.betterservice.co.nz` that has no address record at all.
+
+**And the big one: cPanel's Zone Editor is writable.** HostPapa's Nameservers
+page is not ("Editing is not possible for this setting"), so the delegation
+cannot move without a support ticket or a transfer. But individual records can
+be changed today. That decouples everything from the transfer — see the order
+below.
+
 ## Why this changed twice
 
 **Cloudflare was chosen for Email Routing.** Free forwarding for `craig@` and
@@ -94,7 +114,7 @@ else has dashboard access to that account and nothing in this plan requires it.
 | TXT | `resend._domainkey` | `p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDa5Y+4lWWgyypdlRiSRVinmqQ…` | **Resend DKIM. Signs every invoice email.** |
 | MX | `send` | `10 feedback-smtp.ap-northeast-1.amazonses.com` | Resend bounce handling |
 | TXT | `send` | `v=spf1 include:amazonses.com ~all` | Resend sending authority |
-| TXT | `litesrv._domainkey` | `v=DKIM1;p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC6SIHVq/vJmsR3R3saPiVGNPfMZ1Qv9…` | MailerLite DKIM |
+| **CNAME** | `litesrv._domainkey` | `litesrv._domainkey.mlsend.com` | MailerLite DKIM — a CNAME, **not** a TXT key |
 
 Once the domain is on Vercel's nameservers, the apex and www can be handled
 natively by adding the domain to the project rather than pinning the IP by hand.
@@ -106,7 +126,7 @@ Do that only after the move is verified working. One change at a time.
 |---|---|---|
 | MX | `@` | `0 mx.betterservice.co.nz.cust.a.hostedemail.com` |
 | TXT | `default._domainkey` | `v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtQFod5fYmqu1amPFk4cujvxioJvW…` |
-| A | `mail` | `216.40.42.5` |
+| **CNAME** | `mail` | `mail.betterservice.co.nz.cust.a.hostedemail.com` — a CNAME, **not** an A record |
 
 ### Leave behind
 
@@ -166,7 +186,7 @@ is a change nobody asked for.
 | MX | `@` | `0 mx.flipbikes.co.nz.cust.a.hostedemail.com` |
 | TXT | `@` | `v=spf1 include:_spf.hostedemail.com ~all` |
 | TXT | `default._domainkey` | `v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvhN1V8oI1nc0OKROptyCvYbx9mWGYD8f…` |
-| A | `mail` | `216.40.42.5` |
+| **CNAME** | `mail` | `mail.betterservice.co.nz.cust.a.hostedemail.com` — a CNAME, **not** an A record |
 
 ### Leave behind
 
