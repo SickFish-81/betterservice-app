@@ -47,6 +47,10 @@ export default function JobDetailPage() {
   const [items, setItems] = useState([]);
   const [staff, setStaff] = useState([]);
   const [invoice, setInvoice] = useState(null);
+  // An invoice EXISTS from the moment it is generated, but it is only locked once
+  // it has been ISSUED. While it is a draft, labour & parts stay editable — the
+  // database allows it now, so the screen must too, or the two disagree.
+  const issued = !!invoice?.finalised_at;
   const [parts, setParts] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [checklist, setChecklist] = useState([]);
@@ -289,7 +293,7 @@ export default function JobDetailPage() {
 
   async function addLabour(e) {
     e.preventDefault();
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return false; }
+    if (issued) { setError("That invoice has been issued — labour & parts are locked. Raise a credit note to change it."); return false; }
     const rate = Number(labourRate === "" ? shopRate : labourRate);
     if (!Number.isFinite(rate) || rate < 0) { setError("Rate must be a number."); return false; }
     const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Math.max(0, Number(hours) || 0), unit_price: Math.round(rate * 100) / 100 });
@@ -324,7 +328,7 @@ export default function JobDetailPage() {
 
   async function addOrderedPart(e) {
     e.preventDefault();
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return false; }
+    if (issued) { setError("That invoice has been issued — labour & parts are locked. Raise a credit note to change it."); return false; }
     const q = Number(ordQty);
     const c = Number(ordCost);
     if (!ordDesc.trim()) { setError("Name the part."); return false; }
@@ -349,7 +353,7 @@ export default function JobDetailPage() {
   // Add a part FROM inventory, drawing it down from stock.
   async function addPart(e) {
     e.preventDefault();
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return false; }
+    if (issued) { setError("That invoice has been issued — labour & parts are locked. Raise a credit note to change it."); return false; }
     const part = parts.find((p) => p.id === partId);
     if (!part) { setError("Pick a part from inventory."); return false; }
     const q = Math.max(0.01, Number(partQty) || 1);
@@ -366,7 +370,7 @@ export default function JobDetailPage() {
 
   // Removing a stocked part puts it back on the shelf.
   async function removeItem(it) {
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    if (issued) { setError("That invoice has been issued — labour & parts are locked. Raise a credit note to change it."); return; }
     // Atomic in the DB: deletes the line item and restocks the part together.
     const { error } = await supabase.rpc("remove_job_line_item", { p_item_id: it.id });
     if (error) { setError("Couldn't remove item: " + error.message); return; }
@@ -459,7 +463,7 @@ export default function JobDetailPage() {
 
   // Turn a logged time entry into a billable labour line, at the shop rate.
   async function billTime(entry) {
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    if (issued) { setError("That invoice has been issued — labour & parts are locked. Raise a credit note to change it."); return; }
     if (!entry.hours) { setError("Stop the timer first so it has hours."); return; }
     const who = entry.staff?.name || staffName(entry.staff_id) || "Labour";
     const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: entry.note || (who + " — labour"), quantity: entry.hours, unit_price: shopRate });
@@ -472,7 +476,7 @@ export default function JobDetailPage() {
   // decides is fair. Clocked time is what happened; billed time is a judgement —
   // so the hours are editable here rather than copied across blindly.
   async function billAllTime(charge) {
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    if (issued) { setError("That invoice has been issued — labour & parts are locked. Raise a credit note to change it."); return; }
     if (unbilledEntries.length === 0) return;
     if (charge) {
       const h = Number(billHours === "" ? unbilledHours : billHours);
@@ -499,7 +503,7 @@ export default function JobDetailPage() {
 
   // Accept a part that was ordered for this job and has now arrived (received on its PO).
   async function acceptPart(it) {
-    if (invoice) { setError("This job has an invoice — labour & parts are locked."); return; }
+    if (issued) { setError("That invoice has been issued — labour & parts are locked. Raise a credit note to change it."); return; }
     const { error } = await supabase.rpc("accept_po_item_to_job", { p_item_id: it.id });
     if (error) { setError(error.message); return; }
     load();
@@ -577,13 +581,26 @@ export default function JobDetailPage() {
       // One shared builder draws every invoice — see lib/invoicePdf.js. The view
       // page uses the same one, so what you re-print is exactly what the
       // customer got.
-      const doc = await buildInvoicePdf({ settings, invoice, job, items });
+      // Sending ISSUES the invoice. Build the PDF from the row that comes BACK
+      // from finalise_invoice, never from `invoice` — that copy is a tick behind
+      // and still has no invoice number, so the customer would get a document
+      // watermarked DRAFT.
+      let inv = invoice;
+      if (!inv.finalised_at) {
+        const { data: fin, error: finErr } = await supabase.rpc("finalise_invoice", { p_invoice_id: inv.id });
+        if (finErr || !fin) {
+          setError("Couldn't issue the invoice, so nothing was sent: " + (finErr?.message || "no invoice came back."));
+          return;
+        }
+        inv = fin;
+      }
+      const doc = await buildInvoicePdf({ settings, invoice: inv, job, items });
       const pdfBase64 = pdfToBase64(doc);
       // Pass our login token in the body so the function can file the PDF as a
       // signed-in staff member.
       const { data: { session } } = await supabase.auth.getSession();
       const { data: res, error: fErr } = await supabase.functions.invoke("send-invoice", {
-        body: { to: job.customers?.email || null, customerName: job.customers?.name, invoiceNumber: invoice.invoice_number, total: invoice.total, pdfBase64, accessToken: session?.access_token || null },
+        body: { to: job.customers?.email || null, customerName: job.customers?.name, invoiceNumber: inv.invoice_number, total: inv.total, pdfBase64, accessToken: session?.access_token || null },
       });
       if (fErr || res?.error) {
         let detail = res?.error || (fErr && fErr.message) || "Unknown error";
@@ -602,7 +619,7 @@ export default function JobDetailPage() {
       // called that a success.
       if (!res.emailed) {
         setError(
-          `Invoice #${invNo(invoice.invoice_number)} was FILED but NOT emailed: ` +
+          `Invoice #${invNo(inv.invoice_number)} was FILED but NOT emailed: ` +
           (res.emailError || "the email didn't go.") +
           " It is still marked unsent, so it will show in the unsent list until it actually goes."
         );
@@ -615,10 +632,10 @@ export default function JobDetailPage() {
       if (!res.recorded) {
         const { error: markErr } = await supabase.from("invoices")
           .update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath })
-          .eq("id", invoice.id);
+          .eq("id", inv.id);
         if (markErr) {
           setError(
-            `The customer HAS invoice #${invNo(invoice.invoice_number)} — it emailed successfully — but it could not be ` +
+            `The customer HAS invoice #${invNo(inv.invoice_number)} — it emailed successfully — but it could not be ` +
             `marked as sent (${markErr.message}). Tell Ben: it will look unsent and could be sent twice.`
           );
           load();
@@ -632,10 +649,10 @@ export default function JobDetailPage() {
       // Previously this said nothing at all when it worked — the screen simply
       // carried on, which reads as "nothing happened" and invites a second click.
       setSent({
-        invoiceNumber: invoice.invoice_number,
+        invoiceNumber: inv.invoice_number,
         to: job.customers?.email || null,
         copyTo: settings?.invoice_bcc || res.copiedTo || null,
-        total: invoice.total,
+        total: inv.total,
         problem: res.emailError || null,
       });
       load();
@@ -954,7 +971,7 @@ export default function JobDetailPage() {
         </form>
       </div>
 
-      {!invoice && unbilledHours > 0 && (
+      {!issued && unbilledHours > 0 && (
         <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4">
           <p className="text-sm font-medium text-amber-900">{unbilledHours} h logged on this job hasn&apos;t been charged as labour.</p>
           <p className="mt-1 text-xs text-amber-800">Check the hours before they go on the invoice — adjust them if the clocked time isn&apos;t what you&apos;d charge.</p>
@@ -999,7 +1016,7 @@ export default function JobDetailPage() {
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
                     {running && <button onClick={() => setStopping(stopping === t.id ? null : t.id)} className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">Stop</button>}
-                    {owner && !running && !t.billed && !invoice && <button onClick={() => billTime(t)} className="text-xs font-medium text-red-600 hover:underline">bill as labour</button>}
+                    {owner && !running && !t.billed && !issued && <button onClick={() => billTime(t)} className="text-xs font-medium text-red-600 hover:underline">bill as labour</button>}
                     <button onClick={() => removeTime(t)} className="text-xs text-red-500 hover:underline">remove</button>
                   </span>
                   </div>
@@ -1069,12 +1086,12 @@ export default function JobDetailPage() {
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   {owner && <span className="font-semibold text-zinc-900">{money(it.amount)}</span>}
-                  {owner && !invoice && <button onClick={() => (editLine === it.id ? setEditLine(null) : startEditLine(it))} className="text-xs text-zinc-600 hover:underline">{editLine === it.id ? "cancel" : "edit"}</button>}
-                  {!invoice && <button onClick={() => removeItem(it)} className="text-xs text-red-500 hover:underline">remove</button>}
+                  {owner && !issued && <button onClick={() => (editLine === it.id ? setEditLine(null) : startEditLine(it))} className="text-xs text-zinc-600 hover:underline">{editLine === it.id ? "cancel" : "edit"}</button>}
+                  {!issued && <button onClick={() => removeItem(it)} className="text-xs text-red-500 hover:underline">remove</button>}
                 </span>
                 </div>
 
-                {editLine === it.id && owner && !invoice && (
+                {editLine === it.id && owner && !issued && (
                   <div className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
                     <label className="w-24 text-xs font-medium text-zinc-600">Qty / hours
                       <input value={lineQty} onChange={(e) => setLineQty(e.target.value)} type="number" min="0" step="0.01" className={input} />
@@ -1101,7 +1118,18 @@ export default function JobDetailPage() {
         )}
       </div>
 
-      {invoice && <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white p-3 text-xs text-zinc-500">Invoice #{invNo(invoice.invoice_number)} generated — labour &amp; parts are locked{invoice.sent || !owner ? "." : "; use Discard below to edit."}</p>}
+      {invoice && (
+        issued ? (
+          <p className="mt-3 rounded-lg border border-dashed border-zinc-300 bg-white p-3 text-xs text-zinc-500">
+            Invoice #{invNo(invoice.invoice_number)} has been issued — labour &amp; parts are locked. A mistake now needs a credit note.
+          </p>
+        ) : (
+          <p className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            Draft invoice — not issued, no number yet, and nothing in the accounts. Labour &amp; parts are still editable here,
+            and the draft&apos;s total follows them. It gets its number when it is printed or emailed.
+          </p>
+        )
+      )}
       <form onSubmit={labourAction.run} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="min-w-[8rem] flex-1">
           <label className="block text-xs font-medium text-zinc-500">Labour</label>
@@ -1126,10 +1154,10 @@ export default function JobDetailPage() {
             />
           </div>
         )}
-        <button disabled={!!invoice || labourAction.busy} className={`rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 ${labourAction.className}`}>{labourAction.label("Add labour")}</button>
+        <button disabled={issued || labourAction.busy} className={`rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 ${labourAction.className}`}>{labourAction.label("Add labour")}</button>
       </form>
 
-      {!invoice && (
+      {!issued && (
         <form onSubmit={orderedPartAction.run} className="mt-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Part ordered in for this job</p>
           <div className="flex flex-wrap items-end gap-2">
@@ -1230,7 +1258,7 @@ export default function JobDetailPage() {
             />
           </div>
         )}
-        <button className={`rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 ${partAction.className}`} disabled={parts.length === 0 || !!invoice || partAction.busy}>{partAction.label("Add part")}</button>
+        <button className={`rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 ${partAction.className}`} disabled={parts.length === 0 || issued || partAction.busy}>{partAction.label("Add part")}</button>
         {parts.length === 0 && <p className="w-full text-xs text-amber-600">No parts in inventory yet — add some on the Parts page.</p>}
       </form>
 
@@ -1245,7 +1273,7 @@ export default function JobDetailPage() {
                     <span className="font-medium text-zinc-900">{it.parts?.name || it.description}</span>
                     <span className="ml-2 text-zinc-500">{it.qty_received}{owner ? ` × ${money(it.parts?.unit_price ?? 0)}` : ""} · PO-{String(it.purchase_orders?.po_number ?? 0).padStart(4, "0")}</span>
                   </span>
-                  <button onClick={() => acceptPart(it)} disabled={!!invoice} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">Accept</button>
+                  <button onClick={() => acceptPart(it)} disabled={issued} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">Accept</button>
                 </li>
               ))}
             </ul>
@@ -1312,7 +1340,9 @@ export default function JobDetailPage() {
         </div>
       ) : (
         <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
-          <p className="font-semibold text-amber-900">Invoice #{invNo(invoice.invoice_number)} — draft, awaiting owner approval</p>
+          <p className="font-semibold text-amber-900">
+            {issued ? `Invoice #${invNo(invoice.invoice_number)} — awaiting owner approval` : "Draft invoice — awaiting owner approval"}
+          </p>
           <p className="mt-0.5 text-amber-800">Total {money(invoice.total)}</p>
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="flex flex-col">

@@ -12,7 +12,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
 import SentConfirmation from "../../SentConfirmation";
-import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName, invNo } from "../../../lib/invoicePdf";
+import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName, invNo, isDraft } from "../../../lib/invoicePdf";
 import { PAYMENT_TERMS, termsLabel } from "../../../lib/paymentTerms";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
@@ -41,6 +41,14 @@ export default function InvoiceViewPage() {
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
   const [sent, setSent] = useState(null);   // the confirmation to show after a send
+  // A DRAFT invoice's lines, held as strings so a half-typed price doesn't fight
+  // the input. Mirrors `items`; what gets saved is compared against `items`.
+  const [lines, setLines] = useState([]);
+  const [savingLine, setSavingLine] = useState("");
+  // Printing issues the invoice, and the PDF in the frame is rebuilt by an effect
+  // when the invoice reloads — so we can't print in the same tick. We ask for a
+  // print and let the effect below fire it once the ISSUED pdf is on screen.
+  const [printWhenReady, setPrintWhenReady] = useState(false);
   const [emailTo, setEmailTo] = useState("");
   // Deleting the invoice: the panel is opened on purpose, and the number has to
   // be typed before the button does anything.
@@ -88,6 +96,12 @@ export default function InvoiceViewPage() {
     ]);
 
     setInvoice(inv); setJob(j || null); setItems(li || []); setSettings(st || null);
+    setLines((li || []).map((x) => ({
+      id: x.id, kind: x.kind, amount: x.amount,
+      description: x.description ?? "",
+      quantity: String(x.quantity ?? ""),
+      unit_price: String(x.unit_price ?? ""),
+    })));
     setPayments(pays || []); setOwner(isOwner === true); setSenders(staff || []); setCredits(cns || []);
     setEmailTo(j?.customers?.email || "");
     setEIssue(inv.issued_date || "");
@@ -103,6 +117,21 @@ export default function InvoiceViewPage() {
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+
+  // Fires the print once the ISSUED pdf is actually in the frame. Without this the
+  // print would go out carrying the DRAFT watermark, because the frame still holds
+  // the document that was built before the invoice was issued.
+  useEffect(() => {
+    if (!printWhenReady) return;
+    if (!invoice?.finalised_at || !pdfUrl) return;
+    const t = setTimeout(() => {
+      setPrintWhenReady(false);
+      const w = frame.current?.contentWindow;
+      if (!w) { setError("The invoice is issued, but it is still rendering — press Print again."); return; }
+      w.focus(); w.print();
+    }, 500);
+    return () => clearTimeout(t);
+  }, [printWhenReady, invoice?.finalised_at, pdfUrl]);
 
   // Which PDF to show, and why it matters:
   //
@@ -254,7 +283,54 @@ export default function InvoiceViewPage() {
     load();
   }
 
-  function printIt() {
+  // Issue the invoice: assign its number, post it to the ledger, freeze it. The
+  // database does all of that inside finalise_invoice(), which is idempotent, so
+  // a double-click cannot draw a second number or post twice.
+  async function issueInvoice() {
+    if (!invoice || invoice.finalised_at) return true;
+    if (!window.confirm(
+      "Issue this invoice?\n\nIt gets its invoice number, goes into the accounts, " +
+      "and can't be edited afterwards — a mistake after this needs a credit note."
+    )) return false;
+    setBusy("issue"); setError(null);
+    const { error } = await supabase.rpc("finalise_invoice", { p_invoice_id: invoice.id });
+    setBusy("");
+    if (error) { setError("Couldn't issue it: " + error.message); return false; }
+    setNote("Invoice issued.");
+    await load();
+    return true;
+  }
+
+  // Edit a line on a DRAFT. The invoice's own subtotal/GST/total are recomputed by
+  // a database trigger, not here — so reload rather than doing the sums in the
+  // browser, and what's on screen is always what's stored.
+  async function saveLine(id, patch) {
+    setSavingLine(id); setError(null);
+    const { error } = await supabase.from("job_line_items").update(patch).eq("id", id);
+    setSavingLine("");
+    if (error) { setError("Couldn't save that line: " + error.message); load(); return; }
+    load();
+  }
+
+  // Removing goes through the RPC, not a plain delete, because a stocked part has
+  // to go back on the shelf when it comes off the job.
+  async function removeLine(id) {
+    if (!window.confirm("Take this line off the invoice?")) return;
+    setSavingLine(id); setError(null);
+    const { error } = await supabase.rpc("remove_job_line_item", { p_item_id: id });
+    setSavingLine("");
+    if (error) { setError("Couldn't remove that line: " + error.message); return; }
+    load();
+  }
+
+  async function printIt() {
+    // Printing ISSUES the invoice: a printed document in a customer's hand is a tax
+    // invoice, so it cannot stay a draft once it leaves the printer.
+    if (invoice && !invoice.finalised_at) {
+      if (!(await issueInvoice())) return;
+      setPrintWhenReady(true);
+      return;
+    }
     // Print the PDF itself rather than the page around it, so what comes out of the
     // printer is the document — no nav, no buttons, no browser styling.
     const w = frame.current?.contentWindow;
@@ -290,12 +366,32 @@ export default function InvoiceViewPage() {
     if (!to) { setError("No email address to send to."); return; }
     if (!senderId) { setError("Choose who's sending it."); return; }
     if (!docRef) { setError("The invoice is still rendering — try again in a second."); return; }
-    const already = invoice.sent
-      ? `This invoice was already sent${invoice.sent_at ? " on " + new Date(invoice.sent_at).toLocaleDateString("en-NZ") : ""}.\n\nSend it to ${to} again?`
-      : `Send invoice #${invNo(invoice.invoice_number)} to ${to}?`;
-    if (!window.confirm(already)) return;
-
-    setBusy("email");
+    // Sending ISSUES the invoice. Everything below works from `inv` and `doc`
+    // rather than the page's state, because after issuing, `invoice` and `docRef`
+    // are a tick behind — and `docRef` would still carry the DRAFT watermark.
+    let inv = invoice;
+    let doc = docRef;
+    if (!inv.finalised_at) {
+      if (!window.confirm(
+        `Issue and send this invoice to ${to}?\n\nIt gets its invoice number, goes into the ` +
+        `accounts, and can't be edited afterwards — a mistake after this needs a credit note.`
+      )) return;
+      setBusy("email");
+      const { data: issued, error: finErr } = await supabase.rpc("finalise_invoice", { p_invoice_id: inv.id });
+      if (finErr || !issued) {
+        setBusy("");
+        setError("Couldn't issue it, so nothing was sent: " + (finErr?.message || "no invoice came back."));
+        return;
+      }
+      inv = issued;
+      doc = await buildInvoicePdf({ settings, invoice: inv, job, items });
+    } else {
+      const already = inv.sent
+        ? `This invoice was already sent${inv.sent_at ? " on " + new Date(inv.sent_at).toLocaleDateString("en-NZ") : ""}.\n\nSend it to ${to} again?`
+        : `Send invoice #${invNo(inv.invoice_number)} to ${to}?`;
+      if (!window.confirm(already)) return;
+      setBusy("email");
+    }
     // Everything from here is wrapped, because it wasn't. Encoding the PDF and
     // posting it can both throw, and an unhandled throw in an async click
     // handler is invisible: no message, and the button stuck on "Sending…"
@@ -307,9 +403,9 @@ export default function InvoiceViewPage() {
         body: {
           to,
           customerName: job?.customers?.name,
-          invoiceNumber: invoice.invoice_number,
-          total: invoice.total,
-          pdfBase64: pdfToBase64(docRef),
+          invoiceNumber: inv.invoice_number,
+          total: inv.total,
+          pdfBase64: pdfToBase64(doc),
           accessToken: session?.access_token || null,
         },
       });
@@ -328,7 +424,7 @@ export default function InvoiceViewPage() {
       // and still read "sent ✓".
       if (!res.emailed) {
         setError(
-          `Invoice #${invNo(invoice.invoice_number)} was FILED but NOT emailed: ` +
+          `Invoice #${invNo(inv.invoice_number)} was FILED but NOT emailed: ` +
           (res.emailError || "the email didn't go.") +
           " It is still marked unsent."
         );
@@ -338,10 +434,10 @@ export default function InvoiceViewPage() {
       if (!res.recorded) {
         const { error: markErr } = await supabase.from("invoices")
           .update({ sent: true, sent_by: senderId, sent_at: new Date().toISOString(), pdf_url: res.pdfPath })
-          .eq("id", invoice.id);
+          .eq("id", inv.id);
         if (markErr) {
           setError(
-            `The customer HAS invoice #${invNo(invoice.invoice_number)} — it emailed successfully — but it could not ` +
+            `The customer HAS invoice #${invNo(inv.invoice_number)} — it emailed successfully — but it could not ` +
             `be marked as sent (${markErr.message}). It will look unsent and could be sent twice.`
           );
           load();
@@ -351,10 +447,10 @@ export default function InvoiceViewPage() {
       // Say so on screen, unmissably. The green line below used to be the only
       // sign, and on a phone it sits under the fold.
       setSent({
-        invoiceNumber: invoice.invoice_number,
+        invoiceNumber: inv.invoice_number,
         to,
         copyTo: settings?.invoice_bcc || res.copiedTo || null,
-        total: invoice.total,
+        total: inv.total,
         problem: res.emailError || null,
       });
       load();
@@ -378,8 +474,17 @@ export default function InvoiceViewPage() {
   // Credited outranks Paid: if the whole thing was written off, saying "Paid"
   // would imply money came in that never did.
   const fullyCredited = credited > 0 && balance <= 0 && paid <= 0;
-  const status = fullyCredited ? "Credited" : balance <= 0 ? "Paid" : paid > 0 || credited > 0 ? "Part paid" : "Unpaid";
-  const statusTone = fullyCredited
+  // A draft has no number and owes nothing yet, so "Unpaid" would be a lie.
+  const draft = isDraft(invoice);
+  // Only a WORKSHOP invoice can be edited here: its lines live on the job card.
+  // Rent and hireage are issued the moment they are generated, so they are never
+  // drafts, and their lines belong to the invoice itself.
+  const canEditLines = draft && !!invoice.job_card_id;
+  const status = draft ? "Draft"
+    : fullyCredited ? "Credited" : balance <= 0 ? "Paid" : paid > 0 || credited > 0 ? "Part paid" : "Unpaid";
+  const statusTone = draft
+    ? "bg-amber-100 text-amber-900"
+    : fullyCredited
     ? "bg-violet-50 text-violet-700"
     : balance <= 0 ? "bg-green-50 text-green-700"
     : (paid > 0 || credited > 0) ? "bg-amber-50 text-amber-800"
@@ -391,7 +496,7 @@ export default function InvoiceViewPage() {
 
       <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="text-3xl font-bold tracking-tight text-zinc-900">
-          Invoice #{invNo(invoice.invoice_number)}
+          {draft ? "Draft invoice" : `Invoice #${invNo(invoice.invoice_number)}`}
         </h1>
         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusTone}`}>{status}</span>
       </div>
@@ -486,6 +591,115 @@ export default function InvoiceViewPage() {
         </div>
       )}
 
+      {draft && (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-amber-900">Not issued yet — change anything you need to</h2>
+            <span className="text-sm text-amber-900">Total <strong>{money(invoice.total)}</strong> (incl GST)</span>
+          </div>
+
+          {canEditLines ? (
+            <>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-amber-800">
+                      <th className="pb-1 font-medium">Description</th>
+                      <th className="w-20 pb-1 font-medium">Qty</th>
+                      <th className="w-28 pb-1 font-medium">Unit price</th>
+                      <th className="w-24 pb-1 text-right font-medium">Amount</th>
+                      <th className="w-16 pb-1" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((ln) => {
+                      const src = items.find((x) => x.id === ln.id) || {};
+                      const set = (k, v) => setLines((prev) => prev.map((x) => x.id === ln.id ? { ...x, [k]: v } : x));
+                      const inp = "w-full rounded-lg border border-amber-300 bg-white px-2 py-1 text-sm focus:border-red-500 focus:outline-none";
+                      return (
+                        <tr key={ln.id} className="align-top">
+                          <td className="pr-2 pb-2">
+                            <input
+                              value={ln.description}
+                              onChange={(e) => set("description", e.target.value)}
+                              onBlur={(e) => e.target.value !== (src.description ?? "") && saveLine(ln.id, { description: e.target.value })}
+                              className={inp}
+                            />
+                          </td>
+                          <td className="pr-2 pb-2">
+                            {ln.kind === "part" ? (
+                              // Changing a stocked part's quantity here would move the
+                              // invoice without moving the stock count. That belongs on
+                              // the job card, where add/remove adjust inventory together.
+                              <span className="block px-2 py-1 text-zinc-700">{Number(ln.quantity)}</span>
+                            ) : (
+                              <input
+                                type="number" step="0.25" min="0" inputMode="decimal"
+                                value={ln.quantity}
+                                onChange={(e) => set("quantity", e.target.value)}
+                                onBlur={(e) => Number(e.target.value) !== Number(src.quantity) && Number(e.target.value) > 0
+                                  && saveLine(ln.id, { quantity: Number(e.target.value) })}
+                                className={inp}
+                              />
+                            )}
+                          </td>
+                          <td className="pr-2 pb-2">
+                            <input
+                              type="number" step="0.01" min="0" inputMode="decimal"
+                              value={ln.unit_price}
+                              onChange={(e) => set("unit_price", e.target.value)}
+                              onBlur={(e) => Number(e.target.value) !== Number(src.unit_price)
+                                && saveLine(ln.id, { unit_price: Number(e.target.value) })}
+                              className={inp}
+                            />
+                          </td>
+                          <td className="pb-2 pr-2 pt-1.5 text-right tabular-nums text-zinc-800">{money(src.amount)}</td>
+                          <td className="pb-2 pt-1">
+                            <button
+                              onClick={() => removeLine(ln.id)}
+                              disabled={savingLine === ln.id}
+                              className="text-xs font-medium text-red-700 underline hover:text-red-900 disabled:opacity-40"
+                            >
+                              {savingLine === ln.id ? "…" : "Remove"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {lines.length === 0 && (
+                      <tr><td colSpan={5} className="py-2 text-zinc-600">No labour or parts on this job yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-1 text-xs text-amber-800">
+                Changes save when you click away, and the total above updates with them. To add a line — or to change
+                how many of a stocked part were used — go to the{" "}
+                {job?.id ? <Link href={`/jobs/${job.id}`} className="underline">job card</Link> : "job card"}, so the
+                stock count stays right.
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-amber-900">
+              This invoice hasn&apos;t been issued yet. It has no invoice number and isn&apos;t in the accounts.
+            </p>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-amber-200 pt-3">
+            <button
+              onClick={issueInvoice}
+              disabled={busy === "issue"}
+              className={`${btn} bg-amber-700 text-white hover:bg-amber-800`}
+            >
+              {busy === "issue" ? "Issuing…" : "Confirm & issue"}
+            </button>
+            <span className="text-xs text-amber-800">
+              Issuing gives it its number and puts it in the accounts. Printing or emailing does this for you.
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <button onClick={printIt} className={`${btn} bg-zinc-900 text-white hover:bg-zinc-700`}>Print</button>
         <button onClick={download} className={`${btn} border border-zinc-300 text-zinc-700 hover:bg-zinc-50`}>Download PDF</button>
@@ -506,7 +720,7 @@ export default function InvoiceViewPage() {
               </select>
             </div>
             <button onClick={emailAgain} disabled={busy === "email"} className={`${btn} bg-red-600 text-white hover:bg-red-700`}>
-              {busy === "email" ? "Sending…" : invoice.sent ? "Email again" : "Email to customer"}
+              {busy === "email" ? "Sending…" : invoice.sent ? "Email again" : draft ? "Issue & email" : "Email to customer"}
             </button>
           </>
         )}
