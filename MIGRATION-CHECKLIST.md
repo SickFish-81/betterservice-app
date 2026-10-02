@@ -1,82 +1,86 @@
-# HostPapa migration — what is left
+# Getting Craig off HostPapa — what's left
 
-One page. The detail and the exact record values are in `DNS-PLAN.md`.
-Last updated 28 Sep 2026.
+Rewritten 2 Oct 2026. Supersedes the earlier version, which was out of date.
 
 ## Done
 
-- [x] Flipbikes site lifted off HostPapa and running on Vercel
-      (`flipbikes-site.vercel.app`), verified page by page against the live site
-- [x] Contact form rebuilt as a Vercel function, replacing `send.php`
-- [x] 13 lost enquiries recovered from bounce messages
-- [x] Both domains added to the Vercel project, record values captured
-- [x] `flipbikes.co.nz` added to Resend, its three records captured and the
-      hostnames verified by resolution
-- [x] `dns-check.py` written, passing against the live state
-- [x] Authorisation codes requested from Craig (28 Sep)
-- [x] Wildcard record ruled out — there isn't one
+- [x] **Flipbikes site on Vercel.** `www.flipbikes.co.nz` serves from Vercel.
+- [x] **Apex redirect.** `flipbikes.co.nz` 301s to `www`, wildcard on, paths kept
+      (`/for-sale` → `/for-sale`). Added in cPanel → Redirects with **Do Not
+      Redirect www** so it can never loop. No DNS change, so no certificate gap.
+      The old `send.php` form is now unreachable — that is the form that was
+      silently swallowing enquiries.
+- [x] **Flipbikes contact form works.** `flipbikes.co.nz` verified in Resend
+      (CNAME `rsend`, CNAME `send`, TXT `resend._domainkey`). Sending-only API
+      key scoped to flipbikes.co.nz, held in Vercel as `RESEND_API_KEY`
+      (Production, Secret). Redeployed. A live test enquiry showed **Delivered**
+      to craig@betterservice.co.nz.
+- [x] **The 13 recovered lost enquiries** have been sent to Craig.
+- [x] **Both zones recorded** — `DNS-ZONE-betterservice.md` (43 records) and
+      `DNS-ZONE-flipbikes.md` (24 records). The flipbikes one is the rollback
+      reference.
 
-## Waiting on Craig
+## The one thing with a clock on it: transfer the domains
 
-- [ ] **Two authorisation codes**, one per domain. Everything below waits on
-      these. Valid 30 days, single use. Requested 28 Sep.
+**HostPapa confirmed (29 Sep) this does NOT need a support ticket.** Their steps:
 
-## Then, in order
+1. HostPapa dashboard → **My Domains** → **Details**
+2. **Contacts tab** — check registrant and admin details. *The EPP/UDAI code is
+   sent to the **admin contact email**, nothing else.*
+3. Make sure the domain is **unlocked** (already done for both)
+4. **Transfer EPP tab** — sits between the Lock and DNS Zone Editor tabs
+5. **Send Transfer Code**
+6. Code arrives at the admin contact address; hand it to the new registrar
+7. Transfer takes **5–7 business days**
 
-### 1. Transfer both domains
-- [ ] Choose an NZ registrar. HostPapa charges $51.99/yr per domain, most
-      others are about half. Pick one where **both Ben and Craig can log in** —
-      single-person access is the problem being escaped.
-- [ ] Transfer `betterservice.co.nz` and `flipbikes.co.nz`
-- [ ] Note the delegation comes across unchanged: both will still say
-      `ns1.hostpapa.com` immediately after
+**Worth doing first:** check what the admin contact email actually is. If it is
+one Craig alone reads, update it to one Ben reads *before* clicking Send — then
+the codes arrive without a second round trip. Changing the **admin** contact is
+the low-risk one; leave the registrant alone. (.nz is not under ICANN's 60-day
+post-change transfer lock, but there is no reason to test that.)
 
-### 2. Build the zones and switch nameservers
-- [ ] Run `python3 dns-check.py` and keep the output as the baseline
-- [ ] Build both zones in Vercel DNS from the tables in `DNS-PLAN.md`
-- [ ] **Copy every mail record unchanged.** Nothing about mail changes here.
-      Mail keeps flowing to HostPapa until Fastmail is live and tested.
+Then: choose an NZ registrar where **both Ben and Craig can log in** — the single
+point of access is the actual problem being escaped. HostPapa charges $51.99/yr
+per domain; most NZ registrars are about half.
+
+## After the transfer completes
+
+- [ ] Build both zones in Vercel DNS from `DNS-PLAN.md`
+- [ ] **Copy every mail record unchanged.** Nothing about mail changes at this
+      step. Mail keeps flowing to HostPapa until Fastmail is live and tested.
+- [ ] Run `python3 dns-check.py` first and keep the output as the baseline
 - [ ] Switch nameservers to Vercel, **betterservice first** — its zone is
-      unchanged apart from the nameservers, so anything that breaks is the move
-      itself and not the content
+      otherwise unchanged, so anything that breaks is the move itself
 - [ ] Verify: both sites load, an invoice sends and arrives, a MailerLite test
       sends, Craig's iPad still gets mail
-- [ ] Then flipbikes, which also moves the site itself
-- [ ] Run `dns-check.py` again and compare
+- [ ] Then flipbikes. **Point the apex at Vercel at this step**, not before —
+      with Vercel running DNS it issues the certificate itself, with no gap.
+      Then remove the cPanel redirect, which has done its job.
+- [ ] Re-run `dns-check.py` and compare
 
-No TTL pre-drop is possible — that needs the HostPapa dashboard. Verify before
-switching, not after.
+## Then the mailboxes
 
-### 3. Switch on the Flipbikes contact form
-- [ ] Add the three Resend records to the flipbikes zone
-- [ ] Confirm in Resend, wait for verification
-- [ ] Create a **sending-only** API key **scoped to flipbikes.co.nz** — not
-      full access, not unscoped
-- [ ] Add as `RESEND_API_KEY` to the flipbikes-site Vercel project, Production,
-      Sensitive. The project currently has no environment variables at all.
-- [ ] **Redeploy.** Setting the variable alone changes nothing.
-- [ ] Submit a test enquiry and confirm it appears in Resend's logs
+- [ ] Two real mailboxes (not forwarders): `craig@betterservice.co.nz` and
+      `sales@flipbikes.co.nz`, both live in Apple Mail on Craig's iPad
+- [ ] Fastmail Business, both domains, two users (~US$120/yr)
+- [ ] **Import over IMAP while the HostPapa mailboxes are still alive.** Needs
+      Craig's two mailbox passwords. Once HostPapa is cancelled it is gone.
+- [ ] Switch MX, rewrite SPF, add Fastmail DKIM — one change, together
+- [ ] Repoint the iPad; watch mail arrive for several days
+- [ ] Only then cancel HostPapa. **31 Oct is a billing date, not a technical
+      one** — the paid-up period is free overlap, so use it.
 
-### 4. Move the mailboxes to Fastmail
-- [ ] Two mailboxes: `craig@betterservice.co.nz` and `sales@flipbikes.co.nz`.
-      Both are real accounts on Apple Mail on Craig's iPad, not forwarders.
-- [ ] Set up Fastmail Business, both domains, two users (~US$120/yr)
-- [ ] **Import the existing mail over IMAP while the HostPapa mailboxes are
-      still alive.** Needs Craig's two mailbox passwords, which are in his iPad.
-      Once HostPapa is cancelled, whatever is in there is gone.
-- [ ] Switch MX, rewrite SPF, add Fastmail DKIM — all together, as one change
-- [ ] Repoint Craig's iPad
-- [ ] Watch mail arrive at Fastmail for several days before going further
+## Security — do this regardless
 
-### 5. Cancel HostPapa
-- [ ] Craig does this through support, same route as the codes
-- [ ] Only after mail has been arriving at Fastmail for several days and both
-      sites have been serving from Vercel
+- [ ] **Craig emailed his HostPapa account password in plain text** (30 Sep,
+      "Re: Hostpapa"). It is sitting in Gmail. Change it, and ask Craig not to
+      send passwords by email.
+- [ ] Rotate `CRON_SECRET` — it went through a chat transcript. Three places.
 
-## Not part of the migration, but found along the way
+## Found along the way, not blocking
 
-- [ ] Send Craig the 13 recovered enquiries (draft is written and waiting)
-- [ ] Two of nine customers could not work out how to buy. Worth its own look.
+- [ ] Two of nine Flipbikes customers could not work out how to buy
 - [ ] Every Flipbikes page carries a Google Analytics tag and a Meta Pixel from
-      the original Webflow build. Check Craig can actually see that data, or
-      they are liability with no upside.
+      the original Webflow build. Either Craig can see that data, or they are
+      liability with no upside.
+- [ ] Ask Craig what `cash4bikes.betterservice.co.nz` is for
