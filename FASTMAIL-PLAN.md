@@ -216,3 +216,50 @@ broken at either end.
   (Ben had the passwords in hand on 5 Oct.)
 - flipbikes.co.nz has not been checked for the same catch-all pattern. Assume
   it has one until proven otherwise.
+
+## What flipbikes.co.nz's mail does today — nothing
+
+Read from cPanel, 5 Oct:
+
+- **No mailboxes at all.** The only account is the system account `flipb816`
+  (104 KB of cron noise).
+- **No forwarders**, individual or domain-wide.
+- Default Address is **`:fail: No Such User Here`** — unrouted mail is rejected.
+
+So **flipbikes.co.nz receives no mail whatsoever.** Every address on the domain
+bounces, `sales@` included. Nothing is published on the site pointing at it —
+the contact form sends *to* `craig@betterservice.co.nz` — so nobody has been
+losing mail, it simply has never been a mail domain.
+
+That makes flipbikes the easy half: nothing to import, nothing to preserve,
+nothing that can break. Pointing its MX at Fastmail is purely additive — it
+starts receiving mail it currently refuses.
+
+`noreply@flipbikes.co.nz` hard-bounces today if anyone replies to it. Harmless
+in practice, because `api/send.js` sets `reply_to` to the customer's own
+address, but worth knowing.
+
+## Step 4 (IMAP import) is almost certainly unnecessary
+
+Both betterservice mailboxes report 0 bytes; flipbikes has no mailboxes at all.
+There is nothing on HostPapa to carry across. That removes the dependency on
+Craig's mailbox passwords, and with it the risk in the "Open" note below about
+resetting them and breaking his iPad.
+
+**One thing to confirm before believing it**: what mail account is actually
+configured on Craig's iPad? Two possibilities with very different consequences.
+
+- If the iPad is set up against **Gmail**, everything is consistent — the
+  catch-all feeds Gmail, Craig reads Gmail, HostPapa's mailboxes are genuinely
+  unused and empty, and step 6 (repoint the iPad) is a no-op too.
+- If the iPad is set up against **HostPapa over POP3**, the mailboxes are empty
+  *because the iPad has been downloading and deleting the mail for years.* The
+  only copy of that history would then be on the device, HostPapa's cancellation
+  breaks the account, and losing the iPad loses the mail. That needs handling
+  before anything is cancelled.
+
+Ask Craig to open Settings -> Mail -> Accounts on the iPad and say what is
+listed. It is a thirty-second check that decides whether steps 4 and 6 exist.
+
+- 5 Oct: Craig confirmed `service@` is **not used**, but wants it kept anyway.
+  Carry it as an alias into his mailbox.
