@@ -80,13 +80,15 @@ cancelling anything.
    No behaviour change. Had to be done ~4 h before the switch, because the old
    4 h TTL has to expire first. **This was the only thing with a clock on it.**
 2. ~~Add the three DKIM CNAMEs to both zones.~~ **DONE 5 Oct.** Safe any time.
-3. Create Craig's user `craig@betterservice.co.nz` in Fastmail; add
-   `sales@flipbikes.co.nz` as an alias to it.
-4. **IMAP import from HostPapa while those mailboxes are still alive.** Needs
-   Craig's two mailbox passwords — blocked until at least Monday 5 Oct. Once
-   HostPapa is cancelled, whatever is in there is gone.
+3. Create Craig's user `craig@betterservice.co.nz` in Fastmail, with `admin@`,
+   `accounts@` and `service@` as aliases into it, plus `sales@flipbikes.co.nz`.
+   Set one mailbox-level forward to Craig's Gmail for the transition.
+4. ~~**IMAP import from HostPapa.**~~ **DOES NOT EXIST — confirmed 5 Oct.**
+   There is no mail on HostPapa to move; see below. Craig's mailbox passwords
+   are not needed after all.
 5. Switch MX and rewrite SPF together, per the transitional records above.
-6. Repoint Craig's iPad.
+6. ~~Repoint Craig's iPad.~~ **DOES NOT EXIST — confirmed 5 Oct.** The iPad is
+   configured against Gmail, not HostPapa. Nothing on it to repoint.
 7. Watch mail arrive for several days.
 8. Only then cancel HostPapa. 31 Oct is a billing date, not a technical one —
    the paid-up period is free overlap, so use it.
@@ -263,3 +265,30 @@ listed. It is a thirty-second check that decides whether steps 4 and 6 exist.
 
 - 5 Oct: Craig confirmed `service@` is **not used**, but wants it kept anyway.
   Carry it as an alias into his mailbox.
+
+## Settled, 5 Oct — the plan is three steps, not eight
+
+Craig confirmed **the iPad is on Gmail.** That closes the only open question.
+
+Everything is consistent: HostPapa's catch-all forwards to Craig's Gmail, Craig
+reads Gmail, the two betterservice mailboxes are genuinely unused and empty, and
+the iPad never touched HostPapa. Nothing has been silently draining those
+mailboxes; there was never anything in them.
+
+**Steps 4 and 6 are deleted.** No IMAP import, no iPad to repoint, and Craig's
+mailbox passwords are not needed. What is left:
+
+1. ~~TTLs~~ done
+2. ~~DKIM~~ done
+3. **Build the addresses in Fastmail** — Ben's job, does not need Craig
+4. **Switch MX + SPF together** — the one moment anything can go wrong
+5. **Watch for several days**
+6. **Cancel HostPapa last**
+
+### One thing deliberately left alone
+
+Craig replies to customers from Gmail, so his replies go out as his personal
+address rather than the business. That is how it works today and the move does
+not change it either way. It could be improved later by setting Gmail's "send
+mail as" to `admin@betterservice.co.nz` over Fastmail's SMTP. **Not part of this
+migration** — noted so it is not rediscovered as a bug.
