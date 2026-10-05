@@ -327,18 +327,28 @@ Craig's seat was purchased 5 Oct — NZ$9.35 pro-rata now, NZ$10.20/month after.
 Every address from the evidenced list is now built, and `craig@` is the user
 itself rather than an alias, so the Flip Bikes contact form keeps working.
 
-### Still to do in step 3
+### Step 3 is complete
 
-**The transitional forward to Craig's Gmail is not set.** Fastmail has no
-admin-side forwarding control — a forward is a rule inside Craig's own account,
-so it means either logging in as him (admin masquerade is permitted; "Admins may
-not log in" was left off) or having Craig set it himself. Decide which. Until it
-exists, mail arriving after the MX switch lands in Fastmail only, and Craig
-would have to go looking for it.
+`noreply@flipbikes.co.nz` was added as an alias to Ben, so it accepts rather
+than bounces once flipbikes' MX moves. It is send-only — `api/send.js` sets
+`reply_to` to the customer — but a From address that refuses mail can cost
+deliverability with receivers that probe the sender, and the alias is free.
 
-**`noreply@flipbikes.co.nz` is not built.** Once flipbikes' MX points at
-Fastmail it will bounce, because nothing on that domain will exist except
-`sales@` and `admin@`. It is send-only — `api/send.js` sets `reply_to` to the
-customer — so bounces are harmless in practice, but a From address that refuses
-mail can hurt deliverability with receivers that probe the sender. Cheap
-insurance: add it as an alias to Ben so it accepts and goes somewhere quiet.
+**The transitional Gmail copy is live.** Fastmail exposes no admin-side
+forwarding control, so it is a rule inside Craig's own account, created by
+admin masquerade:
+
+    Rule: "Transitional: copy everything to Craig's Gmail (turn off once settled)"
+    If   all messages
+    Then send a copy to cmbarrett7@gmail.com
+         continue to apply other rules
+
+Nothing is moved or deleted, so the original stays in Craig's Fastmail Inbox and
+he keeps reading in Gmail exactly as he does now. **The rule's name is the
+reminder** — it says what to do with itself.
+
+Fastmail runs spam filtering *before* rules, so spam goes to his Spam folder and
+is never copied onward. The copy carries real mail only.
+
+Saving a rule requires a password confirmation, so that step is Ben's — Claude
+does not type passwords.
