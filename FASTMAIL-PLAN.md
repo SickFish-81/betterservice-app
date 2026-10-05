@@ -91,13 +91,27 @@ cancelling anything.
 8. Only then cancel HostPapa. 31 Oct is a billing date, not a technical one —
    the paid-up period is free overlap, so use it.
 
-## Open
+## What betterservice's mail actually does today — read this first
 
-- Craig does not necessarily know his mailbox passwords; Apple Mail may have
-  saved them years ago. If so they get reset from cPanel Email Accounts first,
-  which breaks his iPad until it is repointed — that changes the order above.
-- Decide where `admin@betterservice.co.nz` should deliver after the move, since
-  invoice replies go there.
+Found 5 Oct by reading cPanel, and it is not what the setup implies.
+
+**There are only two real mailboxes, `accounts@` and `service@`, and both
+report 0 bytes.** Craig does not read either of them.
+
+**`admin@betterservice.co.nz` is not a mailbox at all.** It does not exist. The
+domain's **Default Address (catch-all)** is set to forward every unrouted
+message to Craig's personal Gmail, `cmbarrett7@gmail.com` — so replies to
+invoices, which are addressed to `admin@`, fall through the catch-all and land
+in his Gmail. The same is true of anything else a customer guesses at: `info@`,
+`sales@`, `craig@`.
+
+**This is the trap in the migration.** Move the MX to Fastmail without
+recreating that behaviour and every reply to an invoice stops arriving, with no
+bounce and no error anywhere. Nothing would look broken.
+
+It also means the IMAP import (step 4) may have almost nothing to carry —
+Craig's mail history is in Gmail, not on HostPapa. Confirm before spending time
+on it.
 
 ## Progress — 5 Oct 2026
 
@@ -140,3 +154,39 @@ touched. MX on both domains still points at HostPapa. **No mail has moved.**
 
 Next: step 3 (Craig's Fastmail user + `sales@` alias) and step 4 (IMAP import),
 both of which need Craig's mailbox passwords.
+
+## Decisions — 5 Oct 2026 (Ben, with Craig present)
+
+**Craig reads invoice replies in his Gmail**, confirmed. **He wants a real
+`admin@betterservice.co.nz` mailbox.**
+
+**`admin@` → alias into Craig's Fastmail mailbox, AND a copy forwarded to his
+Gmail.** Belt and braces during the transition: nothing can be missed while he
+is still in the Gmail habit, and he can reply properly as `admin@` when he
+chooses to. Switch the Gmail forward off once he has settled — that is a
+deliberate later step, not something to forget. No extra seat; an alias, not a
+user.
+
+**Catch-all → dropped; unknown addresses rejected.** Once `admin@` is real, a
+catch-all mostly collects spam, and today Google is the only reason that spam
+is invisible — pointing a catch-all at a fresh Fastmail mailbox would dump it
+all in front of Craig. Rejecting also means a human typo bounces back visibly
+to the sender instead of disappearing.
+
+**Before dropping it, find out what addresses are actually in use.** That
+evidence is in Craig's Gmail, not in cPanel. He can search his own Gmail for
+
+    to:@betterservice.co.nz -to:admin@betterservice.co.nz
+
+over the last year or two. Whatever addresses show up either get created as
+aliases in Fastmail or get deliberately retired. Do not drop the catch-all
+until that search has been done.
+
+## Still open
+
+- Craig does not necessarily know his mailbox passwords; Apple Mail may have
+  saved them years ago. If so they get reset from cPanel Email Accounts first,
+  which breaks his iPad until it is repointed — that changes the order above.
+  (Ben had the passwords in hand on 5 Oct.)
+- flipbikes.co.nz has not been checked for the same catch-all pattern. Assume
+  it has one until proven otherwise.
