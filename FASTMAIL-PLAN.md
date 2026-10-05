@@ -173,14 +173,40 @@ is invisible — pointing a catch-all at a fresh Fastmail mailbox would dump it
 all in front of Craig. Rejecting also means a human typo bounces back visibly
 to the sender instead of disappearing.
 
-**Before dropping it, find out what addresses are actually in use.** That
-evidence is in Craig's Gmail, not in cPanel. He can search his own Gmail for
+**Ben's call, 5 Oct: drop the catch-all, create only the addresses that are
+really used.** The list below is that list. It is not guesswork — it comes from
+reading both codebases, so every entry has a traceable reason to exist.
 
-    to:@betterservice.co.nz -to:admin@betterservice.co.nz
+### The addresses that must receive
 
-over the last year or two. Whatever addresses show up either get created as
-aliases in Fastmail or get deliberately retired. Do not drop the catch-all
-until that search has been done.
+**betterservice.co.nz**
+
+| Address | Why it must exist |
+|---|---|
+| `admin@` | From address on most app email (rent, reminders, statements, POs, pick-up dispatch) **and** the BCC on every invoice — `shop_settings.invoice_bcc`, set by migration 0040. Craig's own copy of every invoice lands here. |
+| `accounts@` | From address on **workshop invoices**. A customer hitting reply on an invoice replies to *this*, not to `admin@`. |
+| `craig@` | The **Flip Bikes website contact form sends every enquiry here** (`api/send.js`, `const TO`). Also published as the business email in the homepage schema.org block, so Google surfaces it. |
+| `service@` | Existing HostPapa mailbox, 0 bytes, not referenced anywhere in code. **Ask Craig before retiring it.** |
+| `postmaster@` | Ben's admin address, already claimed in Fastmail. |
+
+**flipbikes.co.nz**
+
+| Address | Why it must exist |
+|---|---|
+| `noreply@` | Resend's From on the contact form. Send-only — it never needs to receive, but it must not hard-bounce. |
+| `sales@` | Alias into Craig, per the seat decision above. |
+| `admin@` | Ben's admin address. |
+
+`you@betterservice.co.nz` and `name@betterservice.co.nz` appear in the code but
+are **placeholder text** in the login and staff forms. Not real addresses.
+
+### The one that would have bitten us
+
+`craig@betterservice.co.nz` has never been a mailbox either. It works today
+*only* because the catch-all forwards it to Craig's Gmail. Drop the catch-all
+without creating `craig@` and **every enquiry from the Flip Bikes website stops
+arriving** — the same form we fixed and tested on 3 Oct. Nothing would appear
+broken at either end.
 
 ## Still open
 
