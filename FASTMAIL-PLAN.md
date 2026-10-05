@@ -76,10 +76,10 @@ cancelling anything.
 
 ## Order of work
 
-1. **Drop MX and SPF TTLs 14400 -> 300** on both zones. No behaviour change.
-   Must be done ~4 h before the switch, because the old 4 h TTL has to expire
-   first. **This is the only thing with a clock on it.**
-2. Add the three DKIM CNAMEs to both zones. Safe any time.
+1. ~~**Drop MX and SPF TTLs 14400 -> 300** on both zones.~~ **DONE 5 Oct.**
+   No behaviour change. Had to be done ~4 h before the switch, because the old
+   4 h TTL has to expire first. **This was the only thing with a clock on it.**
+2. ~~Add the three DKIM CNAMEs to both zones.~~ **DONE 5 Oct.** Safe any time.
 3. Create Craig's user `craig@betterservice.co.nz` in Fastmail; add
    `sales@flipbikes.co.nz` as an alias to it.
 4. **IMAP import from HostPapa while those mailboxes are still alive.** Needs
@@ -98,3 +98,45 @@ cancelling anything.
   which breaks his iPad until it is repointed — that changes the order above.
 - Decide where `admin@betterservice.co.nz` should deliver after the move, since
   invoice replies go there.
+
+## Progress — 5 Oct 2026
+
+Done at Craig's desk, both cPanel accounts (betterservice = `bette671` on
+sh-cp4-au; flipbikes on sh-cp2-au — the account chooser at
+hostpapa.co.nz/dashboard/my-cpanel lets both be open at once).
+
+**Step 1 — TTLs dropped to 300.** Verified against `ns1`/`ns2.hostpapa.com`:
+
+    betterservice.co.nz  MX   300   (was 14400)
+    betterservice.co.nz  TXT  300   (both apex TXT records)
+    flipbikes.co.nz      TXT  300
+    flipbikes.co.nz      MX   stored 300, still *published* as 14400
+
+Two things worth remembering:
+
+- **cPanel refuses a TTL that differs within an RRset.** betterservice has two
+  apex TXT records (the SPF and a `mailerlite-domain-verification=` string).
+  Saving one at 300 fails with *"records have mismatched TTL values"*. The fix
+  is to open **both** rows for edit, set both to 300, and use **Save All
+  Records** — saving them one at a time can never succeed.
+- **flipbikes MX publishes 14400 even though cPanel stores 300.** Re-saved
+  twice; the A and TXT records on the same zone updated instantly, the MX did
+  not. Most likely the old RRset is still cached at HostPapa's public
+  nameservers and will age out within 4 h. It does not block anything — we were
+  always going to wait before the switch — but **re-check it with `dig` before
+  touching the MX**, and assume up to a 4 h tail on flipbikes rather than 5 min.
+
+**Step 2 — DKIM CNAMEs added to both zones**, TTL 14400 (fine; they never
+change). All six resolve through to Fastmail:
+
+    fm1/2/3._domainkey.<domain>  ->  fm1/2/3.<domain>.dkim.fmhosted.com
+    -> "v=DKIM1; k=rsa; n=Intentionally_Left_Blank_As_Per_DKIM_Rotation_BCP; p="
+
+The blank `p=` is correct and expected — Fastmail publishes placeholder keys and
+fills them in once the domain actually sends through them. Nothing to fix.
+
+Existing `default._domainkey` (HostPapa) and `resend._domainkey` were not
+touched. MX on both domains still points at HostPapa. **No mail has moved.**
+
+Next: step 3 (Craig's Fastmail user + `sales@` alias) and step 4 (IMAP import),
+both of which need Craig's mailbox passwords.
