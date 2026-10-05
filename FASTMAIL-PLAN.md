@@ -292,3 +292,53 @@ address rather than the business. That is how it works today and the move does
 not change it either way. It could be improved later by setting Gmail's "send
 mail as" to `admin@betterservice.co.nz` over Fastmail's SMTP. **Not part of this
 migration** — noted so it is not rediscovered as a bug.
+
+## Step 3 built, 5 Oct
+
+Fastmail independently confirms the DKIM work: betterservice.co.nz now reads
+**"DKIM is correctly configured."** MX reads "not pointing to Fastmail" and SPF
+"not configured" — both correct, both are the cutover.
+
+Fastmail's own instructions confirm the MX values in this plan:
+
+    priority 10   us1-smtp.messagingengine.com
+    priority 20   us2-smtp.messagingengine.com
+
+and it does serve up the destructive generic SPF line,
+`v=spf1 include:spf.messagingengine.com ?all`, exactly as warned above. Do not
+use it.
+
+**Users**
+
+    Ben    northlinesystems@fastmail.com   Standard, Admin
+    Craig  craig@betterservice.co.nz       Standard, NZ$10.20/month
+
+Craig's seat was purchased 5 Oct — NZ$9.35 pro-rata now, NZ$10.20/month after.
+
+**Aliases**
+
+    admin@betterservice.co.nz      -> craig    App email From + BCC on every invoice
+    accounts@betterservice.co.nz   -> craig    From on workshop invoices; customers reply here
+    service@betterservice.co.nz    -> craig    Legacy, unused, kept at Craig's request
+    sales@flipbikes.co.nz          -> craig    Flip Bikes sales enquiries
+    admin@flipbikes.co.nz          -> ben
+    postmaster@betterservice.co.nz -> ben
+
+Every address from the evidenced list is now built, and `craig@` is the user
+itself rather than an alias, so the Flip Bikes contact form keeps working.
+
+### Still to do in step 3
+
+**The transitional forward to Craig's Gmail is not set.** Fastmail has no
+admin-side forwarding control — a forward is a rule inside Craig's own account,
+so it means either logging in as him (admin masquerade is permitted; "Admins may
+not log in" was left off) or having Craig set it himself. Decide which. Until it
+exists, mail arriving after the MX switch lands in Fastmail only, and Craig
+would have to go looking for it.
+
+**`noreply@flipbikes.co.nz` is not built.** Once flipbikes' MX points at
+Fastmail it will bounce, because nothing on that domain will exist except
+`sales@` and `admin@`. It is send-only — `api/send.js` sets `reply_to` to the
+customer — so bounces are harmless in practice, but a From address that refuses
+mail can hurt deliverability with receivers that probe the sender. Cheap
+insurance: add it as an alias to Ben so it accepts and goes somewhere quiet.
