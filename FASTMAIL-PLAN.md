@@ -423,3 +423,43 @@ accountant. Check this before assuming the migration is invisible to him.
 - Turn off the Gmail copy rule once Craig is settled
 - Cancel HostPapa last, and only then drop `include:_spf.hostedemail.com` and
   the two ip4 terms from the SPF record
+
+## Gmail copy rule disabled, 6 Oct — and the thing to watch
+
+Craig reported getting **two copies** of his mail in Gmail, and emailed Ben
+about it: *"are copies of my emails from @betterservice.co.nz supposed to be
+going to cmbarrett..."*. Ben's call: switch the copy off.
+
+Done — **disabled, not deleted**. Fastmail's rule editor has a `Disable → Skip
+this rule` tick at the bottom of the edit view. The rule now shows `Disabled`
+in the list with its action and destination intact, so restoring it is one tick
+rather than rebuilding it.
+
+### Why this needs checking rather than assuming
+
+The logic is sound only if the premise is: if two independent paths put mail in
+Craig's Gmail, removing one leaves one. **Nobody has established what the second
+path is.** Candidates, none confirmed:
+
+- the HostPapa catch-all to `cmbarrett7@gmail.com`, which is still configured —
+  though with HostPapa's MX demoted to priority 30 it should rarely receive
+  anything now
+- senders who address both `craig@betterservice.co.nz` and his Gmail directly,
+  which would duplicate permanently
+- a POP/"check mail from other accounts" fetch configured in his Gmail
+- Gmail threading showing a sent and received copy of the same conversation
+
+**If the second path does not exist, Craig now sees none of his business mail**,
+because that rule was the only thing putting it in front of him — and he will
+not notice it stop.
+
+So: **ask Craig within the hour whether new mail is still reaching his Gmail.**
+Not next week. If it has stopped, untick `Skip this rule` and it resumes
+immediately.
+
+### The real end state
+
+None of this matters once Craig reads Fastmail directly. Adding the account to
+his phone takes a couple of minutes and removes the rule, the duplicates and the
+dependency on his Gmail in one go. Worth doing before the HostPapa catch-all is
+retired, since that is the last fallback path still standing.
