@@ -352,3 +352,74 @@ is never copied onward. The copy carries real mail only.
 
 Saving a rule requires a password confirmation, so that step is Ben's — Claude
 does not type passwords.
+
+## CUTOVER DONE — betterservice.co.nz, 6 Oct 2026
+
+Mail is flowing through Fastmail. Proven by real traffic, not a test message.
+
+**What was changed**
+
+    SPF   v=spf1 include:spf.messagingengine.com include:_spf.mlsend.com
+          ip4:66.102.132.100 +ip4:65.39.193.20 +include:_spf.hostedemail.com ~all
+    MX    10  us1-smtp.messagingengine.com          (added)
+    MX    20  us2-smtp.messagingengine.com          (added)
+    MX    30  mx...cust.a.hostedemail.com           (was priority 0)
+
+**The HostPapa MX was demoted, not deleted.** Changing its priority from 0 to 30
+makes Fastmail primary while keeping the old record intact: the rollback is one
+number, not a retyped hostname, and if Fastmail is ever briefly unreachable mail
+still falls through to HostPapa while that account is alive. Do it this way
+round on flipbikes too.
+
+Verified at ns1, ns2, 1.1.1.1 and 8.8.8.8 before anything was deleted or sent.
+
+**SPF lookup budget**: all three includes resolve to flat ip4 lists with nothing
+nested, so the record costs 3 of the permitted 10. Room to add another sender
+later without restructuring.
+
+### Fastmail's own status panel is wrong — ignore it
+
+After the cutover, with mail demonstrably arriving, Fastmail still reports:
+
+    MX   "MX records not pointing to Fastmail.
+          Messages sent to this domain will not come to Fastmail."
+    SPF  "SPF is not configured!"
+
+Both are false. It is a conformance check, not a functional one: it wants its
+own two MX records and nothing else, and its own SPF string verbatim. A third MX
+at priority 30 and an SPF line carrying MailerLite both make it go red. DKIM
+reads correct because that is the one thing it wrote itself.
+
+**Do not act on that panel.** Judge by delivered mail. Noted here so nobody
+"fixes" a working setup by pasting Fastmail's generic records over the top —
+which is exactly the trap this document opens by warning about.
+
+### Evidence of real traffic
+
+Within about ten minutes of the switch, Craig's Fastmail mailbox received:
+
+    12:41  spam, filed to Spam
+    12:54  spam, filed to Spam
+    13:42  spam, filed to Spam
+    13:48  Fwd: GST Queries - September 2026 — real business mail, Inbox
+
+Spam filtering is working on a brand-new mailbox with no sender history, and
+**nothing legitimate was misfiled** — the risk worth checking on day one. The
+accountant thread landing in the Inbox is the proof that ordinary business mail
+gets through.
+
+### Still unverified
+
+**Whether the Gmail copy rule is firing.** That can only be confirmed by Craig
+looking in his own Gmail. It matters: if it is not working, mail is accumulating
+in a Fastmail inbox he has never opened — including a GST query from his
+accountant. Check this before assuming the migration is invisible to him.
+
+### Still to do
+
+- flipbikes.co.nz: same two MX records, demote its HostPapa MX to 30, and set
+  `v=spf1 include:spf.messagingengine.com include:_spf.hostedemail.com ~all`
+- Watch for several days
+- Turn off the Gmail copy rule once Craig is settled
+- Cancel HostPapa last, and only then drop `include:_spf.hostedemail.com` and
+  the two ip4 terms from the SPF record
