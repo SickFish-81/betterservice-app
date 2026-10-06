@@ -1,0 +1,48 @@
+# DNS baseline — captured 6 Oct 2026, 20:07 NZDT
+#
+# Taken AFTER the Fastmail mail migration and BEFORE the nameserver move.
+# This is the comparison point: re-run 'python3 dns-check.py' after DNS moves
+# off HostPapa and diff against this. Anything that differs and was not
+# deliberately changed is the move breaking something.
+
+
+betterservice.co.nz
+  NS                          ['ns2.hostpapa.com.', 'ns1.hostpapa.com.']
+  ok   A    betterservice.co.nz                  website (Vercel)
+  ok   A    www.betterservice.co.nz              website (Vercel)
+  ok   MX   betterservice.co.nz                  MAIL - Fastmail, primary (pri 10)
+  ok   MX   betterservice.co.nz                  MAIL - Fastmail, secondary (pri 20)
+  ok   MX   betterservice.co.nz                  MAIL - HostPapa fallback at pri 30; GOES when HostPapa is cancelled
+  ok   TXT  betterservice.co.nz                  SPF - Fastmail authorised to send
+  ok   TXT  betterservice.co.nz                  SPF - MailerLite; deleting this silently kills Craig's newsletters
+  ok   TXT  betterservice.co.nz                  SPF - the one that quietly breaks invoices
+  ok   CNAME fm1._domainkey.betterservice.co.nz   Fastmail DKIM 1 of 3
+  ok   CNAME fm2._domainkey.betterservice.co.nz   Fastmail DKIM 2 of 3
+  ok   CNAME fm3._domainkey.betterservice.co.nz   Fastmail DKIM 3 of 3
+  ok   TXT  betterservice.co.nz                  MailerLite ownership
+  ok   TXT  _dmarc.betterservice.co.nz           DMARC policy
+  ok   TXT  resend._domainkey.betterservice.co.nz Resend DKIM - signs every invoice
+  ok   MX   send.betterservice.co.nz             Resend bounce handling
+  ok   TXT  send.betterservice.co.nz             Resend sending authority
+  ok   TXT  litesrv._domainkey.betterservice.co.nz MailerLite DKIM
+
+flipbikes.co.nz
+  NS                          ['ns2.hostpapa.com.', 'ns1.hostpapa.com.']
+  ok   A    flipbikes.co.nz                      website - still HostPapa (301 to www); becomes Vercel at the DNS move
+  ok   CNAME www.flipbikes.co.nz                  website - Vercel
+  ok   MX   flipbikes.co.nz                      MAIL - Fastmail, primary (pri 10)
+  ok   MX   flipbikes.co.nz                      MAIL - Fastmail, secondary (pri 20)
+  ok   TXT  flipbikes.co.nz                      SPF - Fastmail authorised to send
+  ok   TXT  flipbikes.co.nz                      SPF
+  ok   CNAME fm1._domainkey.flipbikes.co.nz       Fastmail DKIM 1 of 3
+  ok   CNAME fm2._domainkey.flipbikes.co.nz       Fastmail DKIM 2 of 3
+  ok   CNAME fm3._domainkey.flipbikes.co.nz       Fastmail DKIM 3 of 3
+  ok   TXT  resend._domainkey.flipbikes.co.nz    Resend DKIM - signs contact-form mail
+
+sites
+  ok   200 Betterservice            served by Vercel
+  ok   308 Betterservice www        -> https://betterservice.co.nz/
+  ok   301 Flip Bikes               -> https://www.flipbikes.co.nz/
+  ok   200 Flip Bikes www           served by Vercel
+
+Everything matches what DNS-PLAN.md says it should be.

@@ -16,7 +16,7 @@ Resolution goes over DNS-over-HTTPS to Cloudflare's resolver rather than the
 local one, so it sees what the public internet sees and not a stale cache on
 whatever machine this runs on.
 """
-import json, sys, urllib.request, concurrent.futures
+import json, sys, urllib.request, urllib.error, concurrent.futures
 
 DOH = "https://cloudflare-dns.com/dns-query"
 
@@ -26,8 +26,15 @@ EXPECTED = {
     "betterservice.co.nz": [
         ("A",   "",                   "216.150.1.1",                   "website (Vercel)"),
         ("A",   "www",                "216.150.1.1",                   "website (Vercel)"),
-        ("MX",  "",                   "hostedemail.com",               "MAIL - changes when Fastmail goes live"),
+        ("MX",  "",                   "us1-smtp.messagingengine.com",  "MAIL - Fastmail, primary (pri 10)"),
+        ("MX",  "",                   "us2-smtp.messagingengine.com",  "MAIL - Fastmail, secondary (pri 20)"),
+        ("MX",  "",                   "hostedemail.com",               "MAIL - HostPapa fallback at pri 30; GOES when HostPapa is cancelled"),
+        ("TXT", "",                   "include:spf.messagingengine.com","SPF - Fastmail authorised to send"),
+        ("TXT", "",                   "include:_spf.mlsend.com",       "SPF - MailerLite; deleting this silently kills Craig's newsletters"),
         ("TXT", "",                   "v=spf1",                        "SPF - the one that quietly breaks invoices"),
+        ("CNAME","fm1._domainkey",    "dkim.fmhosted.com",             "Fastmail DKIM 1 of 3"),
+        ("CNAME","fm2._domainkey",    "dkim.fmhosted.com",             "Fastmail DKIM 2 of 3"),
+        ("CNAME","fm3._domainkey",    "dkim.fmhosted.com",             "Fastmail DKIM 3 of 3"),
         ("TXT", "",                   "mailerlite-domain-verification","MailerLite ownership"),
         ("TXT", "_dmarc",             "v=DMARC1",                      "DMARC policy"),
         ("TXT", "resend._domainkey",  "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GN","Resend DKIM - signs every invoice"),
@@ -36,9 +43,16 @@ EXPECTED = {
         ("TXT", "litesrv._domainkey", "v=DKIM1",                       "MailerLite DKIM"),
     ],
     "flipbikes.co.nz": [
-        ("A",   "",    "",                 "website - currently HostPapa, becomes Vercel"),
-        ("MX",  "",    "hostedemail.com",  "MAIL - changes when Fastmail goes live"),
+        ("A",   "",    "",                 "website - still HostPapa (301 to www); becomes Vercel at the DNS move"),
+        ("CNAME","www", "vercel-dns",      "website - Vercel"),
+        ("MX",  "",    "us1-smtp.messagingengine.com", "MAIL - Fastmail, primary (pri 10)"),
+        ("MX",  "",    "us2-smtp.messagingengine.com", "MAIL - Fastmail, secondary (pri 20)"),
+        ("TXT", "",    "include:spf.messagingengine.com", "SPF - Fastmail authorised to send"),
         ("TXT", "",    "v=spf1",           "SPF"),
+        ("CNAME","fm1._domainkey", "dkim.fmhosted.com", "Fastmail DKIM 1 of 3"),
+        ("CNAME","fm2._domainkey", "dkim.fmhosted.com", "Fastmail DKIM 2 of 3"),
+        ("CNAME","fm3._domainkey", "dkim.fmhosted.com", "Fastmail DKIM 3 of 3"),
+        ("TXT", "resend._domainkey", "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GN", "Resend DKIM - signs contact-form mail"),
     ],
 }
 
@@ -46,7 +60,7 @@ SITES = [
     ("https://betterservice.co.nz/",     "Betterservice"),
     ("https://www.betterservice.co.nz/", "Betterservice www"),
     ("https://flipbikes.co.nz/",         "Flip Bikes"),
-    ("https://flipbikes-site.vercel.app/", "Flip Bikes on Vercel"),
+    ("https://www.flipbikes.co.nz/",       "Flip Bikes www"),
 ]
 
 def resolve(name, rtype):
@@ -84,16 +98,37 @@ def check():
                 print(f"       got:                 {got or '(nothing)'}")
     return bad
 
+class _KeepRedirects(urllib.request.HTTPRedirectHandler):
+    """Report redirects instead of following them.
+
+    urllib follows 301/302/303/307 but raises on 308, which made
+    www.betterservice.co.nz -> betterservice.co.nz look like a failure when it
+    is the redirect working correctly. A redirect to the right place is a pass;
+    we want to SEE it, not silently follow it.
+    """
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
 def check_sites():
     print("\nsites")
     bad = 0
+    opener = urllib.request.build_opener(_KeepRedirects)
     for url, label in SITES:
         try:
             req = urllib.request.Request(url, method="GET",
                                          headers={"user-agent": "dns-check"})
-            with urllib.request.urlopen(req, timeout=25) as r:
+            with opener.open(req, timeout=25) as r:
                 server = r.headers.get("server", "?")
-                print(f"  ok   {r.status} {label:<24} served by {server}")
+                if 300 <= r.status < 400:
+                    print(f"  ok   {r.status} {label:<24} -> {r.headers.get('location','?')}")
+                else:
+                    print(f"  ok   {r.status} {label:<24} served by {server}")
+        except urllib.error.HTTPError as e:
+            if 300 <= e.code < 400:
+                print(f"  ok   {e.code} {label:<24} -> {e.headers.get('location','?')}")
+            else:
+                bad += 1
+                print(f"  FAIL {e.code} {label:<24} {e}")
         except Exception as e:
             bad += 1
             print(f"  FAIL     {label:<24} {e}")
@@ -101,7 +136,8 @@ def check_sites():
 
 def raw():
     subs = ["", "www", "mail", "webmail", "ftp", "cpanel", "send", "_dmarc",
-            "resend._domainkey", "litesrv._domainkey", "default._domainkey"]
+            "resend._domainkey", "litesrv._domainkey", "default._domainkey",
+            "fm1._domainkey", "fm2._domainkey", "fm3._domainkey"]
     for domain in EXPECTED:
         print(f"\n########## {domain} ##########")
         for sub in subs:
