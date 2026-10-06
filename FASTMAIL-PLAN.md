@@ -417,8 +417,7 @@ accountant. Check this before assuming the migration is invisible to him.
 
 ### Still to do
 
-- flipbikes.co.nz: same two MX records, demote its HostPapa MX to 30, and set
-  `v=spf1 include:spf.messagingengine.com include:_spf.hostedemail.com ~all`
+- ~~flipbikes.co.nz~~ **DONE 6 Oct** — see below
 - Watch for several days
 - Turn off the Gmail copy rule once Craig is settled
 - Cancel HostPapa last, and only then drop `include:_spf.hostedemail.com` and
@@ -463,3 +462,36 @@ None of this matters once Craig reads Fastmail directly. Adding the account to
 his phone takes a couple of minutes and removes the rule, the duplicates and the
 dependency on his Gmail in one go. Worth doing before the HostPapa catch-all is
 retired, since that is the last fallback path still standing.
+
+## CUTOVER DONE — flipbikes.co.nz, 6 Oct 2026
+
+Verified at ns1, ns2, 1.1.1.1 and 8.8.8.8:
+
+    MX    10  us1-smtp.messagingengine.com
+    MX    20  us2-smtp.messagingengine.com
+    TXT   v=spf1 include:spf.messagingengine.com include:_spf.hostedemail.com ~all
+
+**The HostPapa MX was DELETED here, not demoted — the opposite of betterservice,
+and deliberately so.**
+
+The deciding detail is what the old server does when it receives something.
+flipbikes' catch-all is `:fail: No Such User Here`, so HostPapa rejects every
+address on that domain. Left in place as a priority-30 fallback it would turn a
+temporary Fastmail outage into permanent bounces: mail drops to the fallback,
+gets a hard rejection, and bounces to the sender. With no fallback at all the
+sending server simply queues and retries Fastmail later, which is what you want.
+
+On betterservice the opposite holds — its catch-all *accepts* and forwards to
+Craig's Gmail, so as a fallback it earns its place and was demoted to 30 rather
+than deleted.
+
+Same operation, opposite correct answer. Worth remembering: a backup MX is only
+worth having if the backup actually accepts mail.
+
+**This cutover could not break anything.** flipbikes has never received mail —
+no mailboxes, no forwarders, everything rejected. Pointing its MX at Fastmail is
+purely additive: `sales@`, `admin@` and `noreply@` start working for the first
+time. It also removes the small deliverability risk on the contact form, whose
+From address (`noreply@flipbikes.co.nz`) previously hard-bounced.
+
+**Both domains are now on Fastmail.**
