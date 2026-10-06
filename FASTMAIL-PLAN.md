@@ -530,3 +530,52 @@ wrong and it is worth chasing. Until then, judge by delivered mail.
 
 flipbikes' detail page in full: *"Your domain is correctly set up to send and
 receive mail!"* — MX, DKIM and SPF all green.
+
+## The copy rule was the only path — re-enabled 6 Oct, 9pm
+
+**Resolved: there was no second path.** The rule was switched off at about 3pm
+on the assumption one existed. Craig reported "emails not working" that evening.
+
+Mail was never broken. Fastmail received fourteen real messages across the day
+and kept receiving them all evening — accountant, Bayride statement, ATV World
+invoice, a trade appraisal, Stripe, Trade Me, ATV City. DNS, MX, SPF and DKIM
+all checked clean throughout. **What broke was Craig's view of it**, because he
+reads Gmail and the rule was the only thing putting mail there.
+
+He did not notice for six hours. Silence looks like a quiet evening. That is the
+whole reason this failure mode was worth flagging in advance, and it played out
+exactly as written.
+
+Rule re-enabled. **Rules apply only to newly arriving mail**, so everything
+between roughly 3pm and 9pm is in Fastmail and will never appear in his Gmail:
+
+    15:29  ATV WORLD LIMITED      invoice attached
+    15:56  Brett Turnbull         2020 Honda TRX420FA2 trade appraisal
+    16:45  Bayride                clutch order confirmed
+    18:08  Trade Me
+    19:36  Wurth NZ               survey
+    19:38  Stripe                 verification link (time-limited)
+    20:15  Trade Me               auction closing in 24h
+    20:57  Stripe                 verification link (time-limited)
+    21:01  ATV City
+    21:02  Craig                  his own test
+
+Craig has to open Fastmail webmail once to catch up on those. The two Stripe
+links have probably expired and will need requesting again.
+
+### What the duplicates actually were — still a hypothesis
+
+The best fit: Craig's Gmail is fetching the old HostPapa mailbox over POP as
+well as receiving the forwarded copy, which would have doubled everything while
+HostPapa still received mail. With the MX now on Fastmail that path is dry,
+which is why removing the rule left nothing.
+
+**Test it before switching the rule off again**: Gmail → Settings → Accounts →
+"Check mail from other accounts". If HostPapa is listed there, that was it.
+
+### The actual fix
+
+Put Fastmail on Craig's phone. Until he can read the mailbox directly, that rule
+is load-bearing and must not be switched off again — not on a hypothesis, not
+to stop duplicates, not for any reason short of him confirming he can see his
+mail somewhere else.
