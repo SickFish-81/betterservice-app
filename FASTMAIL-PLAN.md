@@ -385,10 +385,9 @@ After the cutover, with mail demonstrably arriving, Fastmail still reports:
           Messages sent to this domain will not come to Fastmail."
     SPF  "SPF is not configured!"
 
-Both are false. It is a conformance check, not a functional one: it wants its
-own two MX records and nothing else, and its own SPF string verbatim. A third MX
-at priority 30 and an SPF line carrying MailerLite both make it go red. DKIM
-reads correct because that is the one thing it wrote itself.
+Both are false — mail was demonstrably arriving. **The explanation was tested on
+6 Oct once flipbikes went live, and it is half right. See the correction below
+before relying on it.**
 
 **Do not act on that panel.** Judge by delivered mail. Noted here so nobody
 "fixes" a working setup by pasting Fastmail's generic records over the top —
@@ -495,3 +494,39 @@ time. It also removes the small deliverability risk on the contact form, whose
 From address (`noreply@flipbikes.co.nz`) previously hard-bounced.
 
 **Both domains are now on Fastmail.**
+
+## Correction: what Fastmail's status panel actually objects to
+
+flipbikes going live gave a clean controlled comparison, because the two domains
+differ in exactly the ways that matter.
+
+    flipbikes      2 MX (Fastmail only)      ->  "Active. MX records set."
+    betterservice  3 MX (+ HostPapa at 30)   ->  "Not yet active."
+
+**The MX half of the theory is confirmed.** Fastmail marks a domain inactive if
+*any* MX record it did not specify is present, even a lower-priority fallback
+that never receives anything. Nothing is wrong with betterservice; the panel is
+counting records, not testing delivery.
+
+**The SPF half of the theory was wrong, and should not be repeated.** I claimed
+Fastmail wanted its own SPF string verbatim. flipbikes disproves it — its record
+
+    v=spf1 include:spf.messagingengine.com include:_spf.hostedemail.com ~all
+
+carries an extra include and uses `~all` rather than Fastmail's `?all`, and the
+panel reads **"SPF is correctly configured."** So the checker accepts a
+non-standard SPF quite happily.
+
+Which leaves betterservice's "SPF is not configured!" genuinely unexplained. The
+likeliest reading is that the SPF check is gated behind the domain being active,
+so an inactive domain reports SPF failure regardless — but that is a guess, and
+it is labelled as one here rather than written up as fact a second time.
+
+Nothing suggests a real fault: the record is valid, costs 3 of 10 lookups,
+names Fastmail first, and its near-identical twin passes. **The clean test comes
+free** — when HostPapa is cancelled and that third MX is removed, betterservice
+should flip to Active. If SPF still reads red at that point, something real is
+wrong and it is worth chasing. Until then, judge by delivered mail.
+
+flipbikes' detail page in full: *"Your domain is correctly set up to send and
+receive mail!"* — MX, DKIM and SPF all green.
