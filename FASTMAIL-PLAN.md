@@ -579,3 +579,47 @@ Put Fastmail on Craig's phone. Until he can read the mailbox directly, that rule
 is load-bearing and must not be switched off again — not on a hypothesis, not
 to stop duplicates, not for any reason short of him confirming he can see his
 mail somewhere else.
+
+## Correction: Craig's Apple Mail was on HostPapa all along
+
+7 Oct. Craig reported Apple Mail not retrieving. It is not broken and not
+failing to connect — `mail.betterservice.co.nz` still resolves, to
+`216.40.42.5` on HostPapa, and still accepts his login. It is checking a
+mailbox that no longer receives anything. No error, just nothing. The same
+silent shape as the Gmail problem.
+
+**This contradicts what we recorded on 5 Oct.** Craig said the iPad was on
+Gmail, we took that to mean nothing pointed at HostPapa, and deleted steps 4
+(IMAP import) and 6 (repoint the iPad) on the strength of it. Steps 4 and 6
+existed after all — step 6 especially.
+
+It also explains the 0-byte mailboxes, which we read at the time as "never
+used". A POP client that downloads and clears the server produces exactly that
+reading. **That was the bad scenario flagged on 5 Oct and ruled out on Craig's
+word.** Lesson: a user's description of their own setup is a hypothesis, not a
+reading. The server name in the mail client is the reading.
+
+**Nothing was lost.** HostPapa was never cancelled and no password was reset,
+so his archive is intact locally and the server mailbox was empty regardless.
+
+### Fix
+
+Add the Fastmail account to Apple Mail — **IMAP `imap.fastmail.com` 993 SSL,
+SMTP `smtp.fastmail.com` 465 SSL, username `craig@betterservice.co.nz`** — and
+an **app password**, which Fastmail requires for mail clients; the login
+password will not work. Generated per user under Settings → Privacy & Security
+→ Connected apps → New app password.
+
+**Do not delete or edit Craig's existing Apple Mail account.** If it is POP, his
+entire mail archive is local to it. Add alongside; touch nothing until HostPapa
+is cancelled and he has confirmed his old mail is still visible.
+
+**Still unknown: POP or IMAP.** That decides how careful cancellation has to be.
+Read it off the account in Apple Mail before cancelling anything.
+
+### Noted while in his account
+
+- **No account recovery and no two-step verification set up.** Ben is admin and
+  can reset the password, so this is not critical, but it is worth setting up.
+- **"Logged in sessions: None"** — Craig has never signed in to Fastmail, so he
+  does not have the password. It has to reach him some other way than email.
