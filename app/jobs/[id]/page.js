@@ -70,6 +70,7 @@ export default function JobDetailPage() {
   const [ordDesc, setOrdDesc] = useState("");
   const [ordQty, setOrdQty] = useState("1");
   const [ordCost, setOrdCost] = useState("");
+  const [ordSell, setOrdSell] = useState("");   // optional — overrides the markup when the default isn't right
   const [ordSupplier, setOrdSupplier] = useState("");   // typed name, resolved to an id on save
   const [ordRef, setOrdRef] = useState("");
   const [stopping, setStopping] = useState(null);   // entry awaiting a stop confirmation
@@ -342,12 +343,14 @@ export default function JobDetailPage() {
       if (sErr) { setError(sErr.message); return false; }
       supplierId = sid || null;
     }
+    const sell = ordSell.trim() ? Number(ordSell) : null;
+    if (sell !== null && (!Number.isFinite(sell) || sell < 0)) { setError("Sell price must be a number."); return false; }
     const { error } = await supabase.rpc("add_ordered_part_to_job", {
       p_job_id: id, p_description: ordDesc.trim(), p_qty: q, p_cost: c,
-      p_supplier_id: supplierId, p_supplier_ref: ordRef.trim() || null,
+      p_supplier_id: supplierId, p_supplier_ref: ordRef.trim() || null, p_sell_price: sell,
     });
     if (error) { setError(error.message); return false; }
-    setOrdDesc(""); setOrdQty("1"); setOrdCost(""); setOrdRef(""); setError(null); load();
+    setOrdDesc(""); setOrdQty("1"); setOrdCost(""); setOrdSell(""); setOrdRef(""); setError(null); load();
   }
 
   // Add a part FROM inventory, drawing it down from stock.
@@ -1170,6 +1173,9 @@ export default function JobDetailPage() {
             <label className="w-28 text-xs font-medium text-zinc-600">Cost each
               <input value={ordCost} onChange={(e) => setOrdCost(e.target.value)} type="number" min="0" step="0.01" placeholder="what you paid" className={input} />
             </label>
+            <label className="w-32 text-xs font-medium text-zinc-600">Sell price each
+              <input value={ordSell} onChange={(e) => setOrdSell(e.target.value)} type="number" min="0" step="0.01" placeholder={`default: +${markupPct}%`} className={input} />
+            </label>
           </div>
           <div className="mt-2 flex flex-wrap items-end gap-2">
             <label className="min-w-[10rem] flex-1 text-xs font-medium text-zinc-600">Supplier
@@ -1184,13 +1190,19 @@ export default function JobDetailPage() {
             </label>
             <button type="submit" disabled={orderedPartAction.busy} className={`rounded-lg bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 ${orderedPartAction.className}`}>{orderedPartAction.label("Add part")}</button>
           </div>
-          {Number(ordCost) > 0 && Number(ordQty) > 0 && (
-            <p className="mt-2 text-xs text-zinc-500">
-              Charged at ${(Math.round(Number(ordCost) * (1 + markupPct / 100) * 100) / 100).toFixed(2)} each
-              {Number(ordQty) !== 1 && <> · {ordQty} × = ${(Math.round(Number(ordCost) * (1 + markupPct / 100) * 100) / 100 * Number(ordQty)).toFixed(2)}</>}
-              {" "}(cost +{markupPct}%), before GST
-            </p>
-          )}
+          {Number(ordCost) > 0 && Number(ordQty) > 0 && (() => {
+            const hasOverride = ordSell.trim() !== "" && Number.isFinite(Number(ordSell)) && Number(ordSell) >= 0;
+            const each = hasOverride
+              ? Math.round(Number(ordSell) * 100) / 100
+              : Math.round(Number(ordCost) * (1 + markupPct / 100) * 100) / 100;
+            return (
+              <p className="mt-2 text-xs text-zinc-500">
+                Charged at ${each.toFixed(2)} each
+                {Number(ordQty) !== 1 && <> · {ordQty} × = ${(each * Number(ordQty)).toFixed(2)}</>}
+                {" "}{hasOverride ? "(sell price set directly)" : `(cost +${markupPct}%)`}, before GST
+              </p>
+            );
+          })()}
         </form>
       )}
 
