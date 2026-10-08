@@ -8,6 +8,7 @@ import { useOwner } from "../RoleContext";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const invNo = (n) => String(n ?? 0).padStart(4, "0");
+const nzDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-NZ") : "");
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState([]);
@@ -209,6 +210,7 @@ export default function InvoicesPage() {
                     <p className="font-medium text-zinc-900">
                       <Link href={`/invoices/${inv.id}`} className="hover:underline">Invoice #{invNo(inv.invoice_number)}</Link>
                       <span className="text-sm font-normal text-zinc-500"> · {money(inv.total)}</span>
+                      {inv.issued_date && <span className="text-sm font-normal text-zinc-400"> · {nzDate(inv.issued_date)}</span>}
                     </p>
                     <p className="truncate text-sm text-zinc-500">
                       {inv.job?.customers?.name || "—"}
