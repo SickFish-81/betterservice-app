@@ -178,6 +178,26 @@ ones whose guard you could accidentally remove.
   under calendar-month periods.
 - **A 2.6 MB invoice PDF that was 2.6 MB of logo.** Two fixes, both needed:
   downscale to target DPI *and* Flate compression.
+- **A tenant's name with a macron stopped an invoice from existing** (10 Oct
+  2026). Rental invoice #01065 is billed to "Mauao Māori wardens". The fourteen
+  fonts built into every PDF reader are WinAnsi-encoded and WinAnsi has no
+  macron vowels, so pdf-lib threw `WinAnsi cannot encode "ā" (0x0101)` before a
+  single thing was drawn and took the whole nightly run with it. Deterministic:
+  it had failed every run since 8 Oct and would have failed forever. The same
+  fault reaches the app from the other side and is worse there — jsPDF does not
+  throw, it drops the character, so the invoice page would have emailed "Mauao
+  Mori wardens" and nothing anywhere would have said so. Chosen **over**
+  flattening names to ASCII on the way in, which was the cheap fix and the
+  wrong one: a customer's name misspelled on their own invoice is not a
+  cosmetic defect, and a shop in Te Puke will meet macrons again. Now a subset
+  of DejaVu Sans is embedded — `lib/pdfFont.js` with `public/fonts/` for the
+  five jsPDF builders, fetched per-function in the three pdf-lib edge functions
+  — and **every draw and every width measurement routes through one sanitiser**,
+  so if the font cannot be had the document still goes out reading "Maori":
+  wrong, but visibly wrong, which beats both throwing and silence. The fonts
+  are *subsets* (17 KB, not 757 KB) because jsPDF embeds whatever you give it
+  whole, in every document — which is the 2.6 MB trap above, reappearing.
+  `lib/FONTS.md` says what is in them and how to regenerate them.
 - **Photo uploads had never worked in either bucket, ever** — the buckets granted
   INSERT and DELETE but not SELECT, and `RETURNING *` needs SELECT.
 - **Invoices were addressed to the person, not the company that pays.**

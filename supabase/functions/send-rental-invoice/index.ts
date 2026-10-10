@@ -64,15 +64,79 @@ function applyTemplate(tpl: unknown, vars: Record<string, unknown>) {
     Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k] ?? "") : `{${k}}`);
 }
 
+// The fourteen built-in PDF fonts are encoded in WinAnsi, which has no macron
+// vowels. pdf-lib will not guess: embedFont(StandardFonts.Helvetica) throws on
+// "Māori", and since that happens before anything is drawn, the whole send
+// fails. That is what stranded rental invoice #01065 on 10 Oct 2026, in this
+// function's sibling. A real Unicode font is fetched instead, and pdf-lib
+// subsets it, so only the handful of glyphs actually used ride along.
+//
+// Deliberately duplicated in generate-rental-invoices and send-statements
+// rather than shared: each edge function deploys on its own, and a shared
+// import is one more thing that can break a deploy of a function that sends
+// money documents. If that ever changes, supabase/functions/_shared is the move.
+const FONT_URLS = {
+  regular: "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf",
+  bold: "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-Bold.ttf",
+};
+let FONT_BYTES: { regular: Uint8Array; bold: Uint8Array } | false | null = null;
+async function unicodeFontBytes() {
+  if (FONT_BYTES !== null) return FONT_BYTES;
+  try {
+    const [r, b] = await Promise.all([fetch(FONT_URLS.regular), fetch(FONT_URLS.bold)]);
+    if (!r.ok || !b.ok) throw new Error(`${r.status}/${b.status}`);
+    FONT_BYTES = { regular: new Uint8Array(await r.arrayBuffer()), bold: new Uint8Array(await b.arrayBuffer()) };
+  } catch (_e) {
+    FONT_BYTES = false; // fall back below rather than fail the send
+  }
+  return FONT_BYTES;
+}
+
+// Reduce a string to what WinAnsi can print, for when the font fetch fails.
+// Latin-1 accents (é, ö, ñ) survive — WinAnsi has those. Anything past it keeps
+// its base letter and loses the mark: ā becomes a. Wrong, but readable, and
+// visibly so, which beats throwing and sending nothing.
+function winAnsiSafe(t: unknown) {
+  return String(t ?? "")
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\u2026/g, "...")
+    .replace(/[^\x00-\xFF]/g, (ch) => ch.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, "");
+}
+
 // pdf-lib neither wraps nor paginates, so both are done here.
 async function buildLetterPdf(body: string) {
   const { PDFDocument, StandardFonts } = await import("https://esm.sh/pdf-lib@1.17.1");
   const pdf = await PDFDocument.create();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
+
+  // Assigned in one expression, so the compiler can see a font is always
+  // present: a "possibly undefined" at every measure and draw call would be a
+  // worse bug than the one being fixed.
+  const bytes = await unicodeFontBytes();
+  let embedded: Awaited<ReturnType<typeof pdf.embedFont>> | null = null;
+  if (bytes) {
+    try {
+      // esm.sh hands fontkit back as a default export at runtime, but its type
+      // declaration says namespace, so take whichever is actually there.
+      const mod = await import("https://esm.sh/@pdf-lib/fontkit@1.1.1") as { default?: unknown };
+      pdf.registerFontkit((mod.default ?? mod) as Parameters<typeof pdf.registerFontkit>[0]);
+      embedded = await pdf.embedFont(bytes.regular, { subset: true });
+    } catch (_e) { embedded = null; /* fall through to the built-in */ }
+  }
+  const unicode = embedded !== null;
+  const font = embedded ?? await pdf.embedFont(StandardFonts.Helvetica);
+
+  // Sanitise once, up front: the wrap loop below measures text with
+  // widthOfTextAtSize, which throws on an unencodable character just as
+  // drawText does. Both have to see the same safe string.
+  const text = unicode ? String(body ?? "") : winAnsiSafe(body);
+
   const SIZE = 11, LEAD = 15, LEFT = 50, TOP = 790, BOTTOM = 60, WIDTH = 495;
 
   const lines: string[] = [];
-  for (const para of String(body ?? "").split(/\r?\n/)) {
+  for (const para of text.split(/\r?\n/)) {
     if (!para.trim()) { lines.push(""); continue; }
     let line = "";
     for (const word of para.trim().split(/\s+/)) {

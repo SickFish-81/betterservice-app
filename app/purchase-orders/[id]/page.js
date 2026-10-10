@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import { usePdfFont } from "../../../lib/pdfFont";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -86,6 +87,7 @@ export default function PurchaseOrderDetail() {
     try {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF();
+      await usePdfFont(doc);
       let y = 20;
       doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice ATV", 20, y); y += 7;
       doc.setFontSize(10);

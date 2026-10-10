@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import { usePdfFont } from "../../lib/pdfFont";
 import { PAYMENT_METHODS, DEFAULT_PAYMENT_METHOD } from "../../lib/paymentMethods";
 
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
@@ -105,8 +106,9 @@ export default function CounterSalePage() {
   }
 
   function receipt(sale) {
-    import("jspdf").then(({ jsPDF }) => {
+    import("jspdf").then(async ({ jsPDF }) => {
       const doc = new jsPDF();
+      await usePdfFont(doc);
       let y = 20;
       doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice ATV", 20, y); y += 7;
       doc.setFontSize(10);

@@ -35,20 +35,79 @@ async function logEmail(row: Record<string, unknown>) {
   } catch (_) { /* ignored on purpose */ }
 }
 
+// The fourteen built-in PDF fonts are encoded in WinAnsi, which has no macron
+// vowels, and pdf-lib throws rather than guess — so a single customer named
+// "Ngāti ..." would fail the whole statement run, not just their page. A real
+// Unicode font is fetched instead; pdf-lib subsets it, so only the glyphs
+// actually used are embedded. See lib/FONTS.md.
+//
+// Deliberately duplicated in generate-rental-invoices and send-rental-invoice
+// rather than shared: each edge function deploys on its own.
+const FONT_URLS = {
+  regular: "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf",
+  bold: "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-Bold.ttf",
+};
+let FONT_BYTES: { regular: Uint8Array; bold: Uint8Array } | false | null = null;
+async function unicodeFontBytes() {
+  if (FONT_BYTES !== null) return FONT_BYTES;
+  try {
+    const [r, b] = await Promise.all([fetch(FONT_URLS.regular), fetch(FONT_URLS.bold)]);
+    if (!r.ok || !b.ok) throw new Error(`${r.status}/${b.status}`);
+    FONT_BYTES = { regular: new Uint8Array(await r.arrayBuffer()), bold: new Uint8Array(await b.arrayBuffer()) };
+  } catch (_e) {
+    FONT_BYTES = false; // a statement with flattened names beats no statement
+  }
+  return FONT_BYTES;
+}
+
+// Latin-1 accents survive; anything past it keeps its letter and loses the mark.
+function winAnsiSafe(t: unknown) {
+  return String(t ?? "")
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\u2026/g, "...")
+    .replace(/[^\x00-\xFF]/g, (ch) => ch.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, "");
+}
+
 async function buildStatementPdf(shop: Record<string, string>, g: Record<string, unknown>): Promise<string> {
   const pdf = await PDFDocument.create();
   let page = pdf.addPage([595, 842]);
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+  // Assigned in one expression each, so the compiler can see that a font is
+  // always present: an "is it undefined?" at every drawText call would be a
+  // worse bug than the one being fixed.
+  const bytes = await unicodeFontBytes();
+  let pair: { regular: Awaited<ReturnType<typeof pdf.embedFont>>; bold: Awaited<ReturnType<typeof pdf.embedFont>> } | null = null;
+  if (bytes) {
+    try {
+      // esm.sh hands fontkit back as a default export at runtime, but its type
+      // declaration says namespace, so take whichever is actually there.
+      const mod = await import("https://esm.sh/@pdf-lib/fontkit@1.1.1") as { default?: unknown };
+      pdf.registerFontkit((mod.default ?? mod) as Parameters<typeof pdf.registerFontkit>[0]);
+      pair = {
+        regular: await pdf.embedFont(bytes.regular, { subset: true }),
+        bold: await pdf.embedFont(bytes.bold, { subset: true }),
+      };
+    } catch (_e) { pair = null; /* fall through to the built-ins */ }
+  }
+  const unicode = pair !== null;
+  const font = pair ? pair.regular : await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = pair ? pair.bold : await pdf.embedFont(StandardFonts.HelveticaBold);
+  // Every string reaching the page goes through here, so there is one place to
+  // be right rather than one per drawText call.
+  const txt = (t: unknown) => (unicode ? String(t ?? "") : winAnsiSafe(t));
+
   let y = 800;
-  const draw = (t: string, x: number, size = 10, f = font) => page.drawText(String(t ?? ""), { x, y, size, font: f });
+  const draw = (t: string, x: number, size = 10, f = font) => page.drawText(txt(t), { x, y, size, font: f });
   draw(shop?.business_name || "Betterservice ATV", 40, 18, bold); y -= 22;
   if (shop?.address) { draw(shop.address, 40, 9); y -= 12; }
   if (shop?.phone) { draw(shop.phone, 40, 9); y -= 12; }
   if (shop?.gst_number) { draw("GST: " + shop.gst_number, 40, 9); y -= 12; }
   y -= 8;
   draw("STATEMENT", 40, 14, bold);
-  page.drawText("As at " + new Date().toLocaleDateString("en-NZ"), { x: 420, y, size: 10, font });
+  page.drawText(txt("As at " + new Date().toLocaleDateString("en-NZ")), { x: 420, y, size: 10, font });
   y -= 22;
   draw("To: " + (g.customer_name || ""), 40, 11, bold); y -= 20;
   draw("Invoice", 40, 10, bold); draw("Date", 140, 10, bold); draw("Total", 300, 10, bold); draw("Paid", 380, 10, bold); draw("Owing", 470, 10, bold);
@@ -64,7 +123,11 @@ async function buildStatementPdf(shop: Record<string, string>, g: Record<string,
   draw("Thank you for your business.", 40, 10);
 
   // Shop strapline at the foot of every page, matching the invoice.
-  const tagline = "Betterservice = Better Price = Better Advice = Better Bikes";
+  // Through txt() like everything else: ASCII today, but the invariant that
+  // nothing reaches the page unsanitised should not depend on reading this
+  // literal and checking. widthOfTextAtSize throws on the same characters
+  // drawText does, so both must see the one safe string.
+  const tagline = txt("Betterservice = Better Price = Better Advice = Better Bikes");
   for (const pg of pdf.getPages()) {
     const w = font.widthOfTextAtSize(tagline, 9);
     pg.drawText(tagline, { x: (595 - w) / 2, y: 40, size: 9, font });

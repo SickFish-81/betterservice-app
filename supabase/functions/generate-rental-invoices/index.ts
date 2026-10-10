@@ -98,12 +98,15 @@ async function unicodeFontBytes() {
 // accents so the invoice still goes out, degraded, rather than not at all. A
 // slightly wrong name beats no invoice — but the Unicode path above is the one
 // that should run, and this is why a fetch failure is no longer fatal.
+// Latin-1 accents (é, ö, ñ) survive — WinAnsi has those. Only what lies past it
+// is reduced to its base letter: ā becomes a.
 function winAnsiSafe(t: unknown) {
   return String(t ?? "")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[\u2010-\u2015]/g, "-")
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\u2026/g, "...")
+    .replace(/[^\x00-\xFF]/g, (ch) => ch.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
     .replace(/[^\x20-\x7E\xA0-\xFF]/g, "");
 }
 
@@ -112,21 +115,26 @@ async function buildInvoicePdf(shop: Record<string, string>, inv: Record<string,
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
 
-  let font, bold, unicode = false;
+  // Assigned in one expression each, so the compiler can see that a font is
+  // always present: an "is it undefined?" at every drawText call would be a
+  // worse bug than the one being fixed.
   const bytes = await unicodeFontBytes();
+  let pair: { regular: Awaited<ReturnType<typeof pdf.embedFont>>; bold: Awaited<ReturnType<typeof pdf.embedFont>> } | null = null;
   if (bytes) {
     try {
-      const fontkit = (await import("https://esm.sh/@pdf-lib/fontkit@1.1.1")).default;
-      pdf.registerFontkit(fontkit);
-      font = await pdf.embedFont(bytes.regular, { subset: true });
-      bold = await pdf.embedFont(bytes.bold, { subset: true });
-      unicode = true;
-    } catch (_e) { /* fall through to the built-ins */ }
+      // esm.sh hands fontkit back as a default export at runtime, but its type
+      // declaration says namespace, so take whichever is actually there.
+      const mod = await import("https://esm.sh/@pdf-lib/fontkit@1.1.1") as { default?: unknown };
+      pdf.registerFontkit((mod.default ?? mod) as Parameters<typeof pdf.registerFontkit>[0]);
+      pair = {
+        regular: await pdf.embedFont(bytes.regular, { subset: true }),
+        bold: await pdf.embedFont(bytes.bold, { subset: true }),
+      };
+    } catch (_e) { pair = null; /* fall through to the built-ins */ }
   }
-  if (!unicode) {
-    font = await pdf.embedFont(StandardFonts.Helvetica);
-    bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  }
+  const unicode = pair !== null;
+  const font = pair ? pair.regular : await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = pair ? pair.bold : await pdf.embedFont(StandardFonts.HelveticaBold);
   // Everything drawn goes through here, so the fallback can never throw.
   const txt = (t: unknown) => (unicode ? String(t ?? "") : winAnsiSafe(t));
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { jsPDF } from "jspdf";
 import { supabase } from "../../lib/supabaseClient";
+import { usePdfFont } from "../../lib/pdfFont";
 
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const cnNo = (n) => "CN-" + String(n ?? 0).padStart(5, "0");
@@ -47,8 +48,9 @@ export default function CreditNotesPage() {
     if (iv) { setCustomerId(iv.job_cards?.customer_id || ""); setSubtotal(String(iv.subtotal)); }
   }
 
-  function buildPdf(note, customerName) {
+  async function buildPdf(note, customerName) {
     const doc = new jsPDF();
+    await usePdfFont(doc);
     let y = 20;
     doc.setFontSize(18); doc.text(settings?.business_name || "Betterservice ATV", 20, y); y += 7;
     doc.setFontSize(10); doc.setTextColor(110);
@@ -84,7 +86,7 @@ export default function CreditNotesPage() {
     if (insErr) { setError(insErr.message); setBusy(false); return; }
     try {
       const customerName = row.customers?.name || customers.find((c) => c.id === customerId)?.name;
-      const blob = buildPdf(row, customerName).output("blob");
+      const blob = (await buildPdf(row, customerName)).output("blob");
       const month = new Date(row.created_at).toISOString().slice(0, 7);
       const path = `credit-notes/${month}/CN-${String(row.credit_note_number).padStart(5, "0")}-${Date.now()}.pdf`;
       const { error: upErr } = await supabase.storage.from("invoices").upload(path, blob, { contentType: "application/pdf" });
