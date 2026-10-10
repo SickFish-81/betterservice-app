@@ -66,14 +66,72 @@ function applyTemplate(tpl: unknown, vars: Record<string, unknown>) {
 }
 
 
+// A TAX INVOICE HAS TO SPELL THE CUSTOMER'S NAME RIGHT.
+//
+// pdf-lib's built-in Helvetica is WinAnsi-encoded and THROWS on anything outside
+// it. On 8 Oct 2026 that killed invoice #01065 outright — the tenant is "Mauao
+// Māori wardens", and `WinAnsi cannot encode "ā" (0x0101)` took
+// the whole run down before the PDF was filed. In this country a macron in a
+// customer's name is ordinary, not an edge case.
+//
+// So the fonts are embedded instead, which supports the full Latin range. They
+// are fetched once per cold start and reused. Subsetting keeps the file small —
+// a one-page invoice comes out around 14 KB with both weights embedded.
+const FONT_URLS = {
+  regular: "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf",
+  bold: "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-Bold.ttf",
+};
+let FONT_BYTES: { regular: Uint8Array; bold: Uint8Array } | false | null = null;
+async function unicodeFontBytes() {
+  if (FONT_BYTES !== null) return FONT_BYTES;
+  try {
+    const [r, b] = await Promise.all([fetch(FONT_URLS.regular), fetch(FONT_URLS.bold)]);
+    if (!r.ok || !b.ok) throw new Error(`${r.status}/${b.status}`);
+    FONT_BYTES = { regular: new Uint8Array(await r.arrayBuffer()), bold: new Uint8Array(await b.arrayBuffer()) };
+  } catch (_e) {
+    FONT_BYTES = false; // fall back below rather than fail the invoice
+  }
+  return FONT_BYTES;
+}
+
+// Last resort, used ONLY if the fonts can't be fetched or embedded. Strips the
+// accents so the invoice still goes out, degraded, rather than not at all. A
+// slightly wrong name beats no invoice — but the Unicode path above is the one
+// that should run, and this is why a fetch failure is no longer fatal.
+function winAnsiSafe(t: unknown) {
+  return String(t ?? "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, "");
+}
+
 async function buildInvoicePdf(shop: Record<string, string>, inv: Record<string, unknown>, customer: Record<string, string>, lines: Record<string, unknown>[]) {
   const { PDFDocument, StandardFonts } = await import("https://esm.sh/pdf-lib@1.17.1");
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([595, 842]);
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+  let font, bold, unicode = false;
+  const bytes = await unicodeFontBytes();
+  if (bytes) {
+    try {
+      const fontkit = (await import("https://esm.sh/@pdf-lib/fontkit@1.1.1")).default;
+      pdf.registerFontkit(fontkit);
+      font = await pdf.embedFont(bytes.regular, { subset: true });
+      bold = await pdf.embedFont(bytes.bold, { subset: true });
+      unicode = true;
+    } catch (_e) { /* fall through to the built-ins */ }
+  }
+  if (!unicode) {
+    font = await pdf.embedFont(StandardFonts.Helvetica);
+    bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  }
+  // Everything drawn goes through here, so the fallback can never throw.
+  const txt = (t: unknown) => (unicode ? String(t ?? "") : winAnsiSafe(t));
+
   let y = 800;
-  const draw = (t: unknown, x: number, size = 10, f = font) => page.drawText(String(t ?? ""), { x, y, size, font: f });
+  const draw = (t: unknown, x: number, size = 10, f = font) => page.drawText(txt(t), { x, y, size, font: f });
 
   draw(shop?.business_name || "Betterservice ATV", 40, 18, bold); y -= 22;
   if (shop?.address) { draw(shop.address, 40, 9); y -= 12; }
@@ -82,9 +140,9 @@ async function buildInvoicePdf(shop: Record<string, string>, inv: Record<string,
   y -= 10;
 
   draw("TAX INVOICE " + invNo(inv.invoice_number), 40, 14, bold);
-  page.drawText("Issued " + nzDate(inv.issued_date), { x: 400, y, size: 10, font });
+  page.drawText(txt("Issued " + nzDate(inv.issued_date)), { x: 400, y, size: 10, font });
   y -= 16;
-  page.drawText("Due " + nzDate(inv.due_date), { x: 400, y, size: 10, font });
+  page.drawText(txt("Due " + nzDate(inv.due_date)), { x: 400, y, size: 10, font });
   y -= 20;
 
   // Addressed to whoever pays. A unit let to a business is invoiced to the
@@ -119,6 +177,24 @@ async function buildInvoicePdf(shop: Record<string, string>, inv: Record<string,
   if (shop?.bank_account) { draw("Bank account: " + shop.bank_account, 40, 10); y -= 14; }
   draw("Thank you.", 40, 10);
   return await pdf.saveAsBase64();
+}
+
+// Build the invoice PDF and file it in storage, returning the path that goes in
+// invoices.pdf_url. THROWS on any failure (pdf-lib failing to load, storage
+// refusing the upload) so callers decide what a failure means. Used both when an
+// invoice is first prepared and when an earlier run left one without a PDF.
+async function fileInvoicePdf(shop: Record<string, string>, inv: Record<string, any>, customer: Record<string, string>, period: string) {
+  const lr = await sb(`/rest/v1/invoice_line_items?invoice_id=eq.${inv.id}&select=description,amount&order=sort.asc`);
+  const lines = lr.ok ? await lr.json() : [];
+  const pdf64 = await buildInvoicePdf(shop, inv, customer || {}, Array.isArray(lines) ? lines : []);
+  const path = `invoices/${String(period).slice(0, 7)}/rent-${inv.invoice_number}-${Date.now()}.pdf`;
+  const up = await fetch(`${SUPABASE_URL}/storage/v1/object/invoices/${path}`, {
+    method: "POST",
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/pdf" },
+    body: Uint8Array.from(atob(pdf64), (c) => c.charCodeAt(0)),
+  });
+  if (!up.ok) throw new Error(`storage said ${up.status}`);
+  return path;
 }
 
 Deno.serve(async (req) => {
@@ -182,18 +258,17 @@ Deno.serve(async (req) => {
       const inv = await r.json();
       if (!inv || !inv.id) continue; // not billable, or already invoiced
 
-      const lines = await (await sb(`/rest/v1/invoice_line_items?invoice_id=eq.${inv.id}&select=description,amount`)).json();
-      const pdf64 = await buildInvoicePdf(shop, inv, ag.customers || {}, Array.isArray(lines) ? lines : []);
-
-      // File the shop's copy.
-      const path = `invoices/${period.slice(0, 7)}/rent-${inv.invoice_number}-${Date.now()}.pdf`;
-      const up = await fetch(`${SUPABASE_URL}/storage/v1/object/invoices/${path}`, {
-        method: "POST",
-        headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/pdf" },
-        body: Uint8Array.from(atob(pdf64), (c) => c.charCodeAt(0)),
-      });
-      const filed = up.ok ? path : null;
-      if (!up.ok) problems.push(`${who}: PDF not filed (${up.status})`);
+      // File the shop's copy. A failure here (pdf-lib not loading, storage hiccup)
+      // used to throw out of the whole run, leaving the invoice created with no PDF
+      // and no email to Craig — and the next run could not fix it, because the
+      // period was already invoiced. 8 Oct 2026: #01065 was left like that. Now a
+      // failure is recorded and the run carries on; the repair pass below retries it.
+      let filed: string | null = null;
+      try {
+        filed = await fileInvoicePdf(shop, inv, ag.customers || {}, period);
+      } catch (e) {
+        problems.push(`${who}: PDF not filed (${String(e)}) — it will be retried on the next run`);
+      }
 
       // NOTHING IS SENT HERE ANY MORE.
       //
@@ -213,6 +288,39 @@ Deno.serve(async (req) => {
       if (!ag.customers?.email) problems.push(`${who}: no email address on file — fix that before approving`);
 
       done.push({ period, covers, who, invoice: invNo(inv.invoice_number), total: money(inv.total), email: ag.customers?.email || null });
+    }
+
+    // REPAIR: an unsent rent invoice with no filed PDF can never be sent —
+    // send-rental-invoice emails the filed PDF and refuses without one — and the
+    // error it gives ("re-run the rent job") used to be a dead end, because the
+    // job only prepares periods that haven't been invoiced yet. This pass makes
+    // that advice true: every run files any missing PDF. Idempotent, and it never
+    // sends anything.
+    const repaired: string[] = [];
+    {
+      const m = await sb(
+        "/rest/v1/invoices?kind=eq.rental&sent=eq.false&pdf_url=is.null&status=not.in.(Paid,Credited)&select=id,invoice_number,issued_date,due_date,period_start,subtotal,gst,total,rental_agreement_id"
+      );
+      const missing = m.ok ? await m.json() : [];
+      for (const inv of Array.isArray(missing) ? missing : []) {
+        const ag = byId.get(inv.rental_agreement_id) as Record<string, any> | undefined;
+        const who = `${ag?.rental_units?.name || "unit"} / ${ag?.customers?.name || "tenant"}`;
+        if (dry) { repaired.push(`${invNo(inv.invoice_number)} ${who} — PDF missing, would be filed`); continue; }
+        try {
+          const filed = await fileInvoicePdf(shop, inv, ag?.customers || {}, String(inv.period_start || inv.issued_date || new Date().toISOString()));
+          const p = await sb(`/rest/v1/invoices?id=eq.${inv.id}`, {
+            method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ pdf_url: filed }),
+          });
+          if (!p.ok) throw new Error(`couldn't record it (${p.status})`);
+          repaired.push(`${invNo(inv.invoice_number)} ${who}`);
+          // Already listed by the loop above if it was prepared this very run.
+          if (!done.some((d) => d.invoice === invNo(inv.invoice_number))) {
+            done.push({ covers: periodLabel(inv.period_start, inv.period_start), who: `${who} (PDF was missing, now filed)`, invoice: invNo(inv.invoice_number), total: money(inv.total), email: ag?.customers?.email || null });
+          }
+        } catch (e) {
+          problems.push(`${invNo(inv.invoice_number)} ${who}: PDF still missing (${String(e)})`);
+        }
+      }
     }
 
     // Anything held on an earlier run and STILL not approved. This is the
@@ -263,7 +371,7 @@ Deno.serve(async (req) => {
     }
 
     if (dry) {
-      return json({ ok: true, dry: true, due: due.length, wouldPrepare: done, unsentJobInvoices: unsentJobs, problems });
+      return json({ ok: true, dry: true, due: due.length, wouldPrepare: done, wouldRepair: repaired, unsentJobInvoices: unsentJobs, problems });
     }
     if (due.length === 0 && done.length === 0 && overdue.length === 0 && unsentJobs.length === 0) {
       return json({ ok: true, note: "Nothing due, nothing waiting, nothing unsent.", generated: 0 });
@@ -313,7 +421,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    return json({ ok: true, dry, due: due.length, generated: done.length, held: done.length, awaiting_approval: waiting.length, overdue: overdue.length, unsentJobInvoices: unsentJobs.length, done, problems });
+    return json({ ok: true, dry, due: due.length, generated: done.length - repaired.length, repaired, held: done.length, awaiting_approval: waiting.length, overdue: overdue.length, unsentJobInvoices: unsentJobs.length, done, problems });
   } catch (e) {
     return json({ error: String(e) }, 500);
   }
