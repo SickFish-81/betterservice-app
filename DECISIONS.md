@@ -204,6 +204,28 @@ ones whose guard you could accidentally remove.
 - **Backend functions leaked customer data to anyone holding the public key** —
   and then the grants that fixed it silently reverted, which is why they're now
   recorded in a migration rather than set in the dashboard.
+- **And it happened a third time, by a new mechanism** (10 Oct 2026). `anon` —
+  anyone holding the publishable key, which ships in the browser bundle — could
+  read `invoices_unsent`: invoice numbers, totals, issue dates, **customer names
+  and customer email addresses**. Also `staff_push_status`. The tables were never
+  at fault; every one of them has RLS on, has policies, and grants anon nothing.
+  A view runs with its OWNER's privileges unless you set `security_invoker`, and
+  **`create or replace view` resets a view's options when none are given**. 0066
+  set `with (security_invoker = true)`; 0072 set it again; 0073 — a migration
+  about draft invoices — recreated the view without it and removed the
+  protection with no error and no warning. Nine days. Closed by 0076, which
+  uses `alter view ... set` so the view's SQL is untouched. **If you ever
+  recreate one of these views, repeat the `with` clause: leaving it off is a
+  revert, not a no-op.**
+- **`revoke ... from anon` does nothing on a function, and tells you nothing.**
+  Found 10 Oct 2026 while writing 0076, by its own closing assertions, which
+  failed and rolled the whole thing back. Postgres grants EXECUTE on every new
+  function to PUBLIC, so the ACL reads `=X/postgres` — the empty grantee IS
+  PUBLIC — and PUBLIC includes anon. Revoking the named roles changes nothing
+  and raises no error. It has to be `from public, anon`. `is_owner()` was
+  already correct and has no PUBLIC line; that is the shape to match. The wider
+  lesson: **a migration that tightens permissions should assert the tightening
+  in the same transaction**, or you cannot tell a fix from a no-op.
 - **Mechanics could see what the shop owes its suppliers** (19 Sep). Caused by
   the dashboard rework the day before: `attention_summary()` is gated on
   `is_approved_staff()`, **not** on owner, so the database hands those numbers to
