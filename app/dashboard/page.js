@@ -100,9 +100,21 @@ export default function Dashboard() {
     if (!owner) return;
     (async () => {
       const [uns, unpaid, rent, flip] = await Promise.all([
-        supabase.from("invoices").select("id", { count: "exact", head: true }).eq("kind", "atv").eq("sent", false),
+        // Counted through invoices_unsent, NOT by re-querying `invoices` here.
+        //
+        // This row used to say "8 invoices raised but not sent" while the
+        // Emails page said 1, and the Emails page was right: seven of the
+        // eight were already PAID in person. The customer never got their
+        // copy, which is a tidiness problem, not money anyone is waiting on —
+        // and a red 8 that nobody can action is how a dashboard teaches people
+        // to ignore it.
+        //
+        // The view already encodes what "still needs sending" means: finalised,
+        // not sent, and not already Paid or Credited. Asking it directly means
+        // the badge and the Emails page cannot disagree again.
+        supabase.from("invoices_unsent").select("invoice_id", { count: "exact", head: true }).eq("kind", "atv"),
         supabase.from("invoices").select("total").eq("sent", true).not("status", "in", "(Paid,Credited)"),
-        supabase.from("invoices").select("id", { count: "exact", head: true }).eq("kind", "rental").eq("sent", false),
+        supabase.from("invoices_unsent").select("invoice_id", { count: "exact", head: true }).eq("kind", "rental"),
         // Counted here rather than in attention_summary() on purpose: that
         // function is gated on is_approved_staff(), so a count added there
         // would reach every mechanic. flip_orders carries customer names,
@@ -145,7 +157,7 @@ export default function Dashboard() {
   // than shown as a zero — a row of noughts is just something else to read past.
   const attention = [
     unread && { href: "/notifications", n: unread, text: `Job${unread === 1 ? "" : "s"} sent to you`, meta: "not opened yet" },
-    counts.unsent && { href: "/invoices", n: counts.unsent, text: `Invoice${counts.unsent === 1 ? "" : "s"} raised but not sent`, meta: "not with the customer yet" },
+    counts.unsent && { href: "/emails", n: counts.unsent, text: `Invoice${counts.unsent === 1 ? "" : "s"} still to send`, meta: "unpaid and not with the customer" },
     counts.flip && { href: "/flip-orders", n: counts.flip, text: `FLIP order${counts.flip === 1 ? "" : "s"} to pack`, meta: "paid, not sent yet" },
     att?.jobs_ready && { href: "/jobs", n: att.jobs_ready, text: `Job${att.jobs_ready === 1 ? "" : "s"} ready to invoice` },
     counts.rent && { href: "/rentals", n: counts.rent, text: `Rent invoice${counts.rent === 1 ? "" : "s"} awaiting approval` },
