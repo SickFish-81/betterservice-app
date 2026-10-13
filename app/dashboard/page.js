@@ -52,6 +52,7 @@ const GROUPS = [
       { href: "/bookings", title: "Booking Requests", badge: "bookings", ownerOnly: true },
       { href: "/rentals", title: "Rentals", badge: "rent", ownerOnly: true },
       { href: "/secondhand", title: "For Sale", ownerOnly: true },
+      { href: "/flip-orders", title: "FLIP Orders", badge: "flip", ownerOnly: true },
       { href: "/staff", title: "Staff", ownerOnly: true },
       { href: "/settings", title: "Shop Settings", ownerOnly: true },
     ],
@@ -66,6 +67,8 @@ export default function Dashboard() {
   const [unsent, setUnsent] = useState(0);
   const [unpaidTotal, setUnpaidTotal] = useState(0);
   const [rentWaiting, setRentWaiting] = useState(0);
+  // Orders the online shop has taken and nobody has packed yet.
+  const [flipToPack, setFlipToPack] = useState(0);
   const owner = useOwner();
   const router = useRouter();
 
@@ -85,14 +88,21 @@ export default function Dashboard() {
   useEffect(() => {
     if (!owner) return;
     (async () => {
-      const [uns, unpaid, rent] = await Promise.all([
+      const [uns, unpaid, rent, flip] = await Promise.all([
         supabase.from("invoices").select("id", { count: "exact", head: true }).eq("kind", "atv").eq("sent", false),
         supabase.from("invoices").select("total").eq("sent", true).not("status", "in", "(Paid,Credited)"),
         supabase.from("invoices").select("id", { count: "exact", head: true }).eq("kind", "rental").eq("sent", false),
+        // Counted here rather than in attention_summary() on purpose: that
+        // function is gated on is_approved_staff(), so a count added there
+        // would reach every mechanic. flip_orders carries customer names,
+        // addresses and order totals, so it stays behind the owner gate —
+        // the same reason `unsent` is counted here and not there.
+        supabase.from("flip_orders").select("session_id", { count: "exact", head: true }).is("packed_at", null),
       ]);
       setUnsent(uns.count || 0);
       setUnpaidTotal((unpaid.data || []).reduce((s, r) => s + Number(r.total || 0), 0));
       setRentWaiting(rent.count || 0);
+      setFlipToPack(flip.count || 0);
     })();
   }, [owner]);
 
@@ -116,12 +126,14 @@ export default function Dashboard() {
     bookings: owner ? att?.bookings_new || 0 : 0,
     unsent: owner ? unsent : 0,
     rent: owner ? rentWaiting : 0,
+    flip: owner ? flipToPack : 0,
   };
 
   // What needs doing, worst first. Anything at zero is left out entirely rather
   // than shown as a zero — a row of noughts is just something else to read past.
   const attention = [
     counts.unsent && { href: "/invoices", n: counts.unsent, text: `Invoice${counts.unsent === 1 ? "" : "s"} raised but not sent`, meta: "not with the customer yet" },
+    counts.flip && { href: "/flip-orders", n: counts.flip, text: `FLIP order${counts.flip === 1 ? "" : "s"} to pack`, meta: "paid, not sent yet" },
     att?.jobs_ready && { href: "/jobs", n: att.jobs_ready, text: `Job${att.jobs_ready === 1 ? "" : "s"} ready to invoice` },
     counts.rent && { href: "/rentals", n: counts.rent, text: `Rent invoice${counts.rent === 1 ? "" : "s"} awaiting approval` },
     counts.bookings && { href: "/bookings", n: counts.bookings, text: `New booking request${counts.bookings === 1 ? "" : "s"}` },

@@ -46,6 +46,7 @@ const groups = [
     ownerOnly: true,
     items: [
       { href: "/secondhand", label: "For Sale" },
+      { href: "/flip-orders", label: "FLIP Orders" },
       { href: "/staff", label: "Staff" },
       { href: "/settings", label: "Settings" },
     ],
