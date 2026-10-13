@@ -1,18 +1,25 @@
-// send-dispatch: tell a member of staff about a pick-up — on their phone, and in
-// their inbox.
+// send-dispatch: tell a member of staff about a pick-up — in the app, on their
+// phone, and in their inbox.
 //
 // This replaces send-sms for pick-up dispatch. Texting New Zealand numbers means
 // a telco account, business verification and a monthly bill, for a handful of
 // messages a month; not one text was ever sent. A web push costs nothing and
 // arrives the same way.
 //
-// BOTH channels go, on purpose, because they fail in opposite ways. A push is
-// immediate and impossible to miss, and gone the moment it's swiped away. An
-// email is easy to ignore and still there tomorrow when you're standing in a
-// yard trying to remember which shed. Craig asked for both.
+// THREE channels, in this order, and the order is the point:
 //
-// Neither failing stops the other: a person with no phone registered still gets
-// the email, and a bounced email doesn't cost them the notification.
+//   1. the app   — a row in staff_notifications, written FIRST. This is the
+//                  dispatch. It cannot bounce and it cannot be swiped away.
+//   2. push      — immediate and hard to miss, but gone the moment it's
+//                  dismissed, and only if they ever pressed "Turn on
+//                  notifications" on their own phone.
+//   3. email     — easy to ignore, still there tomorrow when you're standing
+//                  in a yard trying to remember which shed. Craig asked for it.
+//
+// 2 and 3 draw attention to 1. They are not the message. Both can fail quietly
+// — bjorn@ and peni@ were never created in Fastmail, so mail to them is
+// rejected outright, and nobody but Ben has turned push on — and the dispatch
+// still lands, because the person sees it when they open the app.
 //
 // Needs: SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, RESEND_API_KEY,
 //        VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT.
@@ -86,6 +93,41 @@ Deno.serve(async (req) => {
 
     const link = url || (jobId ? `/jobs/${jobId}` : "/dashboard");
     const directions = address ? mapsUrl(address) : null;
+
+    // ------------------------------------------------------- the record
+    // FIRST, before either delivery channel is attempted, because this IS the
+    // dispatch. Push and email only draw attention to it.
+    //
+    // Both other channels can fail for reasons nobody notices: a push needs
+    // the person to have pressed "Turn on notifications" on their own phone,
+    // and an email needs an address that exists — bjorn@ and peni@ were never
+    // created in Fastmail, so mail to them is rejected outright. Job #70 was
+    // dispatched to Bjorn on 11 Oct and hard-bounced, and nothing anywhere
+    // recorded that he had been dispatched at all.
+    //
+    // Now a dispatch to someone with no phone and no email still lands: they
+    // see it when they open the app, which they do anyway to work the job.
+    let recorded = false;
+    let recordError: string | null = null;
+    try {
+      const r = await sb("/rest/v1/staff_notifications", {
+        method: "POST",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          staff_id: staffId,
+          kind: "pickup_dispatch",
+          title: title || "Pick-up",
+          body: body || null,
+          url: link,
+          address: address || null,
+          job_id: jobId || null,
+        }),
+      });
+      recorded = r.ok;
+      if (!r.ok) recordError = `Could not save it to ${who.name}'s notifications (${r.status}).`;
+    } catch (e) {
+      recordError = `Could not save it to ${who.name}'s notifications: ${String((e as Error)?.message ?? e)}`;
+    }
 
     // ---------------------------------------------------------------- push
     let pushed = 0;
@@ -176,7 +218,11 @@ Deno.serve(async (req) => {
     // pressed the button exactly which half landed, because "it says sent" is
     // what caused this whole line of work in the first place.
     return json({
-      ok: pushed > 0 || emailed,
+      // The dispatch counts as delivered if it was RECORDED. A push that was
+      // swiped away and an email nobody opened were never proof of anything;
+      // the notification sitting in the app is.
+      ok: recorded || pushed > 0 || emailed,
+      recorded, recordError,
       name: who.name,
       devices, pushed, pushErrors,
       emailed, emailTo: emailed ? to : null, emailError,

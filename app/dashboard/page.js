@@ -29,6 +29,7 @@ const GROUPS = [
     name: "Workshop",
     items: [
       { href: "/jobs", title: "Job Cards", primary: true },
+      { href: "/notifications", title: "My Notifications", badge: "mine" },
       { href: "/search", title: "Search" },
       { href: "/parts", title: "Parts & Inventory", badge: "low_stock" },
       { href: "/due", title: "Due For Service", badge: "service_due" },
@@ -61,6 +62,9 @@ const GROUPS = [
 
 export default function Dashboard() {
   const [att, setAtt] = useState(null);
+  // Unread notifications addressed to ME. Not owner-gated — everybody has
+  // their own list, and RLS only ever returns your own rows.
+  const [unread, setUnread] = useState(0);
   // Two things the database summary doesn't carry: invoices raised and never
   // sent, and what the unpaid ones come to. Both are money questions, so both
   // are owner-only.
@@ -82,6 +86,13 @@ export default function Dashboard() {
     (async () => {
       const { data } = await supabase.rpc("attention_summary");
       if (data && data.length) setAtt(data[0]);
+    })();
+    (async () => {
+      const { count } = await supabase
+        .from("staff_notifications")
+        .select("id", { count: "exact", head: true })
+        .is("read_at", null);
+      setUnread(count || 0);
     })();
   }, []);
 
@@ -120,6 +131,7 @@ export default function Dashboard() {
   // disagree about who is allowed to see it. Stock and service counts are not
   // money and stay open; their pages are open to all staff too.
   const counts = {
+    mine: unread,
     low_stock: att?.low_stock || 0,
     service_due: att?.service_due || 0,
     bills: owner ? att?.bills_count || 0 : 0,
@@ -132,6 +144,7 @@ export default function Dashboard() {
   // What needs doing, worst first. Anything at zero is left out entirely rather
   // than shown as a zero — a row of noughts is just something else to read past.
   const attention = [
+    unread && { href: "/notifications", n: unread, text: `Job${unread === 1 ? "" : "s"} sent to you`, meta: "not opened yet" },
     counts.unsent && { href: "/invoices", n: counts.unsent, text: `Invoice${counts.unsent === 1 ? "" : "s"} raised but not sent`, meta: "not with the customer yet" },
     counts.flip && { href: "/flip-orders", n: counts.flip, text: `FLIP order${counts.flip === 1 ? "" : "s"} to pack`, meta: "paid, not sent yet" },
     att?.jobs_ready && { href: "/jobs", n: att.jobs_ready, text: `Job${att.jobs_ready === 1 ? "" : "s"} ready to invoice` },

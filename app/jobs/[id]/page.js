@@ -727,18 +727,26 @@ export default function JobDetailPage() {
     // Say exactly what happened. "Sent" when half of it failed is the fault
     // that started this whole thread.
     const bits = [];
+    // The in-app notification first, because it is the one that always lands.
+    if (res.recorded) bits.push(`it's in ${picker.name}'s notifications in the app`);
     if (res.pushed > 0) bits.push(`buzzed ${picker.name}'s phone${res.pushed > 1 ? ` (${res.pushed} devices)` : ""}`);
     if (res.emailed) bits.push(`emailed ${res.emailTo}`);
     if (bits.length === 0) {
+      // Only reachable if the database write failed too, which means the
+      // dispatch genuinely did not happen rather than merely not arriving.
       setError(
         `Nothing reached ${picker.name}. ` +
+        (res.recordError ? res.recordError + " " : "") +
         (res.devices === 0 ? "They haven't turned on notifications on their phone yet (Dashboard → Notifications). " : "") +
         (res.emailError ? res.emailError : "")
       );
       return;
     }
+    // Still say what did NOT go, even though the dispatch landed. A phone that
+    // buzzes is the difference between "sees it now" and "sees it next time
+    // they open the app", and Craig is the one who needs to know which.
     const missed =
-      res.devices === 0 ? " No phone is set up for notifications yet." :
+      res.devices === 0 ? " No phone is set up for notifications yet — they'll see it next time they open the app." :
       res.pushed === 0 ? " The phone notification didn't go." :
       !res.emailed && res.emailError ? ` The email didn't go: ${res.emailError}` : "";
     // Whether a map went with it comes from the function's own `mapped`, not
