@@ -38,12 +38,14 @@ export default function NotificationsPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [clearing, setClearing] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error: e } = await supabase
       .from("staff_notifications")
       .select("id, kind, title, body, url, address, job_id, created_at, read_at")
+      .is("dismissed_at", null)
       .order("created_at", { ascending: false })
       .limit(100);
     if (e) setError(e.message);
@@ -67,6 +69,38 @@ export default function NotificationsPage() {
     // already stamped.
   }, [rows.map((r) => (r.read_at ? "" : r.id)).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Clearing hides it from this list for good — there is no undo offered and
+  // none is wanted. The ROW survives, because "was Bjorn actually told about
+  // job #70" is the question this whole table exists to answer, and the person
+  // most likely to clear a dispatch is the one who would rather it had not
+  // been recorded. The database has no delete grant at all, so this cannot
+  // destroy anything even if it tried.
+  async function clearOne(id) {
+    setClearing(id);
+    setError(null);
+    const { error: e } = await supabase
+      .from("staff_notifications")
+      .update({ dismissed_at: new Date().toISOString() })
+      .eq("id", id);
+    setClearing(null);
+    if (e) { setError(e.message); return; }
+    setRows((rs) => rs.filter((r) => r.id !== id));
+  }
+
+  async function clearAll() {
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) return;
+    setClearing("all");
+    setError(null);
+    const { error: e } = await supabase
+      .from("staff_notifications")
+      .update({ dismissed_at: new Date().toISOString() })
+      .in("id", ids);
+    setClearing(null);
+    if (e) { setError(e.message); return; }
+    setRows([]);
+  }
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-6 sm:py-8">
       <h1 className="text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl">My Notifications</h1>
@@ -74,6 +108,16 @@ export default function NotificationsPage() {
 
       {error && (
         <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
+      )}
+
+      {!loading && rows.length > 1 && (
+        <button
+          onClick={clearAll}
+          disabled={clearing === "all"}
+          className="mt-3 text-sm font-medium text-zinc-500 underline hover:text-zinc-800 disabled:opacity-50"
+        >
+          {clearing === "all" ? "Clearing…" : `Clear all ${rows.length}`}
+        </button>
       )}
 
       {loading ? (
@@ -125,6 +169,14 @@ export default function NotificationsPage() {
                   // the one who finds out, in a yard, later.
                   <span className="text-xs italic text-zinc-500">No pick-up address was given.</span>
                 )}
+
+                <button
+                  onClick={() => clearOne(n.id)}
+                  disabled={clearing === n.id}
+                  className="ml-auto font-medium text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
+                >
+                  {clearing === n.id ? "Clearing…" : "Clear"}
+                </button>
               </div>
             </li>
           ))}

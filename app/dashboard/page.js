@@ -91,7 +91,10 @@ export default function Dashboard() {
       const { count } = await supabase
         .from("staff_notifications")
         .select("id", { count: "exact", head: true })
-        .is("read_at", null);
+        .is("read_at", null)
+        // Cleared ones are gone from their list, so they must be gone from the
+        // badge too — a count you cannot act on is how a badge gets ignored.
+        .is("dismissed_at", null);
       setUnread(count || 0);
     })();
   }, []);
