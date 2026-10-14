@@ -41,6 +41,7 @@ const GROUPS = [
     name: "Money",
     items: [
       { href: "/invoices", title: "Invoices", badge: "unsent", ownerOnly: true },
+      { href: "/emails", title: "Emails", badge: "email", ownerOnly: true },
       { href: "/counter-sales", title: "Counter Sale", ownerOnly: true },
       { href: "/bills", title: "Bills To Pay", badge: "bills", ownerOnly: true },
       { href: "/timesheets", title: "Timesheets", ownerOnly: true },
@@ -73,6 +74,11 @@ export default function Dashboard() {
   const [rentWaiting, setRentWaiting] = useState(0);
   // Orders the online shop has taken and nobody has packed yet.
   const [flipToPack, setFlipToPack] = useState(0);
+  // Emails that bounced, failed, or were accepted and never confirmed
+  // delivered. The Emails page has tracked these correctly all along; what it
+  // never had was anything telling someone to go and look. Bjorn's dispatch
+  // bounced on 11 Oct and sat there, correctly recorded, for two days.
+  const [emailTrouble, setEmailTrouble] = useState(0);
   const owner = useOwner();
   const router = useRouter();
 
@@ -102,7 +108,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!owner) return;
     (async () => {
-      const [uns, unpaid, rent, flip] = await Promise.all([
+      const [uns, unpaid, rent, flip, mail] = await Promise.all([
         // Counted through invoices_unsent, NOT by re-querying `invoices` here.
         //
         // This row used to say "8 invoices raised but not sent" while the
@@ -124,11 +130,18 @@ export default function Dashboard() {
         // addresses and order totals, so it stays behind the owner gate —
         // the same reason `unsent` is counted here and not there.
         supabase.from("flip_orders").select("session_id", { count: "exact", head: true }).is("packed_at", null),
+        // email_attention already encodes what "needs looking at" means:
+        // bounced, complained or failed, plus anything accepted more than
+        // half an hour ago that was never confirmed delivered. Asking the
+        // view rather than re-deriving it here is the same lesson the unsent
+        // count taught — two definitions of one thing, and the wrong one wins.
+        supabase.from("email_attention").select("id", { count: "exact", head: true }),
       ]);
       setUnsent(uns.count || 0);
       setUnpaidTotal((unpaid.data || []).reduce((s, r) => s + Number(r.total || 0), 0));
       setRentWaiting(rent.count || 0);
       setFlipToPack(flip.count || 0);
+      setEmailTrouble(mail.count || 0);
     })();
   }, [owner]);
 
@@ -154,6 +167,7 @@ export default function Dashboard() {
     unsent: owner ? unsent : 0,
     rent: owner ? rentWaiting : 0,
     flip: owner ? flipToPack : 0,
+    email: owner ? emailTrouble : 0,
   };
 
   // What needs doing, worst first. Anything at zero is left out entirely rather
@@ -167,6 +181,7 @@ export default function Dashboard() {
     counts.bookings && { href: "/bookings", n: counts.bookings, text: `New booking request${counts.bookings === 1 ? "" : "s"}` },
     owner && att?.invoices_unpaid && { href: "/invoices", n: att.invoices_unpaid, text: `Invoice${att.invoices_unpaid === 1 ? "" : "s"} unpaid`, meta: unpaidTotal ? `${money(unpaidTotal)} owing` : null },
     counts.bills && { href: "/bills", n: counts.bills, text: `Bill${counts.bills === 1 ? "" : "s"} to pay`, meta: owner && att?.bills_total ? `${money(att.bills_total)} owing` : null },
+    counts.email && { href: "/emails", n: counts.email, text: `Email${counts.email === 1 ? "" : "s"} that didn't arrive`, meta: "bounced or never confirmed" },
     counts.low_stock && { href: "/parts", n: counts.low_stock, text: `Part${counts.low_stock === 1 ? "" : "s"} low on stock` },
     counts.service_due && { href: "/due", n: counts.service_due, text: `Machine${counts.service_due === 1 ? "" : "s"} due for a service` },
   ].filter(Boolean);
