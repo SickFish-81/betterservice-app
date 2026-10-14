@@ -50,13 +50,15 @@ export default function FlipOrdersPage() {
 
   // Who is signing orders off. Looked up rather than passed in, because
   // AuthGate shares the role but not the staff row's id.
+  //
+  // Via current_staff_id() rather than a lookup on email: the database matches
+  // user_id first, and matching on email alone meant that clearing someone's
+  // address (which we do when it hard-bounces) left packed_by null and the
+  // sign-off unattributable. See the note in AuthGate.js.
   useEffect(() => {
     (async () => {
-      const { data: s } = await supabase.auth.getSession();
-      const email = s?.session?.user?.email;
-      if (!email) return;
-      const { data } = await supabase.from("staff").select("id").ilike("email", email).limit(1);
-      if (data && data[0]) setStaffId(data[0].id);
+      const { data } = await supabase.rpc("current_staff_id");
+      if (data) setStaffId(data);
     })();
   }, []);
 

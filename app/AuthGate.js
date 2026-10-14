@@ -34,20 +34,41 @@ export default function AuthGate({ children }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Is this signed-in user an approved (active) staff member? The database only
-  // returns a staff row to approved staff, so a returned row === approved.
+  // Is this signed-in user an approved (active) staff member, and an owner?
+  //
+  // Ask the DATABASE. It owns this rule and nothing else should hold a copy.
+  //
+  // This used to be a `staff` lookup matched on email, under a comment claiming
+  // the database did the deciding. It didn't. The database matches
+  // `user_id = auth.uid()` FIRST and falls back to email only for a staff row
+  // with no login linked yet; this matched on email ALONE. Two rules for one
+  // question, and they disagreed in exactly one case: a staff member whose
+  // email address we had cleared.
+  //
+  // We clear it deliberately, when an address hard-bounces, so dispatch stops
+  // firing bounces that wreck sending reputation for every Betterservice email.
+  // The database was checked and tolerated it. This was not. So clearing the
+  // address silently locked the person out of the whole app, and told them
+  // "Awaiting approval" while every database check said they were approved.
+  // That is what happened to Peni on 14 Oct 2026.
+  //
+  // `staff.email` is now only "where do we send this person mail". It no longer
+  // decides who they are.
   useEffect(() => {
     let cancelled = false;
     if (session === undefined) return;
     if (!session) { setApproved(undefined); return; }
     setApproved(undefined);
-    supabase.from("staff").select("active, role").ilike("email", session.user.email).limit(1)
-      .then(({ data }) => {
-        if (cancelled) return;
-        const row = data && data[0];
-        setApproved(!!(row && row.active !== false));
-        setOwner(!!(row && row.role === "owner"));
-      });
+    Promise.all([
+      supabase.rpc("is_approved_staff"),
+      supabase.rpc("is_owner"),
+    ]).then(([a, o]) => {
+      if (cancelled) return;
+      // An error leaves `data` null, so a failed check reads as "not approved"
+      // rather than letting someone through. Fail closed, same as before.
+      setApproved(a.data === true);
+      setOwner(o.data === true);
+    });
     return () => { cancelled = true; };
   }, [session]);
 

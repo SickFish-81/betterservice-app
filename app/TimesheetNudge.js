@@ -26,17 +26,15 @@ export default function TimesheetNudge() {
       if (until && Date.now() < until) { setShow(false); return; }
     } catch (_e) { /* ignore */ }
 
-    const { data: auth } = await supabase.auth.getUser();
-    const email = auth?.user?.email;
-    if (!email) { setShow(false); return; }
-
-    const { data: staff } = await supabase.from("staff").select("id, role").ilike("email", email).limit(1);
-    const me = staff && staff[0];
-    const sid = me && me.id;
+    // Resolved by the database, not by matching on email: a staff member whose
+    // address we had cleared used to resolve to nothing here and silently stop
+    // being nudged. See the note in AuthGate.js.
+    const { data: sid } = await supabase.rpc("current_staff_id");
     if (!sid) { setShow(false); return; }
 
     // Owners don't do timesheets — never nudge them.
-    if (me.role === "owner") { setShow(false); return; }
+    const { data: owner } = await supabase.rpc("is_owner");
+    if (owner === true) { setShow(false); return; }
 
     // Currently clocked on (a running timer)? Then they're already tracking — no nudge.
     const { data: running } = await supabase
