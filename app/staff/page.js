@@ -16,7 +16,7 @@ export default function StaffPage() {
   const [canSend, setCanSend] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [logins, setLogins] = useState({});     // email -> true when an Auth account exists
+  const [logins, setLogins] = useState({});     // staff id -> {sign_in_email, has_login}
   const [newLogin, setNewLogin] = useState(null); // {name,email,password} shown once, never stored
   // The password an owner types for a staff member. Held in component state
   // only, cleared the moment it has been used, and never written anywhere.
@@ -32,9 +32,17 @@ export default function StaffPage() {
       setStaff(data);
       // Which of these people can actually sign in? A staff row with no matching
       // login is the failure that locked Craig out, so surface it rather than hide it.
-      const { data: who } = await supabase.rpc("staff_with_logins");
+      //
+      // Keyed on the STAFF ID, not the email address. It used to be keyed on
+      // email, and the old staff_with_logins() left out anyone whose email was
+      // null — so clearing a bouncing mailbox made this page report that the
+      // person had no login, offer "Create login", and get a 409 back saying
+      // they already had one. Peni, 14 Oct 2026.
+      const { data: who } = await supabase.rpc("staff_login_status");
       const map = {};
-      (who || []).forEach((r) => { if (r.email) map[r.email.toLowerCase()] = r.has_login; });
+      (who || []).forEach((r) => {
+        map[r.staff_id] = { signIn: r.sign_in_email, hasLogin: !!r.has_login };
+      });
       setLogins(map);
     }
     setLoading(false);
@@ -71,8 +79,11 @@ export default function StaffPage() {
 
     setBusy(s.id); setError(null); setNewLogin(null);
     const { data: sess } = await supabase.auth.getSession();
+    // The staff ID, not the address: the function reads the sign-in address out
+    // of the database itself, so this works for someone whose mailbox we have
+    // cleared, and the browser never gets to say who anyone is.
     const { data, error } = await supabase.functions.invoke("create-staff-login", {
-      body: { email: s.email, accessToken: sess?.session?.access_token, password: typed || undefined, mode },
+      body: { staffId: s.id, accessToken: sess?.session?.access_token, password: typed || undefined, mode },
     });
     setBusy("");
     if (error || data?.error) { setError(data?.error || error.message); return; }
@@ -191,12 +202,21 @@ export default function StaffPage() {
                   </label>
                   <div className="flex flex-wrap items-center gap-3">
                     {(() => {
-                      const hasLogin = !!(s.email && logins[s.email.toLowerCase()]);
+                      const status = logins[s.id] || {};
+                      const hasLogin = !!status.hasLogin;
+                      // The address they actually type to sign in, which is not
+                      // always the mailbox: see the note in load().
+                      const signIn = status.signIn || s.email || "";
                       const open = pwFor === s.id;
                       return (
                         <div className="flex flex-wrap items-center gap-2">
                           {hasLogin && (
-                            <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">can sign in</span>
+                            <span
+                              className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700"
+                              title={`Signs in as ${signIn}`}
+                            >
+                              {signIn && signIn !== (s.email || "") ? `can sign in as ${signIn}` : "can sign in"}
+                            </span>
                           )}
                           {open ? (
                             <>
@@ -225,8 +245,17 @@ export default function StaffPage() {
                           ) : (
                             <button
                               onClick={() => { setPwFor(s.id); setPw(""); setError(null); }}
-                              disabled={!s.email}
-                              title={s.email ? (hasLogin ? "Set a new password for them" : "Create their sign-in account") : "Add a login email first"}
+                              // Gated on the SIGN-IN address, not the mailbox.
+                              // Gating on s.email disabled this button for
+                              // exactly the person who needed it: someone whose
+                              // bouncing mailbox we cleared, who still has a
+                              // perfectly good login.
+                              disabled={!signIn}
+                              title={
+                                signIn
+                                  ? (hasLogin ? `Set a new password for ${signIn}` : `Create their sign-in account (${signIn})`)
+                                  : "Add a login email first"
+                              }
                               className={
                                 hasLogin
                                   ? "rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
