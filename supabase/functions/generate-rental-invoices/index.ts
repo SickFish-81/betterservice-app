@@ -31,10 +31,17 @@
 //
 // Call with ?dry=1 to see what it would prepare, without writing anything.
 //
-// Needs: SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET, RESEND_API_KEY.
+// IT ALSO REBUILDS ONE INVOICE'S PDF ON DEMAND (19 Oct 2026). See
+// rebuildOnePdf() at the bottom - it shares fileInvoicePdf() with the nightly
+// run on purpose, so Craig approves the document the tenant will actually get.
+//
+// Needs: SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, CRON_SECRET, RESEND_API_KEY.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+// Only the rebuild path below needs this one - it checks a signed-in owner
+// rather than the cron secret.
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const RESEND = Deno.env.get("RESEND_API_KEY");
 const CRON_SECRET = Deno.env.get("CRON_SECRET");
 
@@ -42,8 +49,15 @@ const money = (n: unknown) => "$" + Number(n || 0).toFixed(2);
 const invNo = (n: unknown) => "#" + String(n).padStart(5, "0");
 const nzDate = (d: unknown) => (d ? new Date(String(d) + "T00:00:00Z").toLocaleDateString("en-NZ", { timeZone: "UTC" }) : "");
 
+// The cron caller doesn't care about CORS; the browser calling the rebuild path
+// below does, so the headers are on every reply rather than only some.
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 function json(o: unknown, status = 200) {
-  return new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(o), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
 async function sb(path: string, opts: RequestInit = {}) {
   return fetch(`${SUPABASE_URL}${path}`, {
@@ -205,8 +219,97 @@ async function fileInvoicePdf(shop: Record<string, string>, inv: Record<string, 
   return path;
 }
 
+// REBUILD ONE INVOICE'S PDF, on demand, for a signed-in owner.
+//
+// This lives here rather than in a function of its own for one reason: the PDF
+// a tenant receives is the one filed by fileInvoicePdf() above, and a second
+// copy of that builder would eventually disagree with this one about layout,
+// about GST, or about macrons. Craig approving an invoice has to be looking at
+// the document that will actually arrive.
+//
+// Why it is needed at all: migration 0084 lets an invoice awaiting approval be
+// corrected, and the database clears pdf_url the moment its money or dates move
+// (trg_invoice_pdf_stale), precisely so a stale PDF can never be emailed. This
+// is what puts a fresh one back, immediately, so Craig can read it before
+// approving instead of waiting for tonight's run.
+//
+// It refuses anything that is not a rent invoice still waiting - the same rule
+// as invoice_adjustable() in the database, asked of the row itself.
+async function rebuildOnePdf(req: Request, invoiceId: string, accessToken: string | null) {
+  const token = accessToken || (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token) return json({ error: "Not signed in." }, 401);
+
+  // AUTHZ: the same gate send-rental-invoice uses. If you may send it, you may
+  // rebuild the paper for it.
+  const chk = await fetch(`${SUPABASE_URL}/rest/v1/rpc/current_staff_can_send`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, apikey: ANON_KEY, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if ((chk.ok ? await chk.json() : false) !== true) {
+    return json({ error: "Not authorised — only an owner who can send invoices can do this." }, 403);
+  }
+
+  const invRes = await sb(
+    `/rest/v1/invoices?id=eq.${invoiceId}&select=id,invoice_number,issued_date,due_date,period_start,subtotal,gst,total,sent,kind,pdf_url,rental_agreement_id`
+  );
+  const inv = (invRes.ok ? await invRes.json() : [])[0];
+  if (!inv) return json({ error: "No such invoice." }, 404);
+  if (inv.kind !== "rental") return json({ error: "Only rent invoices file their PDF before sending." }, 400);
+  if (inv.sent) return json({ error: "That invoice has already been sent — its PDF is the one the tenant has." }, 400);
+
+  const shop = (await (await sb("/rest/v1/shop_settings?id=eq.1&select=*")).json())[0] || {};
+  const agRes = await sb(
+    `/rest/v1/rental_agreements?id=eq.${inv.rental_agreement_id}&select=customers(name,email,address,company_name),rental_units(name)`
+  );
+  const ag = (agRes.ok ? await agRes.json() : [])[0] || {};
+
+  const previous = inv.pdf_url as string | null;
+  let filed: string;
+  try {
+    filed = await fileInvoicePdf(shop, inv, ag.customers || {}, String(inv.period_start || inv.issued_date || new Date().toISOString()));
+  } catch (e) {
+    // Deliberately leaves pdf_url null. send-rental-invoice refuses without one
+    // and tonight's run files it, so the invoice cannot go out carrying the old
+    // figures just because this failed.
+    return json({ error: `Couldn't rebuild the PDF: ${String(e)}. The invoice can't be sent until it has one — tonight's rent run will file it.` }, 500);
+  }
+
+  const p = await sb(`/rest/v1/invoices?id=eq.${inv.id}`, {
+    method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ pdf_url: filed }),
+  });
+  if (!p.ok) return json({ error: `Rebuilt it but couldn't record it (${p.status}).` }, 500);
+
+  // Only now is the superseded file removed. Paths carry a timestamp, so the new
+  // one never overwrote the old - without this they pile up in storage forever.
+  if (previous && previous !== filed) {
+    try {
+      await fetch(`${SUPABASE_URL}/storage/v1/object/invoices/${previous}`, {
+        method: "DELETE", headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+      });
+    } catch (_e) { /* an orphaned PDF is litter, not a fault worth failing on */ }
+  }
+
+  return json({ ok: true, pdfPath: filed, invoice: invNo(inv.invoice_number), total: money(inv.total) });
+}
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok");
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  // Two callers, two gates. The rebuild is asked for by a person and proves it
+  // with their own token; everything below is the nightly job and proves it with
+  // the cron secret. A request carrying neither gets the cron error, as before.
+  if (req.method === "POST") {
+    const body = await req.clone().json().catch(() => ({}));
+    if (body && body.rebuildInvoiceId) {
+      try {
+        return await rebuildOnePdf(req, String(body.rebuildInvoiceId), body.accessToken ?? null);
+      } catch (e) {
+        return json({ error: String(e) }, 500);
+      }
+    }
+  }
+
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
     return json({ error: "Forbidden — set CRON_SECRET and pass it as the x-cron-secret header." }, 403);
   }

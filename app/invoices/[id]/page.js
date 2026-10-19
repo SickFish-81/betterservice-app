@@ -477,10 +477,25 @@ export default function InvoiceViewPage() {
   const fullyCredited = credited > 0 && balance <= 0 && paid <= 0;
   // A draft has no number and owes nothing yet, so "Unpaid" would be a lie.
   const draft = isDraft(invoice);
+
+  // ADJUSTABLE: issued, but not yet SENT - so it can still be corrected.
+  //
+  // This matters more than it looks. isDraft() is "no finalised_at", and NO
+  // invoice in this database has ever had a null finalised_at - they are
+  // finalised the day they are created. So the whole editing panel below was
+  // dead code: the heading "Not issued yet" has never once been on screen.
+  //
+  // Migration 0084 is what makes editing one of these safe, and
+  // invoice_adjustable() in the database is the authority - the same three
+  // conditions, mirrored here only to decide what to show. A save that gets
+  // past this check and shouldn't is still refused by the database.
+  const adjustable =
+    !invoice.sent && paid <= 0 && credited <= 0 && invoice.status !== "Credited";
+  const editable = draft || adjustable;
   // Only a WORKSHOP invoice can be edited here: its lines live on the job card.
-  // Rent and hireage are issued the moment they are generated, so they are never
-  // drafts, and their lines belong to the invoice itself.
-  const canEditLines = draft && !!invoice.job_card_id;
+  // Rent lines belong to the invoice itself and are corrected on
+  // Rentals > Awaiting approval, where the PDF is rebuilt at the same time.
+  const canEditLines = editable && !!invoice.job_card_id;
   const status = draft ? "Draft"
     : fullyCredited ? "Credited" : balance <= 0 ? "Paid" : paid > 0 || credited > 0 ? "Part paid" : "Unpaid";
   const statusTone = draft
@@ -592,10 +607,14 @@ export default function InvoiceViewPage() {
         </div>
       )}
 
-      {draft && (
+      {editable && (
         <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold text-amber-900">Not issued yet — change anything you need to</h2>
+            <h2 className="text-sm font-semibold text-amber-900">
+              {draft
+                ? "Not issued yet — change anything you need to"
+                : "Not sent yet — this can still be corrected"}
+            </h2>
             <span className="text-sm text-amber-900">Total <strong>{money(invoice.total)}</strong> (incl GST)</span>
           </div>
 
@@ -686,24 +705,41 @@ export default function InvoiceViewPage() {
                 stock count stays right.
               </p>
             </>
-          ) : (
+          ) : draft ? (
             <p className="mt-2 text-sm text-amber-900">
               This invoice hasn&apos;t been issued yet. It has no invoice number and isn&apos;t in the accounts.
             </p>
+          ) : (
+            <p className="mt-2 text-sm text-amber-900">
+              This is a {invoice.kind === "rental" ? "rent" : "hireage"} invoice, so its lines belong to the
+              invoice rather than a job card. Correct it on{" "}
+              <Link href="/rentals" className="underline">Rentals &rsaquo; Awaiting approval</Link>, which rebuilds
+              the PDF in the same step — the tenant has to receive the document that was approved.
+            </p>
           )}
 
-          <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-amber-200 pt-3">
-            <button
-              onClick={issueInvoice}
-              disabled={busy === "issue"}
-              className={`${btn} bg-amber-700 text-white hover:bg-amber-800`}
-            >
-              {busy === "issue" ? "Issuing…" : "Confirm & issue"}
-            </button>
-            <span className="text-xs text-amber-800">
-              Issuing gives it its number and puts it in the accounts. Printing or emailing does this for you.
-            </span>
-          </div>
+          {draft && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-amber-200 pt-3">
+              <button
+                onClick={issueInvoice}
+                disabled={busy === "issue"}
+                className={`${btn} bg-amber-700 text-white hover:bg-amber-800`}
+              >
+                {busy === "issue" ? "Issuing…" : "Confirm & issue"}
+              </button>
+              <span className="text-xs text-amber-800">
+                Issuing gives it its number and puts it in the accounts. Printing or emailing does this for you.
+              </span>
+            </div>
+          )}
+
+          {!draft && (
+            <p className="mt-3 border-t border-amber-200 pt-3 text-xs text-amber-800">
+              It already has its number and is already in the accounts — correcting it reverses that entry and
+              posts a fresh one, so the books follow the change rather than hiding it. Once it has been sent, or
+              a payment has been recorded, this stops being an edit and becomes a credit note.
+            </p>
+          )}
         </div>
       )}
 

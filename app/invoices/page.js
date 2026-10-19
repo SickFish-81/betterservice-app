@@ -6,6 +6,25 @@ import { supabase } from "../../lib/supabaseClient";
 import { PAYMENT_METHODS, DEFAULT_PAYMENT_METHOD } from "../../lib/paymentMethods";
 import { useOwner } from "../RoleContext";
 
+// WHAT THE INVOICE IS FOR.
+//
+// Every invoice is either workshop work against a job card or rent against a
+// tenancy, and until 19 Oct 2026 this page said neither. Worse: the customer's
+// name was read through the JOB CARD, which a rent invoice does not have - so
+// all 17 rental invoices showed a bare dash where the name belonged, and the
+// list looked like job invoices, some of them broken.
+//
+// kind is 'atv' or 'rental' in the database. An unknown value is shown rather
+// than hidden, because a silent blank is what caused this in the first place.
+const KIND_LABELS = { atv: "ATV job", rental: "Rental", hire: "Hire" };
+const kindLabel = (k) => KIND_LABELS[k] || (k ? String(k) : "Invoice");
+const KIND_STYLES = {
+  atv: "bg-zinc-100 text-zinc-700",
+  rental: "bg-sky-100 text-sky-800",
+  hire: "bg-violet-100 text-violet-800",
+};
+const kindStyle = (k) => KIND_STYLES[k] || "bg-amber-100 text-amber-800";
+
 const money = (n) => "$" + Number(n || 0).toFixed(2);
 const invNo = (n) => String(n ?? 0).padStart(4, "0");
 const nzDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-NZ") : "");
@@ -40,6 +59,22 @@ export default function InvoicesPage() {
       const { data: jobs } = await supabase.from("job_cards").select("id, job_number, customers(name)").in("id", jobIds);
       jobMap = Object.fromEntries((jobs || []).map((j) => [j.id, j]));
     }
+    // A rent invoice has no job card: its customer hangs off customer_id, and
+    // the unit it covers off the tenancy. Both fetched in one go rather than
+    // per row.
+    const custIds = [...new Set((invs || []).map((i) => i.customer_id).filter(Boolean))];
+    let custMap = {};
+    if (custIds.length) {
+      const { data: cs } = await supabase.from("customers").select("id, name, company_name").in("id", custIds);
+      custMap = Object.fromEntries((cs || []).map((c) => [c.id, c]));
+    }
+    const agIds = [...new Set((invs || []).map((i) => i.rental_agreement_id).filter(Boolean))];
+    let unitMap = {};
+    if (agIds.length) {
+      const { data: ags } = await supabase.from("rental_agreements").select("id, rental_units(name)").in("id", agIds);
+      unitMap = Object.fromEntries((ags || []).map((a) => [a.id, a.rental_units?.name || null]));
+    }
+
     const { data: pays } = await supabase
       .from("payments")
       .select("id, invoice_id, amount, method, created_at")
@@ -58,10 +93,23 @@ export default function InvoicesPage() {
     const cm = {};
     (cns || []).forEach((c) => { if (c.invoice_id) cm[c.invoice_id] = (cm[c.invoice_id] || 0) + Number(c.total); });
     setCreditMap(cm);
-    setInvoices((invs || []).map((i) => ({ ...i, job: jobMap[i.job_card_id] || null })));
+    setInvoices((invs || []).map((i) => ({
+      ...i,
+      job: jobMap[i.job_card_id] || null,
+      customer: custMap[i.customer_id] || null,
+      unitName: unitMap[i.rental_agreement_id] || null,
+    })));
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  // Whose invoice this is, whichever kind it is. The job card first because
+  // that is where a workshop customer lives, then the invoice's own customer.
+  const whoOf = (inv) =>
+    inv.job?.customers?.name ||
+    inv.customer?.company_name ||
+    inv.customer?.name ||
+    "—";
 
   const paidOf = (inv) => paidMap[inv.id] || 0;
   const creditedOf = (inv) => creditMap[inv.id] || 0;
@@ -213,8 +261,12 @@ export default function InvoicesPage() {
                       {inv.issued_date && <span className="text-sm font-normal text-zinc-400"> · {nzDate(inv.issued_date)}</span>}
                     </p>
                     <p className="truncate text-sm text-zinc-500">
-                      {inv.job?.customers?.name || "—"}
+                      <span className={`mr-1.5 rounded px-1.5 py-0.5 text-xs font-medium ${kindStyle(inv.kind)}`}>
+                        {kindLabel(inv.kind)}
+                      </span>
+                      {whoOf(inv)}
                       {inv.job?.job_number ? " · Job #" + inv.job.job_number : ""}
+                      {inv.unitName ? " · " + inv.unitName : ""}
                       {!paid && paidOf(inv) > 0 ? " · paid " + money(paidOf(inv)) + " · owing " + money(bal) : ""}
                     </p>
                   </div>

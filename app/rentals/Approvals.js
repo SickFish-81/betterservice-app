@@ -13,6 +13,24 @@
 //
 // Approving calls send-rental-invoice, which emails the PDF THAT WAS ALREADY
 // FILED, so what the tenant receives is what was looked at here.
+//
+// ADJUSTING (19 Oct 2026). Until now a wrong invoice had two ways out and no
+// third: discard it, which only helps when the fault is in the tenancy, or send
+// it and credit-note it, which is the thing this screen exists to avoid. So the
+// rate and the dates can now be corrected in place.
+//
+// Three things make that safe, and all three are in the database rather than
+// here, because a guard that lives in a screen is a guard somebody can go
+// around:
+//
+//   - invoice_adjustable() refuses once an invoice is sent, paid or credited.
+//   - the totals re-add themselves from the lines (trg_resync_invoice_line_totals).
+//   - the filed PDF is dropped the instant the money or dates move
+//     (trg_invoice_pdf_stale), and send-rental-invoice refuses to send without
+//     one. So a stale PDF cannot be emailed even if the rebuild below fails.
+//
+// The rebuild shares its PDF builder with the nightly run, on purpose: Craig has
+// to be approving the document that will actually arrive.
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
@@ -33,6 +51,12 @@ export default function Approvals() {
   const [note, setNote] = useState(null);
   const [sent, setSent] = useState(null);   // confirmation after a rent invoice goes
   const [confirming, setConfirming] = useState(null);  // the invoice waiting on "yes, send it"
+  // The invoice open for correction, its lines, and its dates.
+  const [adjusting, setAdjusting] = useState(null);
+  const [adjLines, setAdjLines] = useState([]);
+  const [adjIssued, setAdjIssued] = useState("");
+  const [adjPeriod, setAdjPeriod] = useState("");
+  const [adjBusy, setAdjBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -93,6 +117,81 @@ export default function Approvals() {
       total: inv.total,
       extra: res.lease ? "The lease agreement went with it." : null,
     });
+    load();
+  }
+
+  async function startAdjust(inv) {
+    setError(null); setNote(null);
+    const { data, error } = await supabase
+      .from("invoice_line_items")
+      .select("id, description, quantity, unit_price")
+      .eq("invoice_id", inv.id)
+      .order("sort")
+      .order("created_at");
+    if (error) { setError("Couldn't read the lines: " + error.message); return; }
+    setAdjLines((data || []).map((l) => ({ ...l, quantity: l.quantity ?? 1, unit_price: l.unit_price ?? 0 })));
+    setAdjIssued(inv.issued_date || "");
+    setAdjPeriod(inv.period_start || "");
+    setAdjusting(inv);
+  }
+
+  // What it will come to, shown while it's being typed. GST is 15% ON TOP here:
+  // rent is held exclusive, the same as a workshop invoice. The database does
+  // this sum again for real - this is only so nobody saves blind.
+  const adjSubtotal = adjLines.reduce(
+    (t, l) => t + Math.round(Number(l.quantity || 0) * Number(l.unit_price || 0) * 100) / 100, 0);
+  const adjGst = Math.round(adjSubtotal * 0.15 * 100) / 100;
+  const adjTotal = Math.round((adjSubtotal + adjGst) * 100) / 100;
+
+  function setLine(i, field, value) {
+    setAdjLines((ls) => ls.map((l, n) => (n === i ? { ...l, [field]: value } : l)));
+  }
+
+  // Lines first, then dates, then the paper. The lines are what the totals come
+  // from, and the PDF has to be built from the finished figures - doing it in
+  // any other order files a document that is already out of date.
+  async function saveAdjust() {
+    if (!adjusting) return;
+    setError(null); setNote(null); setAdjBusy(true);
+    const inv = adjusting;
+
+    for (const l of adjLines) {
+      const { error } = await supabase
+        .from("invoice_line_items")
+        .update({
+          description: String(l.description ?? "").trim(),
+          quantity: Number(l.quantity || 0),
+          unit_price: Number(l.unit_price || 0),
+        })
+        .eq("id", l.id);
+      if (error) { setAdjBusy(false); setError("Couldn't save that line: " + error.message); return; }
+    }
+
+    if (adjIssued !== (inv.issued_date || "") || adjPeriod !== (inv.period_start || "")) {
+      const patch = {};
+      if (adjIssued) patch.issued_date = adjIssued;      // due_date follows it, in the database
+      if (adjPeriod) patch.period_start = adjPeriod;
+      const { error } = await supabase.from("invoices").update(patch).eq("id", inv.id);
+      if (error) { setAdjBusy(false); setError("Couldn't save the dates: " + error.message); return; }
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data: res, error: fErr } = await supabase.functions.invoke("generate-rental-invoices", {
+      body: { rebuildInvoiceId: inv.id, accessToken: session?.access_token || null },
+    });
+    setAdjBusy(false);
+    if (fErr || res?.error) {
+      let detail = res?.error || (fErr && fErr.message) || "Unknown error";
+      try { if (fErr?.context?.json) { const b = await fErr.context.json(); if (b?.error) detail = b.error; } } catch (_e) {}
+      // The figures ARE saved; it is the document that isn't. Say which.
+      setError("The invoice was corrected, but the PDF wasn't rebuilt: " + detail);
+      setAdjusting(null);
+      load();
+      return;
+    }
+
+    setAdjusting(null);
+    setNote(`${invNo(inv.invoice_number)} corrected and its PDF rebuilt — check it before approving.`);
     load();
   }
 
@@ -164,13 +263,17 @@ export default function Approvals() {
                   )}
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button onClick={() => openPdf(inv.pdf_url)}
-                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
-                      Check the PDF
+                    <button onClick={() => openPdf(inv.pdf_url)} disabled={!inv.pdf_url}
+                            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">
+                      {inv.pdf_url ? "Check the PDF" : "No PDF filed"}
                     </button>
                     <button onClick={() => askToSend(inv)} disabled={!senderId || noEmail || busy === inv.id}
                             className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
                       {busy === inv.id ? "Sending…" : "Approve & send"}
+                    </button>
+                    <button onClick={() => startAdjust(inv)}
+                            className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100">
+                      Adjust
                     </button>
                     <button onClick={() => discard(inv)}
                             className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50">
@@ -234,8 +337,9 @@ export default function Approvals() {
             )}
 
             <p className="mt-3 text-xs text-zinc-500">
-              Sending to {confirming.customers?.email}. If a date is wrong, cancel and use Discard — fix the
-              tenancy and tonight&apos;s run prepares this period again with the right dates.
+              Sending to {confirming.customers?.email}. If a date or the rate is wrong, cancel and use
+              <strong> Adjust</strong> — nothing has left the building yet. Discard is for an invoice that
+              shouldn&apos;t exist at all: fix the tenancy and tonight&apos;s run prepares the period again.
             </p>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -245,6 +349,106 @@ export default function Approvals() {
               </button>
               <button onClick={() => setConfirming(null)}
                       className="rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adjusting && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+             role="dialog" aria-modal="true" aria-labelledby="adjust-heading">
+          <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+            <h2 id="adjust-heading" className="text-lg font-bold text-zinc-900">Correct this invoice</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              {adjusting.rental_agreements?.rental_units?.name || "Unit"} — {adjusting.customers?.company_name || adjusting.customers?.name}
+              {" · "}{invNo(adjusting.invoice_number)}
+            </p>
+            <p className="mt-2 text-sm text-zinc-600">
+              Nothing has been sent, so this can be changed. Saving re-files the PDF, and the tenant sees only
+              the corrected one.
+            </p>
+
+            <div className="mt-4 flex flex-col gap-3">
+              {adjLines.map((l, i) => (
+                <div key={l.id} className="rounded-xl border border-zinc-200 p-3">
+                  <label className="flex flex-col">
+                    <span className="text-xs font-medium text-zinc-600">What it&apos;s for</span>
+                    <input value={l.description ?? ""} onChange={(e) => setLine(i, "description", e.target.value)}
+                           className="mt-1 rounded-lg border border-zinc-300 px-2 py-2 text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+                  </label>
+                  <div className="mt-2 flex flex-wrap items-end gap-2">
+                    <label className="flex flex-col">
+                      <span className="text-xs font-medium text-zinc-600">Qty</span>
+                      <input value={l.quantity} onChange={(e) => setLine(i, "quantity", e.target.value)}
+                             type="number" min="0" step="0.01"
+                             className="mt-1 w-20 rounded-lg border border-zinc-300 px-2 py-2 text-right text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+                    </label>
+                    <label className="flex flex-col">
+                      <span className="text-xs font-medium text-zinc-600">Each, GST exclusive</span>
+                      <input value={l.unit_price} onChange={(e) => setLine(i, "unit_price", e.target.value)}
+                             type="number" step="0.01"
+                             className="mt-1 w-32 rounded-lg border border-zinc-300 px-2 py-2 text-right text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+                    </label>
+                    <span className="pb-2 text-sm font-medium text-zinc-700">
+                      = {money(Math.round(Number(l.quantity || 0) * Number(l.unit_price || 0) * 100) / 100)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {adjLines.length === 0 && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  This invoice has no lines, which shouldn&apos;t happen. Discard it and let tonight&apos;s run
+                  prepare it again.
+                </p>
+              )}
+            </div>
+
+            <dl className="mt-4 divide-y divide-zinc-100 rounded-xl border border-zinc-200">
+              <div className="flex items-baseline justify-between gap-3 px-3 py-2">
+                <dt className="text-sm text-zinc-600">Subtotal</dt>
+                <dd className="font-semibold text-zinc-900">{money(adjSubtotal)}</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3 px-3 py-2">
+                <dt className="text-sm text-zinc-600">GST 15%</dt>
+                <dd className="font-semibold text-zinc-900">{money(adjGst)}</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-3 px-3 py-2">
+                <dt className="text-sm font-medium text-zinc-700">Total</dt>
+                <dd className="text-lg font-bold text-zinc-900">
+                  {money(adjTotal)}
+                  {Math.abs(adjTotal - Number(adjusting.total || 0)) > 0.005 && (
+                    <span className="ml-2 text-sm font-normal text-zinc-500">was {money(adjusting.total)}</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <label className="flex flex-col">
+                <span className="text-xs font-medium text-zinc-600">Issue date</span>
+                <input value={adjIssued} onChange={(e) => setAdjIssued(e.target.value)} type="date"
+                       className="mt-1 rounded-lg border border-zinc-300 px-2 py-2 text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+              </label>
+              <label className="flex flex-col">
+                <span className="text-xs font-medium text-zinc-600">Rent period starts</span>
+                <input value={adjPeriod} onChange={(e) => setAdjPeriod(e.target.value)} type="date"
+                       className="mt-1 rounded-lg border border-zinc-300 px-2 py-2 text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" />
+              </label>
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">
+              The due date follows the issue date and the payment terms — it isn&apos;t typed in, so it can&apos;t
+              be set to something the terms don&apos;t allow.
+            </p>
+
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <button onClick={saveAdjust} disabled={adjBusy || adjLines.length === 0}
+                      className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                {adjBusy ? "Saving and rebuilding…" : "Save and rebuild the PDF"}
+              </button>
+              <button onClick={() => setAdjusting(null)} disabled={adjBusy}
+                      className="rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50">
                 Cancel
               </button>
             </div>
