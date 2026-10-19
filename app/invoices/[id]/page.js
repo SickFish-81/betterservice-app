@@ -15,7 +15,8 @@ import SentConfirmation from "../../SentConfirmation";
 import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName, invNo, isDraft } from "../../../lib/invoicePdf";
 import { PAYMENT_TERMS, termsLabel } from "../../../lib/paymentTerms";
 
-const money = (n) => "$" + Number(n || 0).toFixed(2);
+// Negative amounts are credits, and "$-50.00" is not how money is written.
+const money = (n) => (Number(n || 0) < 0 ? "-$" : "$") + Math.abs(Number(n || 0)).toFixed(2);
 const btn = "rounded-lg px-3 py-2 text-sm font-medium transition disabled:opacity-50";
 
 export default function InvoiceViewPage() {
@@ -645,7 +646,13 @@ export default function InvoiceViewPage() {
                           </td>
                           <td className="pr-2 pb-2">
                             <input
-                              type="number" step="0.01" min="0" inputMode="decimal"
+                              type="number" step="0.01" inputMode="decimal"
+                              // A credit is stored negative, so its box must accept one -
+                              // and labour and parts must still not. The database enforces
+                              // the same rule in job_line_items_sign_matches_kind; this is
+                              // just the keyboard agreeing with it.
+                              min={ln.kind === "credit" ? undefined : "0"}
+                              max={ln.kind === "credit" ? "0" : undefined}
                               value={ln.unit_price}
                               onChange={(e) => set("unit_price", e.target.value)}
                               onBlur={(e) => Number(e.target.value) !== Number(src.unit_price)
@@ -653,7 +660,7 @@ export default function InvoiceViewPage() {
                               className={inp}
                             />
                           </td>
-                          <td className="pb-2 pr-2 pt-1.5 text-right tabular-nums text-zinc-800">{money(src.amount)}</td>
+                          <td className={`pb-2 pr-2 pt-1.5 text-right tabular-nums ${ln.kind === "credit" ? "font-medium text-emerald-700" : "text-zinc-800"}`}>{money(src.amount)}</td>
                           <td className="pb-2 pt-1">
                             <button
                               onClick={() => removeLine(ln.id)}
@@ -667,7 +674,7 @@ export default function InvoiceViewPage() {
                       );
                     })}
                     {lines.length === 0 && (
-                      <tr><td colSpan={5} className="py-2 text-zinc-600">No labour or parts on this job yet.</td></tr>
+                      <tr><td colSpan={5} className="py-2 text-zinc-600">No labour, parts or credits on this job yet.</td></tr>
                     )}
                   </tbody>
                 </table>

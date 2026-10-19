@@ -27,7 +27,8 @@ const STATUS_STYLES = {
   "Invoiced": "bg-zinc-100 text-zinc-700",
   "Paid": "bg-emerald-50 text-emerald-700",
 };
-const money = (n) => "$" + Number(n || 0).toFixed(2);
+// Negative amounts are credits, and "$-50.00" is not how money is written.
+const money = (n) => (Number(n || 0) < 0 ? "-$" : "$") + Math.abs(Number(n || 0)).toFixed(2);
 const invNo = (n) => String(n ?? 0).padStart(4, "0");
 // A date-only column formatted WITHOUT going through Date(). "2026-09-30" fed
 // to new Date() is parsed as UTC midnight, which lands on the previous day in
@@ -61,6 +62,8 @@ export default function JobDetailPage() {
 
   const [senderId, setSenderId] = useState("");
   const [labourDesc, setLabourDesc] = useState("");
+  const [creditDesc, setCreditDesc] = useState("");
+  const [creditAmount, setCreditAmount] = useState("");
   const [hours, setHours] = useState("1");
   const [labourRate, setLabourRate] = useState("");      // $/hr — blank means the shop rate; override for e.g. welding at 50
   const [partId, setPartId] = useState("");
@@ -101,6 +104,7 @@ export default function JobDetailPage() {
   // Each one blocks a second tap while the first save is still in flight, then
   // flashes the button green for a moment so the mechanic can see it landed.
   const labourAction = useActionFlash(addLabour);
+  const creditAction = useActionFlash(addCredit);
   const orderedPartAction = useActionFlash(addOrderedPart);
   const partAction = useActionFlash(addPart);
   const timeAction = useActionFlash(addManualTime);
@@ -300,6 +304,26 @@ export default function JobDetailPage() {
     const { error } = await supabase.from("job_line_items").insert({ job_card_id: id, kind: "labour", description: labourDesc || "Labour", quantity: Math.max(0, Number(hours) || 0), unit_price: Math.round(rate * 100) / 100 });
     if (error) { setError(error.message); return false; }
     setLabourDesc(""); setHours("1"); setLabourRate(""); load();
+  }
+
+  // Money off the bill, as its own line. Craig types what he is giving back as
+  // a POSITIVE number, because "take fifty off" is how anyone says it; it is
+  // stored negative. A credit note is still the right tool once an invoice has
+  // been issued - this is for a discount that is part of the bill from the start.
+  async function addCredit(e) {
+    e.preventDefault();
+    if (issued) { setError("That invoice has been issued — raise a credit note to change it."); return false; }
+    const off = Number(creditAmount);
+    if (!Number.isFinite(off) || off <= 0) { setError("How much is coming off? Enter it as a positive amount."); return false; }
+    if (!creditDesc.trim()) { setError("Say what the credit is for — it prints on the invoice."); return false; }
+    const { error } = await supabase.from("job_line_items").insert({
+      job_card_id: id, kind: "credit", description: creditDesc.trim(),
+      quantity: 1, unit_price: -Math.round(off * 100) / 100,
+    });
+    // The database refuses a credit bigger than the invoice and says so in
+    // words, so pass its message straight through rather than inventing one.
+    if (error) { setError(error.message); return false; }
+    setCreditDesc(""); setCreditAmount(""); load();
   }
 
   // A part ordered in from a supplier for this job — not stock, so nothing is
@@ -1167,6 +1191,30 @@ export default function JobDetailPage() {
         )}
         <button disabled={issued || labourAction.busy} className={`rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 ${labourAction.className}`}>{labourAction.label("Add labour")}</button>
       </form>
+
+      {owner && !issued && (
+        <form onSubmit={creditAction.run} className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 shadow-sm">
+          <div className="min-w-[8rem] flex-1">
+            <label className="block text-xs font-medium text-emerald-800">Credit — money off this invoice</label>
+            <input value={creditDesc} onChange={(e) => setCreditDesc(e.target.value)}
+                   placeholder="e.g. Goodwill — return visit" className={input} />
+          </div>
+          <div className="w-28">
+            <label className="block text-xs font-medium text-emerald-800">Amount off</label>
+            <input value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)}
+                   type="number" min="0" step="0.01" placeholder="50.00"
+                   title="Enter what you are taking off as a positive number. It goes on the invoice as a negative line."
+                   className={input} />
+          </div>
+          <button disabled={creditAction.busy}
+                  className={`rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50 ${creditAction.className}`}>
+            {creditAction.label("Add credit")}
+          </button>
+          <p className="w-full text-xs text-emerald-800/80">
+            Comes off before GST, so the GST drops with it. Once the invoice is issued its total is fixed — use a credit note from then on.
+          </p>
+        </form>
+      )}
 
       {!issued && (
         <form onSubmit={orderedPartAction.run} className="mt-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
