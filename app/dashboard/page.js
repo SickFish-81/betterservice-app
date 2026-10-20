@@ -172,12 +172,28 @@ export default function Dashboard() {
 
   // What needs doing, worst first. Anything at zero is left out entirely rather
   // than shown as a zero — a row of noughts is just something else to read past.
+  //
+  // ORDER CHANGED 20 Oct 2026, at Craig's request: "can the outstanding flip
+  // orders and the outstanding rental invoices not processed come up at the top
+  // like the outstanding job invoices please".
+  //
+  // Both rows already existed — FLIP was third and rent fifth. Two things made
+  // them feel absent: the job-invoice rows sat above them, and rent awaiting
+  // approval has been ZERO ever since it was built, so that row has quite
+  // possibly never once been on screen. Zero rows are still left out; the fix
+  // is only the order.
+  //
+  // Why these two go first: both are somebody waiting. A FLIP order is a
+  // customer who has paid and has nothing yet, and a rent invoice awaiting
+  // approval is rent that does not go out until someone presses the button.
+  // Everything below is money the shop is owed, which is bad but not somebody
+  // standing still.
   const attention = [
     unread && { href: "/notifications", n: unread, text: `Job${unread === 1 ? "" : "s"} sent to you`, meta: "not opened yet" },
-    counts.unsent && { href: "/emails", n: counts.unsent, text: `Invoice${counts.unsent === 1 ? "" : "s"} still to send`, meta: "unpaid and not with the customer" },
     counts.flip && { href: "/flip-orders", n: counts.flip, text: `FLIP order${counts.flip === 1 ? "" : "s"} to pack`, meta: "paid, not sent yet" },
+    counts.rent && { href: "/rentals", n: counts.rent, text: `Rent invoice${counts.rent === 1 ? "" : "s"} awaiting approval`, meta: "not sent to the tenant yet" },
+    counts.unsent && { href: "/emails", n: counts.unsent, text: `Invoice${counts.unsent === 1 ? "" : "s"} still to send`, meta: "unpaid and not with the customer" },
     att?.jobs_ready && { href: "/jobs", n: att.jobs_ready, text: `Job${att.jobs_ready === 1 ? "" : "s"} ready to invoice` },
-    counts.rent && { href: "/rentals", n: counts.rent, text: `Rent invoice${counts.rent === 1 ? "" : "s"} awaiting approval` },
     counts.bookings && { href: "/bookings", n: counts.bookings, text: `New booking request${counts.bookings === 1 ? "" : "s"}` },
     owner && att?.invoices_unpaid && { href: "/invoices", n: att.invoices_unpaid, text: `Invoice${att.invoices_unpaid === 1 ? "" : "s"} unpaid`, meta: unpaidTotal ? `${money(unpaidTotal)} owing` : null },
     counts.bills && { href: "/bills", n: counts.bills, text: `Bill${counts.bills === 1 ? "" : "s"} to pay`, meta: owner && att?.bills_total ? `${money(att.bills_total)} owing` : null },
