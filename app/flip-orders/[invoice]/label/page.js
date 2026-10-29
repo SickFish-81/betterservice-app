@@ -61,7 +61,7 @@ export default function LabelSheetPage() {
     (async () => {
       const { data, error: e } = await supabase
         .from("flip_orders")
-        .select("session_id, created_at, invoice_number, name, email, phone, country, address, items, amount_total, shipping_amount, packed_at")
+        .select("session_id, created_at, invoice_number, name, email, phone, country, address, items, amount_total, shipping_amount, packed_at, consignment_id, tracking_number")
         .eq("invoice_number", Number(invoice))
         .maybeSingle();
       if (e) setError(e.message);
@@ -112,6 +112,13 @@ export default function LabelSheetPage() {
             Print this sheet
           </button>
         </div>
+
+        {order.tracking_number && (
+          <p className="mb-3 text-sm print:hidden">
+            <span className="text-zinc-500">Consignment </span>
+            <span className="font-mono font-semibold">{order.tracking_number}</span>
+          </p>
+        )}
 
         <p className="mb-4 text-xs text-zinc-500 print:hidden">
           Cut along the dashed line. Tape the top half to the box and stick the courier
@@ -202,7 +209,11 @@ export default function LabelSheetPage() {
                 Ordered {new Date(order.created_at).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" })}
                 {order.country && order.country !== "NZ" ? ` · ${order.country}` : ""}
               </p>
-              <p>Freight charged {money(order.shipping_amount)} of {money(order.amount_total)} paid</p>
+              <p>
+                {order.tracking_number
+                  ? `Consignment ${order.tracking_number}`
+                  : `Freight charged ${money(order.shipping_amount)} of ${money(order.amount_total)} paid`}
+              </p>
             </div>
           </div>
         </div>

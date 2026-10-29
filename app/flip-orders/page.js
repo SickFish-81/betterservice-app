@@ -39,7 +39,7 @@ export default function FlipOrdersPage() {
     setLoading(true);
     const { data, error: e } = await supabase
       .from("flip_orders")
-      .select("session_id, created_at, invoice_number, name, email, phone, country, address, items, amount_total, shipping_amount, packed_at")
+      .select("session_id, created_at, invoice_number, name, email, phone, country, address, items, amount_total, shipping_amount, packed_at, consignment_id, tracking_number")
       .order("created_at", { ascending: false })
       .limit(100);
     if (e) setError(e.message);
@@ -128,16 +128,26 @@ export default function FlipOrdersPage() {
               </button>
               {showSent && (
                 <ul className="mt-2 space-y-1">
+                  {/* A sent order is finished, not gone. Its consignment number is
+                      what answers "where is my parcel" three weeks later, so the
+                      row stays openable rather than being a dead line of text. */}
                   {sent.map((o) => (
-                    <li
-                      key={o.session_id}
-                      className="flex items-baseline gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm shadow-sm"
-                    >
-                      <span className="font-semibold text-zinc-900">{invoiceNo(o.invoice_number)}</span>
-                      <span className="truncate text-zinc-600">{o.name || o.email}</span>
-                      <span className="ml-auto whitespace-nowrap text-xs text-zinc-400">
-                        sent {when(o.packed_at)}
-                      </span>
+                    <li key={o.session_id}>
+                      <Link
+                        href={`/flip-orders/${o.invoice_number}/label`}
+                        className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50"
+                      >
+                        <span className="font-semibold text-zinc-900">{invoiceNo(o.invoice_number)}</span>
+                        <span className="truncate text-zinc-600">{o.name || o.email}</span>
+                        {o.tracking_number && (
+                          <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-700">
+                            {o.tracking_number}
+                          </span>
+                        )}
+                        <span className="ml-auto whitespace-nowrap text-xs text-zinc-400">
+                          sent {when(o.packed_at)}
+                        </span>
+                      </Link>
                     </li>
                   ))}
                 </ul>
