@@ -15,6 +15,7 @@
 // they paid.
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 
 const money = (cents) => "$" + (Number(cents || 0) / 100).toFixed(2);
@@ -196,15 +197,24 @@ function OrderCard({ order: o, busy, onPack }) {
         {o.country && o.country !== "NZ" && <span className="font-semibold text-zinc-700">{o.country}</span>}
       </div>
 
-      <div className="mt-3 flex items-center gap-3 border-t border-zinc-100 pt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-3">
         <div className="text-xs text-zinc-500">
           {money(o.amount_total)} paid
           {o.shipping_amount ? ` · ${money(o.shipping_amount)} freight` : ""}
         </div>
+        {/* Address on the top half, pick list on the bottom, cut line between.
+            Opens in its own tab so the list stays where it was. */}
+        <Link
+          href={`/flip-orders/${o.invoice_number}/label`}
+          target="_blank"
+          className="ml-auto rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+        >
+          Print label &amp; pick ticket
+        </Link>
         <button
           onClick={onPack}
           disabled={busy}
-          className="ml-auto rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
+          className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
         >
           {busy ? "Saving…" : "Packed and ready to send"}
         </button>
