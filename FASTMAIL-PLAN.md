@@ -409,51 +409,94 @@ gets through.
 
 ### Still unverified
 
-**Whether the Gmail copy rule is firing.** That can only be confirmed by Craig
-looking in his own Gmail. It matters: if it is not working, mail is accumulating
-in a Fastmail inbox he has never opened — including a GST query from his
-accountant. Check this before assuming the migration is invisible to him.
+**Whether the Gmail copy rule is firing.** ~~That can only be confirmed by
+Craig looking in his own Gmail.~~ **Answered 3 Nov: it was firing, and kept
+firing for four weeks after it was recorded as disabled.** It has now been
+disabled for real. It could also have been checked at any point by opening the
+rule under admin masquerade — "only Craig can confirm this" was not true, and
+assuming it meant nobody looked.
 
 ### Still to do
 
 - ~~flipbikes.co.nz~~ **DONE 6 Oct** — see below
-- Watch for several days
-- Turn off the Gmail copy rule once Craig is settled
+- ~~Watch for several days~~
+- ~~Turn off the Gmail copy rule once Craig is settled~~ **ACTUALLY DONE 3 Nov**
+  — believed done 6 Oct, was not; see the correction below
+- Tell Craig his mail now arrives in Fastmail only
 - Cancel HostPapa last, and only then drop `include:_spf.hostedemail.com` and
-  the two ip4 terms from the SPF record
+  the two ip4 terms from the SPF record. The catch-all can go with it — the
+  aliases that made it unnecessary are confirmed in place (3 Nov)
 
-## Gmail copy rule disabled, 6 Oct — and the thing to watch
+## Gmail copy rule — attempted 6 Oct, ACTUALLY disabled 3 Nov
+
+> **Correction, 3 Nov 2026.** Everything below the line about 6 Oct was wrong
+> for four weeks. The rule was never disabled. This section used to state
+> flatly that it had been. Read the correction first.
 
 Craig reported getting **two copies** of his mail in Gmail, and emailed Ben
 about it: *"are copies of my emails from @betterservice.co.nz supposed to be
 going to cmbarrett..."*. Ben's call: switch the copy off.
 
-Done — **disabled, not deleted**. Fastmail's rule editor has a `Disable → Skip
-this rule` tick at the bottom of the edit view. The rule now shows `Disabled`
-in the list with its action and destination intact, so restoring it is one tick
-rather than rebuilding it.
+**6 Oct — believed done, was not.** The intended change was `Disable → Skip
+this rule` at the bottom of the rule's edit view, disabled rather than deleted
+so restoring it would be one tick. That is what this document recorded.
 
-### Why this needs checking rather than assuming
+**3 Nov — the rule was found still running.** Craig raised the double-up again.
+Opening the rule under admin masquerade showed `Skip this rule` **unticked**,
+and the rule listed without a `Disabled` badge. It had been copying every
+message in Craig's Fastmail to `cmbarrett7@gmail.com` continuously for four
+weeks.
 
-The logic is sound only if the premise is: if two independent paths put mail in
-Craig's Gmail, removing one leaves one. **Nobody has established what the second
-path is.** Candidates, none confirmed:
+Saving a Fastmail rule requires a password confirmation. The most likely story
+is that the confirmation came up on 6 Oct and the change never landed — and
+this file recorded the *intention* as though it were the *outcome*, which is
+why nobody went back to look.
 
-- the HostPapa catch-all to `cmbarrett7@gmail.com`, which is still configured —
-  though with HostPapa's MX demoted to priority 30 it should rarely receive
-  anything now
-- senders who address both `craig@betterservice.co.nz` and his Gmail directly,
-  which would duplicate permanently
-- a POP/"check mail from other accounts" fetch configured in his Gmail
-- Gmail threading showing a sent and received copy of the same conversation
+**Now actually disabled.** Ticked, saved, and then — the step that was missing
+the first time — **the page was reloaded from scratch and the stored state
+re-read**. The list shows `Disabled`, action and destination intact. A "Saved
+changes to rule" toast is not evidence; the reload is.
 
-**If the second path does not exist, Craig now sees none of his business mail**,
-because that rule was the only thing putting it in front of him — and he will
-not notice it stop.
+### The lesson, because this is the seventh time
 
-So: **ask Craig within the hour whether new mail is still reaching his Gmail.**
-Not next week. If it has stopped, untick `Skip this rule` and it resumes
-immediately.
+A value that looks authoritative, produced by a layer nobody checked. Same
+family as AuthGate disagreeing with the database, `emailed = true` not meaning
+delivered, a consignment id that was a lie, a printer accepting a job it then
+binned, a `grep` that worked only by luck, and a ternary whose two branches
+were the same string. **Write down what you verified, not what you clicked.**
+
+### The "what is the second path" question — settled 3 Nov
+
+The old worry here was that nobody knew what the *second* path into Craig's
+Gmail was, so turning the rule off might leave him seeing no business mail at
+all. Checking the live account rather than this document answered it.
+
+There was no mysterious second path. The two copies were:
+
+1. the message arriving in Craig's **Fastmail** inbox, where it belongs, and
+2. the rule's copy to his **Gmail**
+
+Craig was reading in Gmail, so the Fastmail original read as the duplicate. Turn
+the rule off and one copy remains, in Fastmail, which is the intended end state.
+
+**And the catch-all was never load-bearing.** Craig's Fastmail already carries
+these aliases, confirmed on the account on 3 Nov:
+
+    accounts@betterservice.co.nz   From address on workshop invoices — customers reply here
+    admin@betterservice.co.nz      App email From + BCC on every invoice
+    sales@flipbikes.co.nz          Flip Bikes sales enquiries
+    service@betterservice.co.nz    legacy, unused, kept at Craig's request
+
+So mail to `admin@` and `accounts@` lands in Fastmail directly and has done for
+some time. The earlier warning in this file — that removing the HostPapa
+catch-all would silently kill replies to invoices — **no longer applies**. It
+was true when written and was left standing after it stopped being true.
+
+### What Craig has to be told
+
+He will see one copy instead of two, **in Fastmail, not Gmail**. If he is still
+reading Gmail he will experience this as his mail stopping. Tell him. If it
+needs reversing, untick `Skip this rule` and it resumes immediately.
 
 ### The real end state
 
