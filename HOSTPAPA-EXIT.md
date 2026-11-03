@@ -143,15 +143,34 @@ to it and a smaller blast radius than the domain carrying the workshop's mail.
       `2026100603`. If one changes under you mid-move, someone else edited the
       zone.
 
-### Step 1 — lower the TTLs, then wait
+### Step 1 — TTLs: measured 3 Nov, mostly already fine
 
-In HostPapa's zone editor set every record's TTL to **300 seconds**, and
-**wait at least as long as the old TTL** before step 2.
+Actual TTLs as served by HostPapa's nameservers:
 
-This is the step people skip. Without it, a resolver that cached the old
-records can keep handing them out for hours after the change, and you will be
-staring at a correct configuration that half the internet cannot see, with no
-way to tell whether you broke something or are just early.
+| Record | betterservice | flipbikes |
+|---|---|---|
+| `NS` | **86400s (24h)** | **86400s (24h)** |
+| apex `A` | 14400s (4h) | 300s |
+| `www` | 14400s (4h) | 300s |
+| `MX` / `TXT` | 300s | 300s |
+| `CAA` | 60s | 60s |
+| `_dmarc` | 14400s (4h) | — |
+
+Mail records are already at 5 minutes on both domains, which is the part that
+would hurt. The only records worth dropping to 300s first are betterservice's
+apex `A`, `www` and `_dmarc` — and betterservice's apex is not changing anyway,
+so even that is close to a formality.
+
+**The 24-hour NS TTL is the real clock, and lowering record TTLs does nothing
+about it.** After the delegation changes, resolvers that cached the old NS can
+keep asking HostPapa for up to a day.
+
+Which leads to the rule that matters more than any of the above:
+
+> **HostPapa's nameservers must keep serving the correct zone throughout.**
+> Do not delete the zone, empty it, or cancel the account on the day of the
+> switch. For up to 24 hours, some of the internet is still asking them, and
+> the answer they give has to be the right one.
 
 ### Step 2 — build the zone at Fastmail, with NS still at HostPapa
 
@@ -214,11 +233,29 @@ Do not accept a dashboard's word for any of this. Check it from outside:
 
 ### Step 5 — let it sit
 
-**Leave HostPapa running for at least two weeks after step 4 passes.** Mail
-problems do not surface on day one; they surface when some particular sender,
-or a reply to a thread started in October, hits a path nobody tested. Keeping
-the account open costs one month's fee. Not keeping it costs an unrecoverable
-afternoon.
+**Minimum: 48 hours after step 4 passes**, because of the 24-hour NS TTL.
+Cancelling inside that window can cut off the resolvers still pointed at
+HostPapa, and the failure is invisible from here — everything looks right from
+a machine whose cache has already moved on.
+
+Beyond 48 hours it is a judgement call, and the honest framing is this:
+
+> **The saved zone export is the insurance, not the calendar.** A soak period
+> only helps if someone would notice. What actually protects you is being able
+> to read, after cancelling, exactly what the zone used to contain. With that
+> file saved, a record discovered missing in February is a five-minute fix.
+> Without it, no amount of waiting helps, because the thing you would need to
+> look at is gone.
+
+So if a renewal date is forcing the issue: make sure the export is saved and
+readable, confirm step 4 end to end, wait the 48 hours, and cancel. Do not pay
+another cycle for a soak you are not going to actively watch — but do not skip
+the export to save a day, either.
+
+**One thing a billing date cannot override:** if the domains turn out to be
+registered at HostPapa, a *domain* renewal is not the same as a *hosting*
+renewal and must be paid regardless, until the transfer completes. Letting a
+`.co.nz` lapse to save a month's hosting is not a trade worth making.
 
 During the wait, the catch-all can be left exactly as it is. It is already
 redundant — `admin@`, `accounts@`, `sales@flipbikes.co.nz` and `service@` are
