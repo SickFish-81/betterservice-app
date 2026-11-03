@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabaseClient";
+import { SENDERS } from "../../../lib/mailSenders";
 import SentConfirmation from "../../SentConfirmation";
 import { buildInvoicePdf, pdfToBase64, pdfToObjectUrl, invoiceFileName, invNo, isDraft } from "../../../lib/invoicePdf";
 import { PAYMENT_TERMS, termsLabel } from "../../../lib/paymentTerms";
@@ -771,7 +772,10 @@ export default function InvoiceViewPage() {
 
       {owner && (
         <p className="mt-2 text-xs text-zinc-500">
-          Sends from <span className="font-medium text-zinc-700">{settings?.invoice_bcc ? "admin@betterservice.co.nz" : "admin@betterservice.co.nz"}</span>
+          {/* This screen sends through send-invoice, which uses accounts@ —
+              not admin@, which is what this line claimed for both branches of
+              a ternary until 3 Nov. See lib/mailSenders.js. */}
+          Sends from <span className="font-medium text-zinc-700">{SENDERS.invoice}</span>
           {settings?.invoice_bcc ? <> · a copy goes to <span className="font-medium text-zinc-700">{settings.invoice_bcc}</span></> : null}
           {". "}
           &ldquo;Sent by&rdquo; records who did it, for the audit trail.

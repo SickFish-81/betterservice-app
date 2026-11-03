@@ -139,7 +139,7 @@ export default function SettingsPage() {
             label="Send a copy of every invoice to"
             value={s.invoice_bcc}
             onChange={(e) => set("invoice_bcc", e.target.value)}
-            placeholder="admin@betterservice.co.nz"
+            placeholder="craig@betterservice.co.nz"
           />
           <p className="-mt-2 text-xs text-zinc-500">
             A blind copy of each invoice email goes here, so the shop keeps its own record. The customer never sees this address. Leave it blank to stop the copies.
