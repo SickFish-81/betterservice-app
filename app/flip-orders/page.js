@@ -82,9 +82,15 @@ export default function FlipOrdersPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 sm:py-8">
-      <div className="flex items-baseline gap-3">
+      <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl">FLIP Orders</h1>
         <p className="text-xs text-zinc-500">from flipbikes.co.nz</p>
+        {/* This page answers "what do I pack". The other one answers "is it
+            working". Separate pages on purpose: the bench list has to stay a
+            list of jobs, not a place to read figures off. */}
+        <Link href="/flip-orders/reports" className="ml-auto text-sm font-medium text-red-700 underline">
+          Reports
+        </Link>
       </div>
 
       {error && (
