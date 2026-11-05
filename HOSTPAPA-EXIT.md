@@ -26,9 +26,69 @@ Everything else in this file is detail hanging off that sentence.
 
 ---
 
-## UNRESOLVED — answer this before starting
+## ANSWERED 5 Nov — and it reorders everything below
 
-**Who are the domains registered with?** Not established.
+Craig already asked HostPapa to cancel, on 20 Sep 2026. Their reply of 24 Sep
+(forwarded to Ben, in his Gmail, subject "Fwd: Cancellation") lists the end
+dates. **Cancellation is not a decision still to be taken — it is scheduled.**
+
+| Service (betterservice.co.nz) | Ends |
+|---|---|
+| NZ-Advanced Email | **31 Oct 2026 — already passed** |
+| NZ-Basic Email | **31 Oct 2026 — already passed** |
+| NZ-Website Builder, Unlimited | 23 Jan 2027 |
+| **NZ-Domain Registration** | **8 Feb 2027** |
+| NZ-Web Hosting Business | 23 Jan 2028 |
+
+### What this changes
+
+**The domain IS registered with HostPapa.** That was the open question and the
+answer is the bad one. `betterservice.co.nz`'s registration is scheduled to end
+**8 Feb 2027**, and HostPapa's reply includes the link for retrieving the
+transfer code, so they are expecting it to move.
+
+**The urgent item is the registrar transfer, not the DNS move.** DNS is served
+by the hosting plan, which runs until **Jan 2028** — over a year. The thing
+with a real deadline and no undo is the registration. If 8 Feb 2027 passes
+without a transfer, `betterservice.co.nz` drops and anyone may register it. No
+amount of correct DNS matters after that.
+
+So the order in this file still holds, but the clock sits on a different step:
+
+    transfer the registration  →  move DNS  →  verify  →  let hosting lapse
+            by 8 Feb 2027          any time before Jan 2028
+
+**The email services already lapsed on 31 Oct and nothing broke**, which is
+worth noting: mail had already moved to Fastmail, and the five days since have
+produced no bounces or missing mail. That is one real-world confirmation that
+the mail side of the migration is genuinely done.
+
+### Still open
+
+**`flipbikes.co.nz` is not on that list.** Every line in HostPapa's reply names
+betterservice.co.nz. So flipbikes is either registered elsewhere, or sitting on
+a HostPapa service nobody has cancelled — and its nameservers and apex A record
+are still HostPapa's either way. **Establish this before relying on any date
+above.** A thread in Ben's Gmail from 30 Sep ("Hostpapa — regarding your query
+you can get the UDAI code…") appears to cover transfer codes and may answer it.
+
+> That thread also contains an account password in plain text. It is on the
+> open-items list to deal with and is a reason to read it by hand rather than
+> have it quoted anywhere.
+
+### The transfer itself
+
+`.nz` domains move with a **UDAI**, not an EPP code — HostPapa's support
+article uses the generic term. One per domain, obtained from the losing
+registrar, valid for a limited window. The hosting account must stay open until
+the transfer completes.
+
+---
+
+## Original note, now answered
+
+**Who are the domains registered with?** Was not established at the time of
+drafting; see above. Retained because the method still applies to flipbikes.
 
 DNS hosting and domain registration are different things and HostPapa sells
 both. If the `.co.nz` registrations sit with HostPapa, cancelling may put the
