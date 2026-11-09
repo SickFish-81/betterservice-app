@@ -39,7 +39,7 @@ export default function FlipOrdersPage() {
     setLoading(true);
     const { data, error: e } = await supabase
       .from("flip_orders")
-      .select("session_id, created_at, invoice_number, name, email, phone, country, address, items, amount_total, shipping_amount, packed_at, consignment_id, tracking_number")
+      .select("session_id, created_at, invoice_number, name, email, phone, country, address, items, amount_total, shipping_amount, packed_at, consignment_id, tracking_number, shipping_source, shipping_carrier")
       .order("created_at", { ascending: false })
       .limit(100);
     if (e) setError(e.message);
@@ -207,6 +207,18 @@ function OrderCard({ order: o, busy, onPack }) {
       )}
       {addr.note && <p className="mt-1 text-xs text-zinc-600">Note: {addr.note}</p>}
 
+      {/* The freight fallback is SILENT by design — a carrier outage must never
+          cost a sale, so the table answers and the customer sees a price. The
+          cost of that is nobody knowing it happened. On an order being packed
+          by someone who was not here when it was built, "the carrier did not
+          price this" is worth a line of its own. */}
+      {o.shipping_source === "table" && (
+        <p className="mt-1 text-xs font-semibold text-amber-700">
+          Freight priced from our rate table — the carrier did not quote this one.
+          Check the ticket price before you send it.
+        </p>
+      )}
+
       <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-zinc-500">
         {o.phone && <a href={`tel:${o.phone}`} className="underline">{o.phone}</a>}
         {o.email && <a href={`mailto:${o.email}`} className="underline">{o.email}</a>}
@@ -217,6 +229,7 @@ function OrderCard({ order: o, busy, onPack }) {
         <div className="text-xs text-zinc-500">
           {money(o.amount_total)} paid
           {o.shipping_amount ? ` · ${money(o.shipping_amount)} freight` : ""}
+          {o.shipping_carrier ? ` (${o.shipping_carrier})` : ""}
         </div>
         {/* Address on the top half, pick list on the bottom, cut line between.
             Opens in its own tab so the list stays where it was. */}
