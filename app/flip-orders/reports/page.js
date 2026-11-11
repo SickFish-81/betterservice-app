@@ -58,6 +58,7 @@ export default function FlipReportsPage() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
   const [draft, setDraft] = useState({}); // session_id -> what's typed in the box
+  const [ledgerProblems, setLedgerProblems] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,6 +69,11 @@ export default function FlipReportsPage() {
       .limit(1000);
     if (e) setError(e.message);
     setOrders(data || []);
+    // Every FLIP sale posts itself to the books (0090). If one ever fails,
+    // the order still goes through and the reason lands here — which is only
+    // useful if somebody sees it.
+    const lp = await supabase.from("flip_ledger_problems").select("session_id, error, created_at").order("created_at", { ascending: false }).limit(20);
+    setLedgerProblems(lp.data || []);
     setLoading(false);
   }, []);
 
@@ -154,6 +160,20 @@ export default function FlipReportsPage() {
           Back to orders
         </Link>
       </div>
+
+      {ledgerProblems.length > 0 && (
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="font-semibold">
+            {ledgerProblems.length} FLIP order{ledgerProblems.length === 1 ? "" : "s"} didn&apos;t post to the accounts.
+          </p>
+          <p className="mt-0.5 text-xs">The orders themselves are fine. Tell Ben so they can be posted by hand.</p>
+          <ul className="mt-1 list-disc pl-5 text-xs">
+            {ledgerProblems.slice(0, 5).map((p, i) => (
+              <li key={i}>{orders.find((o) => o.session_id === p.session_id)?.invoice_number ? `FLIP-${orders.find((o) => o.session_id === p.session_id).invoice_number}` : "An order"}: {p.error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {error && (
         <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
