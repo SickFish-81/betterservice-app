@@ -47,7 +47,7 @@ const money = (cents) => "$" + (Number(cents || 0) / 100).toFixed(2);
 
 const BUSINESS = {
   name: "Betterservice ATV",
-  lines: ["556 Te Puke Highway", "Te Puke 3183"],
+  lines: ["556 Te Puke Highway", "Te Puke 3187"],
   phone: "021 0832 7787",
 };
 
@@ -61,7 +61,7 @@ export default function LabelSheetPage() {
     (async () => {
       const { data, error: e } = await supabase
         .from("flip_orders")
-        .select("session_id, created_at, invoice_number, name, email, phone, country, address, items, amount_total, shipping_amount, packed_at, consignment_id, tracking_number")
+        .select("session_id, created_at, invoice_number, name, email, phone, country, address, items, amount_total, shipping_amount, packed_at, consignment_id, tracking_number, channel, bill_to, paid_at, shipping_ex_gst")
         .eq("invoice_number", Number(invoice))
         .maybeSingle();
       if (e) setError(e.message);
@@ -82,6 +82,18 @@ export default function LabelSheetPage() {
   }
 
   const a = order.address || {};
+  const trade = order.channel === "trade";
+  // A trade order the customer picks up has no address and no courier. The
+  // sheet still prints — it is the pick list — but the top half says who is
+  // collecting instead of pretending there's somewhere to send it.
+  const collect = !!a.collect;
+  // Dropship: the box goes to the dealer's customer, so the sender on our
+  // half of the label is the DEALER — their customer bought from them.
+  // (The courier's own ticket still carries the GoSweetSpot sender.)
+  const dropship = trade && !collect && order.bill_to?.business && order.bill_to.business !== order.name;
+  const sender = dropship
+    ? { name: order.bill_to.business, lines: [], phone: order.bill_to.phone || null }
+    : BUSINESS;
   const addressLines = (a.formatted || "")
     .split(",")
     .map((s) => s.trim())
@@ -136,12 +148,16 @@ export default function LabelSheetPage() {
           <div style={{ height: "148.5mm", padding: "14mm 14mm 6mm" }} className="flex flex-col">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-[9pt] font-bold uppercase tracking-[0.18em] text-zinc-500">Deliver to</p>
+                <p className="text-[9pt] font-bold uppercase tracking-[0.18em] text-zinc-500">
+                  {collect ? "For collection by" : "Deliver to"}
+                </p>
                 <p className="mt-2 text-[20pt] font-extrabold leading-tight">{order.name || "—"}</p>
                 <div className="mt-1 text-[14pt] leading-snug">
-                  {addressLines.length
-                    ? addressLines.map((l, i) => <p key={i}>{l}</p>)
-                    : <p className="text-zinc-500">No address recorded</p>}
+                  {collect
+                    ? <p>Customer collects from the workshop</p>
+                    : addressLines.length
+                      ? addressLines.map((l, i) => <p key={i}>{l}</p>)
+                      : <p className="text-zinc-500">No address recorded</p>}
                 </div>
                 {order.phone && <p className="mt-2 text-[12pt]">Ph {order.phone}</p>}
               </div>
@@ -167,11 +183,11 @@ export default function LabelSheetPage() {
             <div className="mt-auto flex items-end justify-between border-t border-zinc-300 pt-3 text-[9pt] leading-snug text-zinc-600">
               <div>
                 <p className="font-bold uppercase tracking-[0.14em] text-zinc-500">From</p>
-                <p className="font-semibold text-black">{BUSINESS.name}</p>
-                {BUSINESS.lines.map((l) => <p key={l}>{l}</p>)}
-                <p>Ph {BUSINESS.phone}</p>
+                <p className="font-semibold text-black">{sender.name}</p>
+                {sender.lines.map((l) => <p key={l}>{l}</p>)}
+                {sender.phone && <p>Ph {sender.phone}</p>}
               </div>
-              <p className="text-right">Stick the courier ticket on this half</p>
+              <p className="text-right">{collect ? "Keep this half with the box until it's collected" : "Stick the courier ticket on this half"}</p>
             </div>
           </div>
 
@@ -190,7 +206,14 @@ export default function LabelSheetPage() {
               <p className="text-[11pt] font-bold uppercase tracking-[0.16em] text-zinc-500">Pack this</p>
             </div>
             <p className="mt-1 text-[11pt] font-semibold">{order.name || order.email || "—"}</p>
-            <p className="text-[10pt] text-zinc-600">{a.formatted || "No address recorded"}</p>
+            <p className="text-[10pt] text-zinc-600">
+              {collect ? "Customer collects from the workshop" : (a.formatted || "No address recorded")}
+            </p>
+            {/* For a dropship, the packer has to know the box goes to someone
+                other than the business on the invoice. */}
+            {trade && order.bill_to?.business && order.bill_to.business !== order.name && (
+              <p className="text-[10pt] text-zinc-600">Trade order for {order.bill_to.business}</p>
+            )}
             {a.note && <p className="mt-1 text-[11pt] font-bold">{a.note}</p>}
 
             <ul className="mt-5 space-y-2">
@@ -212,7 +235,14 @@ export default function LabelSheetPage() {
               <p>
                 {order.tracking_number
                   ? `Consignment ${order.tracking_number}`
-                  : `Freight charged ${money(order.shipping_amount)} of ${money(order.amount_total)} paid`}
+                  : collect
+                    ? "Collection — no freight"
+                    : trade
+                      // A trade invoice is often not paid when the box goes,
+                      // so "of $X paid" would be untrue. The freight figure is
+                      // what the packer checks the ticket against.
+                      ? `Trade order · freight at cost ${money(order.shipping_ex_gst)} + GST`
+                      : `Freight charged ${money(order.shipping_amount)} of ${money(order.amount_total)} paid`}
               </p>
             </div>
           </div>
