@@ -547,6 +547,26 @@ export default function JobDetailPage() {
     load();
   }
 
+  // Sent to Craig by mistake — the work isn't finished. Puts the job back to
+  // In progress and takes it off Craig's list. Only while it is still Ready:
+  // once Craig has made the invoice the job is "Invoiced", and undoing that
+  // is "Discard" on the invoice, not this. The status check is in the update
+  // itself, so a job Craig invoiced a moment ago is left alone.
+  async function reopenJob() {
+    if (job.status !== "Ready") return;
+    if (!window.confirm("Not finished? This puts the job back to In progress and takes it off Craig's list.")) return;
+    setError(null);
+    const { data, error } = await supabase
+      .from("job_cards")
+      .update({ status: "In progress", ready_at: null, ready_by: null })
+      .eq("id", id)
+      .eq("status", "Ready")
+      .select("id");
+    if (error) { setError(error.message); return; }
+    if (!data?.length) setError("Couldn't reopen it — it may have just been invoiced. Refresh and check.");
+    load();
+  }
+
   // The job card as a sheet of paper, for reading before confirming the job.
   // Opens in a tab rather than downloading — Craig wants to look at it, not
   // collect files. Falls back to saving if the browser blocks the tab.
@@ -1382,6 +1402,9 @@ export default function JobDetailPage() {
               <span className="font-medium text-violet-700">Sent to Craig for approval</span>
               {job.ready_at ? ` · ${new Date(job.ready_at).toLocaleString("en-NZ", { dateStyle: "medium", timeStyle: "short" })}` : ""}
               {readyByName ? ` · by ${readyByName}` : ""}
+              <button onClick={reopenJob} className="ml-3 text-sm font-medium text-zinc-600 underline hover:text-zinc-900">
+                Not finished? Reopen job
+              </button>
             </p>
           ) : (
             <>
