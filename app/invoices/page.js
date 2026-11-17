@@ -215,7 +215,11 @@ export default function InvoicesPage() {
   // the shop is owed.
   const settled = (i) => i.status === "Paid" || i.status === "Credited";
   const shown = filter === "unpaid" ? invoices.filter((i) => !settled(i)) : invoices;
-  const outstanding = invoices.filter((i) => !settled(i)).reduce((s, i) => s + balanceOf(i), 0);
+  // A DRAFT has no number and isn't in the accounts yet, so nobody owes it.
+  // It's still listed (so it can be found), but it isn't counted as owing and
+  // can't take a payment until it's issued.
+  const isDraft = (i) => !i.finalised_at;
+  const outstanding = invoices.filter((i) => !settled(i) && !isDraft(i)).reduce((s, i) => s + balanceOf(i), 0);
 
   const tab = (key, label) =>
     <button onClick={() => setFilter(key)} className={filter === key ? "rounded-md bg-red-600 px-3 py-1 font-medium text-white" : "px-3 py-1 font-medium text-zinc-600 hover:text-zinc-900"}>{label}</button>;
@@ -256,7 +260,7 @@ export default function InvoicesPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium text-zinc-900">
-                      <Link href={`/invoices/${inv.id}`} className="hover:underline">Invoice #{invNo(inv.invoice_number)}</Link>
+                      <Link href={`/invoices/${inv.id}`} className="hover:underline">{isDraft(inv) ? "Draft invoice" : `Invoice #${invNo(inv.invoice_number)}`}</Link>
                       <span className="text-sm font-normal text-zinc-500"> · {money(inv.total)}</span>
                       {inv.issued_date && <span className="text-sm font-normal text-zinc-400"> · {nzDate(inv.issued_date)}</span>}
                     </p>
@@ -272,8 +276,10 @@ export default function InvoicesPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <Link href={`/invoices/${inv.id}`} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">View</Link>
-                    {badge(inv.status)}
-                    {!paid && payingId !== inv.id && (
+                    {isDraft(inv)
+                      ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">Draft</span>
+                      : badge(inv.status)}
+                    {!paid && !isDraft(inv) && payingId !== inv.id && (
                       <button onClick={() => startPayment(inv)} className="rounded-md bg-zinc-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-zinc-700">Record payment</button>
                     )}
                   </div>

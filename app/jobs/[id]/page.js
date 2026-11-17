@@ -1446,6 +1446,12 @@ export default function JobDetailPage() {
             <button onClick={approveAndSend} disabled={!senderId || sendingInvoice} className="rounded-lg bg-amber-600 px-3 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50">{sendingInvoice ? "Sending…" : "Approve & send"}</button>
             <button onClick={discardInvoice} className="rounded-lg border border-amber-300 bg-white px-3 py-2 font-medium text-amber-800 hover:bg-amber-100">Discard</button>
           </div>
+          {/* The invoice page is where the PDF can be checked and the lines
+              edited before it goes. Without this link a draft could only be
+              sent or discarded from here. */}
+          <Link href={`/invoices/${invoice.id}`} className="mt-3 inline-block rounded-lg border border-amber-400 bg-white px-3 py-2 font-medium text-amber-900 hover:bg-amber-100">
+            Review &amp; edit invoice →
+          </Link>
           {senders.length === 0 && <p className="mt-2 text-xs text-amber-800">No one can send yet — mark Craig as “can send invoices” on the Staff page.</p>}
         </div>
       )}
