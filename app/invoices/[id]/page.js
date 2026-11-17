@@ -20,6 +20,21 @@ import { PAYMENT_TERMS, termsLabel } from "../../../lib/paymentTerms";
 const money = (n) => (Number(n || 0) < 0 ? "-$" : "$") + Math.abs(Number(n || 0)).toFixed(2);
 const btn = "rounded-lg px-3 py-2 text-sm font-medium transition disabled:opacity-50";
 
+// A draft line as the editor holds it: strings, so a half-typed price doesn't
+// fight the input.
+const toDraft = (x) => ({
+  id: x.id, kind: x.kind, amount: x.amount,
+  description: x.description ?? "",
+  quantity: String(x.quantity ?? ""),
+  unit_price: String(x.unit_price ?? ""),
+});
+// Has a line on screen been changed from what's stored? Quantity and price are
+// compared as numbers, so "2" and "2.00" are not a change.
+const lineChanged = (ln, src) =>
+  !!src && ((ln.description ?? "") !== (src.description ?? "") ||
+    Number(ln.quantity) !== Number(src.quantity) ||
+    Number(ln.unit_price) !== Number(src.unit_price));
+
 export default function InvoiceViewPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -47,6 +62,10 @@ export default function InvoiceViewPage() {
   // the input. Mirrors `items`; what gets saved is compared against `items`.
   const [lines, setLines] = useState([]);
   const [savingLine, setSavingLine] = useState("");
+  // The stored lines as of the last load, for keeping unsaved edits across a
+  // reload (see load({ keepEdits })).
+  const itemsRef = useRef([]);
+  const countUnsaved = () => lines.filter((ln) => lineChanged(ln, items.find((x) => x.id === ln.id))).length;
   // Printing issues the invoice, and the PDF in the frame is rebuilt by an effect
   // when the invoice reloads — so we can't print in the same tick. We ask for a
   // print and let the effect below fire it once the ISSUED pdf is on screen.
@@ -62,7 +81,10 @@ export default function InvoiceViewPage() {
   const [deleteTyped, setDeleteTyped] = useState("");
   const frame = useRef(null);
 
-  async function load() {
+  // keepEdits: reload what's stored, but leave alone anything typed and not yet
+  // saved (line edits, the dates, the email address). Used after a save or a
+  // removal, so one action doesn't throw away the rest of what's on screen.
+  async function load({ keepEdits = false } = {}) {
     setError(null);
     const [{ data: inv, error: iErr }, { data: st }, { data: isOwner }] = await Promise.all([
       supabase.from("invoices").select("*").eq("id", id).maybeSingle(),
@@ -98,16 +120,20 @@ export default function InvoiceViewPage() {
     ]);
 
     setInvoice(inv); setJob(j || null); setItems(li || []); setSettings(st || null);
-    setLines((li || []).map((x) => ({
-      id: x.id, kind: x.kind, amount: x.amount,
-      description: x.description ?? "",
-      quantity: String(x.quantity ?? ""),
-      unit_price: String(x.unit_price ?? ""),
-    })));
+    const fresh = (li || []).map(toDraft);
+    const before = itemsRef.current;
+    setLines((prev) => !keepEdits ? fresh : fresh.map((f) => {
+      const p = prev.find((x) => x.id === f.id);
+      const was = before.find((x) => x.id === f.id);
+      return p && lineChanged(p, was) ? { ...f, description: p.description, quantity: p.quantity, unit_price: p.unit_price } : f;
+    }));
+    itemsRef.current = li || [];
     setPayments(pays || []); setOwner(isOwner === true); setSenders(staff || []); setCredits(cns || []);
-    setEmailTo(j?.customers?.email || "");
-    setEIssue(inv.issued_date || "");
-    setEDue(inv.due_date || "");
+    if (!keepEdits) {
+      setEmailTo(j?.customers?.email || "");
+      setEIssue(inv.issued_date || "");
+      setEDue(inv.due_date || "");
+    }
 
     // Default "sent by" to whoever is signed in — that's the right answer almost
     // every time, and it stops a send failing just because a dropdown was untouched.
@@ -119,6 +145,32 @@ export default function InvoiceViewPage() {
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+
+  // Unsaved line edits: ask before the page is closed, reloaded, or left by a
+  // link inside the app (beforeunload doesn't fire for those).
+  useEffect(() => {
+    if (!countUnsaved()) return;
+    const msg = "You've changed lines on this invoice and not saved them. Leave without saving?";
+    const onUnload = (e) => { e.preventDefault(); e.returnValue = ""; };
+    const onClick = (e) => {
+      const a = e.target?.closest?.("a[href]");
+      if (!a || a.target === "_blank" || a.getAttribute("href")?.startsWith("#")) return;
+      if (!window.confirm(msg)) { e.preventDefault(); e.stopPropagation(); }
+    };
+    window.addEventListener("beforeunload", onUnload);
+    document.addEventListener("click", onClick, true);
+    return () => { window.removeEventListener("beforeunload", onUnload); document.removeEventListener("click", onClick, true); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, items]);
+
+  // Issuing, printing, emailing and downloading all use what's STORED. With
+  // edits still on screen that would send figures Craig thinks he changed.
+  function refuseIfUnsaved() {
+    const n = countUnsaved();
+    if (!n) return false;
+    setError(`You have ${n === 1 ? "a change" : n + " changes"} to the lines that ${n === 1 ? "isn't" : "aren't"} saved. Save or undo first.`);
+    return true;
+  }
 
   // Fires the print once the ISSUED pdf is actually in the frame. Without this the
   // print would go out carrying the DRAFT watermark, because the frame still holds
@@ -290,6 +342,7 @@ export default function InvoiceViewPage() {
   // a double-click cannot draw a second number or post twice.
   async function issueInvoice() {
     if (!invoice || invoice.finalised_at) return true;
+    if (refuseIfUnsaved()) return false;
     if (!window.confirm(
       "Issue this invoice?\n\nIt gets its invoice number, goes into the accounts, " +
       "and can't be edited afterwards — a mistake after this needs a credit note."
@@ -303,15 +356,45 @@ export default function InvoiceViewPage() {
     return true;
   }
 
-  // Edit a line on a DRAFT. The invoice's own subtotal/GST/total are recomputed by
-  // a database trigger, not here — so reload rather than doing the sums in the
-  // browser, and what's on screen is always what's stored.
-  async function saveLine(id, patch) {
-    setSavingLine(id); setError(null);
-    const { error } = await supabase.from("job_line_items").update(patch).eq("id", id);
+  // Edits to a DRAFT (or an issued, unsent invoice) are held on screen until
+  // "Save changes". They used to save the moment a box lost focus, and each save
+  // reloaded every line from the database, so whatever had been started in the
+  // next box was thrown away mid-edit. Craig: "it autosaves before I can edit."
+  //
+  // The invoice's subtotal/GST/total are still recomputed by a database trigger,
+  // not here, so this reloads afterwards and what's on screen is what's stored.
+  async function saveChanges() {
+    const changed = lines.filter((ln) => lineChanged(ln, items.find((x) => x.id === ln.id)));
+    if (!changed.length) return true;
+    for (const ln of changed) {
+      const name = ln.description?.trim() || "A line";
+      if (ln.kind !== "part" && !(Number(ln.quantity) > 0)) { setError(`${name}: the quantity has to be more than 0.`); return false; }
+      if (String(ln.unit_price).trim() === "" || !Number.isFinite(Number(ln.unit_price))) { setError(`${name}: the unit price isn't a number.`); return false; }
+    }
+    setSavingLine("all"); setError(null); setNote(null);
+    for (const ln of changed) {
+      const src = items.find((x) => x.id === ln.id) || {};
+      const patch = {};
+      if ((ln.description ?? "") !== (src.description ?? "")) patch.description = ln.description;
+      if (ln.kind !== "part" && Number(ln.quantity) !== Number(src.quantity)) patch.quantity = Number(ln.quantity);
+      if (Number(ln.unit_price) !== Number(src.unit_price)) patch.unit_price = Number(ln.unit_price);
+      const { error } = await supabase.from("job_line_items").update(patch).eq("id", ln.id);
+      if (error) {
+        setSavingLine("");
+        setError(`Couldn't save "${ln.description?.trim() || "a line"}": ${error.message}. The lines before it were saved; it and the rest are still on screen.`);
+        await load({ keepEdits: true });
+        return false;
+      }
+    }
     setSavingLine("");
-    if (error) { setError("Couldn't save that line: " + error.message); load(); return; }
-    load();
+    setNote(changed.length === 1 ? "Change saved." : `${changed.length} changes saved.`);
+    await load({ keepEdits: true });
+    return true;
+  }
+
+  function undoChanges() {
+    setLines(items.map(toDraft));
+    setError(null);
   }
 
   // Removing goes through the RPC, not a plain delete, because a stocked part has
@@ -322,10 +405,11 @@ export default function InvoiceViewPage() {
     const { error } = await supabase.rpc("remove_job_line_item", { p_item_id: id });
     setSavingLine("");
     if (error) { setError("Couldn't remove that line: " + error.message); return; }
-    load();
+    load({ keepEdits: true });
   }
 
   async function printIt() {
+    if (refuseIfUnsaved()) return;
     // Printing ISSUES the invoice: a printed document in a customer's hand is a tax
     // invoice, so it cannot stay a draft once it leaves the printer.
     if (invoice && !invoice.finalised_at) {
@@ -342,6 +426,7 @@ export default function InvoiceViewPage() {
   }
 
   async function download() {
+    if (refuseIfUnsaved()) return;
     // Download whatever is on screen. If that's the archived copy, the customer's
     // actual file is what lands in Downloads — not a re-render of it.
     if (source === "filed" && pdfUrl) {
@@ -364,6 +449,7 @@ export default function InvoiceViewPage() {
 
   async function emailAgain() {
     setError(null); setNote(null);
+    if (refuseIfUnsaved()) return;
     const to = emailTo.trim();
     if (!to) { setError("No email address to send to."); return; }
     if (!senderId) { setError("Choose who's sending it."); return; }
@@ -478,6 +564,7 @@ export default function InvoiceViewPage() {
   const fullyCredited = credited > 0 && balance <= 0 && paid <= 0;
   // A draft has no number and owes nothing yet, so "Unpaid" would be a lie.
   const draft = isDraft(invoice);
+  const unsaved = countUnsaved();
 
   // ADJUSTABLE: issued, but not yet SENT - so it can still be corrected.
   //
@@ -636,15 +723,20 @@ export default function InvoiceViewPage() {
                     {lines.map((ln) => {
                       const src = items.find((x) => x.id === ln.id) || {};
                       const set = (k, v) => setLines((prev) => prev.map((x) => x.id === ln.id ? { ...x, [k]: v } : x));
-                      const inp = "w-full rounded-lg border border-amber-300 bg-white px-2 py-1 text-sm focus:border-red-500 focus:outline-none";
+                      // A box that differs from what's stored is tinted, so it's
+                      // obvious what "Save changes" will write.
+                      const inpFor = (k) => {
+                        const on = k === "description" ? (ln.description ?? "") !== (src.description ?? "") : Number(ln[k]) !== Number(src[k]);
+                        return "w-full rounded-lg border px-2 py-1 text-sm focus:border-red-500 focus:outline-none " +
+                          (on ? "border-amber-500 bg-amber-100" : "border-amber-300 bg-white");
+                      };
                       return (
                         <tr key={ln.id} className="align-top">
                           <td className="pr-2 pb-2">
                             <input
                               value={ln.description}
                               onChange={(e) => set("description", e.target.value)}
-                              onBlur={(e) => e.target.value !== (src.description ?? "") && saveLine(ln.id, { description: e.target.value })}
-                              className={inp}
+                              className={inpFor("description")}
                             />
                           </td>
                           <td className="pr-2 pb-2">
@@ -658,9 +750,7 @@ export default function InvoiceViewPage() {
                                 type="number" step="0.25" min="0" inputMode="decimal"
                                 value={ln.quantity}
                                 onChange={(e) => set("quantity", e.target.value)}
-                                onBlur={(e) => Number(e.target.value) !== Number(src.quantity) && Number(e.target.value) > 0
-                                  && saveLine(ln.id, { quantity: Number(e.target.value) })}
-                                className={inp}
+                                className={inpFor("quantity")}
                               />
                             )}
                           </td>
@@ -675,16 +765,14 @@ export default function InvoiceViewPage() {
                               max={ln.kind === "credit" ? "0" : undefined}
                               value={ln.unit_price}
                               onChange={(e) => set("unit_price", e.target.value)}
-                              onBlur={(e) => Number(e.target.value) !== Number(src.unit_price)
-                                && saveLine(ln.id, { unit_price: Number(e.target.value) })}
-                              className={inp}
+                              className={inpFor("unit_price")}
                             />
                           </td>
                           <td className={`pb-2 pr-2 pt-1.5 text-right tabular-nums ${ln.kind === "credit" ? "font-medium text-emerald-700" : "text-zinc-800"}`}>{money(src.amount)}</td>
                           <td className="pb-2 pt-1">
                             <button
                               onClick={() => removeLine(ln.id)}
-                              disabled={savingLine === ln.id}
+                              disabled={savingLine === ln.id || savingLine === "all"}
                               className="text-xs font-medium text-red-700 underline hover:text-red-900 disabled:opacity-40"
                             >
                               {savingLine === ln.id ? "…" : "Remove"}
@@ -699,8 +787,21 @@ export default function InvoiceViewPage() {
                   </tbody>
                 </table>
               </div>
+              {unsaved > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500 bg-amber-100 px-3 py-2 text-sm">
+                  <span className="font-medium text-amber-900">
+                    {unsaved === 1 ? "1 change" : `${unsaved} changes`} not saved
+                  </span>
+                  <button onClick={saveChanges} disabled={savingLine === "all"} className={`${btn} bg-amber-700 text-white hover:bg-amber-800`}>
+                    {savingLine === "all" ? "Saving…" : "Save changes"}
+                  </button>
+                  <button onClick={undoChanges} disabled={savingLine === "all"} className={`${btn} border border-amber-300 bg-white text-amber-900 hover:bg-amber-50`}>
+                    Undo
+                  </button>
+                </div>
+              )}
               <p className="mt-1 text-xs text-amber-800">
-                Changes save when you click away, and the total above updates with them. To add a line — or to change
+                Nothing is saved until you press Save changes, then the total above updates. To add a line — or to change
                 how many of a stocked part were used — go to the{" "}
                 {job?.id ? <Link href={`/jobs/${job.id}`} className="underline">job card</Link> : "job card"}, so the
                 stock count stays right.
