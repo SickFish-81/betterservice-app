@@ -38,6 +38,7 @@ const groups = [
       { href: "/bookings", label: "Bookings", ownerOnly: true },
       { href: "/customers", label: "Customers" },
       { href: "/machines", label: "Machines" },
+      { href: "/stock", label: "Stock" },
       { href: "/due", label: "Due" },
       { href: "/timesheets", label: "Timesheets", ownerOnly: true },
     ],

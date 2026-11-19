@@ -34,6 +34,7 @@ const GROUPS = [
       { href: "/parts", title: "Parts & Inventory", badge: "low_stock" },
       { href: "/due", title: "Due For Service", badge: "service_due" },
       { href: "/machines", title: "Machines" },
+      { href: "/stock", title: "Stock (hire & for sale)" },
       { href: "/templates", title: "Checklist Templates" },
     ],
   },
