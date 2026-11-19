@@ -66,6 +66,9 @@ export default function Dashboard() {
   // Unread notifications addressed to ME. Not owner-gated — everybody has
   // their own list, and RLS only ever returns your own rows.
   const [unread, setUnread] = useState(0);
+  // Bikes serviced and waiting for Presale (Peni). Everyone sees it, not
+  // just owners: it's Peni's list.
+  const [presale, setPresale] = useState(0);
   // Two things the database summary doesn't carry: invoices raised and never
   // sent, and what the unpaid ones come to. Both are money questions, so both
   // are owner-only.
@@ -102,6 +105,13 @@ export default function Dashboard() {
         // badge too — a count you cannot act on is how a badge gets ignored.
         .is("dismissed_at", null);
       setUnread(count || 0);
+    })();
+    (async () => {
+      const { count } = await supabase
+        .from("job_cards")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "Presale");
+      setPresale(count || 0);
     })();
   }, []);
 
@@ -190,6 +200,7 @@ export default function Dashboard() {
   // standing still.
   const attention = [
     unread && { href: "/notifications", n: unread, text: `Job${unread === 1 ? "" : "s"} sent to you`, meta: "not opened yet" },
+    presale && { href: "/jobs#presale", n: presale, text: `Bike${presale === 1 ? "" : "s"} in Presale`, meta: "serviced, waiting to be tidied up" },
     counts.flip && { href: "/flip-orders", n: counts.flip, text: `FLIP order${counts.flip === 1 ? "" : "s"} to pack`, meta: "paid, not sent yet" },
     counts.rent && { href: "/rentals", n: counts.rent, text: `Rent invoice${counts.rent === 1 ? "" : "s"} awaiting approval`, meta: "not sent to the tenant yet" },
     counts.unsent && { href: "/emails", n: counts.unsent, text: `Invoice${counts.unsent === 1 ? "" : "s"} still to send`, meta: "unpaid and not with the customer" },

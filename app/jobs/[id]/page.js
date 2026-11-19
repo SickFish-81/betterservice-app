@@ -23,6 +23,7 @@ const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
   "In progress": "bg-amber-50 text-amber-700",
   "Awaiting parts": "bg-orange-50 text-orange-700",
+  "Presale": "bg-sky-50 text-sky-700",
   "Ready": "bg-violet-50 text-violet-700",
   "Invoiced": "bg-zinc-100 text-zinc-700",
   "Paid": "bg-emerald-50 text-emerald-700",
@@ -547,23 +548,56 @@ export default function JobDetailPage() {
     load();
   }
 
+  // PRESALE (0091). A resale or rental bike is serviced, then tidied up by
+  // Peni, then signed off by Craig. Each hand-off is a button that stamps who
+  // and when on the server, so nobody can claim to be someone else and the
+  // next person can see at a glance the service is already done.
+  async function passToPresale() {
+    if (!window.confirm("Service done? This passes the bike to Presale for Peni, and marks it serviced so nobody does it again.")) return;
+    setError(null);
+    const { error } = await supabase.rpc("pass_to_presale", { p_job_id: id });
+    if (error) { setError(error.message); return; }
+    load();
+  }
+
+  async function presaleDone() {
+    if (!window.confirm("Presale done? This passes the bike to Craig for sign-off.")) return;
+    setError(null);
+    const { error } = await supabase.rpc("presale_done", { p_job_id: id });
+    if (error) { setError(error.message); return; }
+    load();
+  }
+
+  // The Presale tick. Can be changed until the job has been passed on.
+  async function togglePresale(next) {
+    setError(null);
+    const { error } = await supabase.from("job_cards").update({ needs_presale: next }).eq("id", id)
+      .not("status", "in", "(Presale,Ready,Invoiced,Paid)");
+    if (error) { setError(error.message); return; }
+    load();
+  }
+
   // Sent to Craig by mistake — the work isn't finished. Puts the job back to
   // In progress and takes it off Craig's list. Only while it is still Ready:
   // once Craig has made the invoice the job is "Invoiced", and undoing that
   // is "Discard" on the invoice, not this. The status check is in the update
   // itself, so a job Craig invoiced a moment ago is left alone.
+  // Back one step (reopen_job in 0091): from Craig back to Presale if it went
+  // through Presale, otherwise back to the workshop; from Presale back to the
+  // workshop. The status check is in the database, so a job Craig invoiced a
+  // moment ago is left alone.
   async function reopenJob() {
-    if (job.status !== "Ready") return;
-    if (!window.confirm("Not finished? This puts the job back to In progress and takes it off Craig's list.")) return;
+    if (job.status !== "Ready" && job.status !== "Presale") return;
+    const toPresale = job.status === "Ready" && job.needs_presale && job.presale_at;
+    const msg = toPresale
+      ? "Not finished? This takes the bike off Craig's list and puts it back in Presale."
+      : job.status === "Presale"
+        ? "Service not finished? This takes the bike off the Presale list and puts it back in the workshop."
+        : "Not finished? This puts the job back to In progress and takes it off Craig's list.";
+    if (!window.confirm(msg)) return;
     setError(null);
-    const { data, error } = await supabase
-      .from("job_cards")
-      .update({ status: "In progress", ready_at: null, ready_by: null })
-      .eq("id", id)
-      .eq("status", "Ready")
-      .select("id");
+    const { error } = await supabase.rpc("reopen_job", { p_job_id: id });
     if (error) { setError(error.message); return; }
-    if (!data?.length) setError("Couldn't reopen it — it may have just been invoiced. Refresh and check.");
     load();
   }
 
@@ -827,6 +861,9 @@ export default function JobDetailPage() {
 
   const shopRate = Number(settings?.labour_rate ?? 115);
   const readyByName = (staff || []).find((x) => x.id === job?.ready_by)?.name || "";
+  const servicedByName = staffName(job?.serviced_by) || "";
+  const presaleByName = staffName(job?.presale_by) || "";
+  const nzDate = (t) => (t ? new Date(t).toLocaleDateString("en-NZ", { day: "numeric", month: "short" }) : "");
   const markupPct = Number(settings?.parts_markup_percent ?? 30);
 
   // Search box over the inventory dropdown — the list got long enough to scroll.
@@ -855,6 +892,14 @@ export default function JobDetailPage() {
             {job.status}
           </span>
         </div>
+        {/* The point of the Presale step: once the service is marked done,
+            say so loudly, so nobody picks the bike up and services it again. */}
+        {job.serviced_at && (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+            Serviced{servicedByName ? ` by ${servicedByName}` : ""} on {nzDate(job.serviced_at)}. Don&apos;t service again.
+            {job.presale_at ? ` Presale done${presaleByName ? ` by ${presaleByName}` : ""} on ${nzDate(job.presale_at)}.` : ""}
+          </p>
+        )}
 
         {editing ? (
           <div className="mt-3 flex flex-col gap-2">
@@ -1406,12 +1451,38 @@ export default function JobDetailPage() {
                 Not finished? Reopen job
               </button>
             </p>
+          ) : job.status === "Presale" ? (
+            <>
+              <p className="text-sm font-medium text-sky-800">In Presale: getting it tidied up for resale or rental</p>
+              <button onClick={presaleDone} className="mt-3 w-full rounded-lg bg-sky-600 px-4 py-2.5 font-medium text-white hover:bg-sky-700">
+                Presale done, pass to Craig
+              </button>
+              <p className="mt-2 text-xs text-zinc-500">
+                Puts it in front of Craig for sign-off.{" "}
+                <button onClick={reopenJob} className="font-medium text-zinc-600 underline hover:text-zinc-900">Service not finished? Send it back to the workshop</button>
+              </p>
+            </>
           ) : (
             <>
-              <button onClick={sendForApproval} className="w-full rounded-lg bg-violet-600 px-4 py-2.5 font-medium text-white hover:bg-violet-700">
-                Send to Craig for approval
-              </button>
-              <p className="mt-2 text-xs text-zinc-500">Marks the job Ready and puts it in front of Craig so it can be invoiced.</p>
+              <label className="mb-3 flex items-center gap-2 text-sm text-zinc-700">
+                <input type="checkbox" checked={!!job.needs_presale} onChange={(e) => togglePresale(e.target.checked)} className="h-4 w-4" />
+                Presale tidy-up before Craig (resale or rental bike)
+              </label>
+              {job.needs_presale ? (
+                <>
+                  <button onClick={passToPresale} className="w-full rounded-lg bg-sky-600 px-4 py-2.5 font-medium text-white hover:bg-sky-700">
+                    Service done, pass to Presale
+                  </button>
+                  <p className="mt-2 text-xs text-zinc-500">Marks it serviced and puts it on Peni&apos;s Presale list. Craig sees it once Presale is done.</p>
+                </>
+              ) : (
+                <>
+                  <button onClick={sendForApproval} className="w-full rounded-lg bg-violet-600 px-4 py-2.5 font-medium text-white hover:bg-violet-700">
+                    Send to Craig for approval
+                  </button>
+                  <p className="mt-2 text-xs text-zinc-500">Marks the job Ready and puts it in front of Craig so it can be invoiced.</p>
+                </>
+              )}
             </>
           )}
         </div>

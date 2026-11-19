@@ -8,6 +8,7 @@ const STATUS_STYLES = {
   "New": "bg-blue-50 text-blue-700",
   "In progress": "bg-amber-50 text-amber-700",
   "Awaiting parts": "bg-orange-50 text-orange-700",
+  "Presale": "bg-sky-50 text-sky-700",
   "Ready": "bg-violet-50 text-violet-700",
   "Invoiced": "bg-zinc-100 text-zinc-700",
   "Paid": "bg-emerald-50 text-emerald-700",
@@ -19,17 +20,34 @@ const DONE = new Set(["Invoiced", "Paid"]);
 const input = "w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-zinc-900 placeholder:text-zinc-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100";
 const btn = "rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700";
 
-function JobCard({ j }) {
+// "Ready" reads as "waiting for Craig" on the list, which is what it means.
+const statusLabel = (st) => (st === "Ready" ? "Waiting for Craig" : st);
+const daysSince = (t) => (t ? Math.max(0, Math.floor((Date.now() - new Date(t).getTime()) / 86400000)) : null);
+const waited = (t) => { const d = daysSince(t); return d === null ? "" : d === 0 ? "today" : d === 1 ? "1 day" : `${d} days`; };
+
+function JobCard({ j, staffName }) {
+  const key = j.machines?.key_number;
+  const serviced = j.serviced_at && (j.status === "Presale" || j.status === "Ready");
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-zinc-300">
       <div className="flex items-center justify-between gap-3">
         <Link href={`/jobs/${j.id}`} className="text-lg font-semibold text-zinc-900 hover:text-red-700">Job #{j.job_number}</Link>
         <span className={`rounded-full px-3 py-1 text-sm font-medium ${STATUS_STYLES[j.status] || "bg-zinc-100 text-zinc-700"}`}>
-          {j.status}
+          {statusLabel(j.status)}
         </span>
       </div>
-      <p className="mt-1 text-sm text-zinc-700">{j.customers?.name} · {j.machines?.type} {j.machines?.make} {j.machines?.model}</p>
+      <p className="mt-1 text-sm text-zinc-700">
+        {j.customers?.name} · {j.machines?.type} {j.machines?.make} {j.machines?.model}
+        {key && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-semibold text-zinc-700">Key {key}</span>}
+        {j.needs_presale && j.status !== "Presale" && <span className="ml-2 rounded bg-sky-50 px-1.5 py-0.5 text-xs font-medium text-sky-700">Presale</span>}
+      </p>
       {j.reported_problem && <p className="mt-1 text-sm text-zinc-500">{j.reported_problem}</p>}
+      {serviced && (
+        <p className="mt-1 text-xs font-medium text-emerald-700">
+          Serviced{staffName(j.serviced_by) ? ` by ${staffName(j.serviced_by)}` : ""}
+          {j.status === "Presale" ? ` · waiting ${waited(j.serviced_at)}` : ""}
+        </p>
+      )}
       <div className="mt-3">
         <Link href={`/jobs/${j.id}`} className="text-sm font-medium text-red-600 hover:text-red-700">Open →</Link>
       </div>
@@ -84,10 +102,14 @@ export default function JobsPage() {
   const [error, setError] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [staff, setStaff] = useState([]);
+  const staffName = (sid) => staff.find((x) => x.id === sid)?.name?.split(" ")[0] || "";
 
   async function loadData() {
     setLoading(true);
-    const { data: j, error: jErr } = await supabase.from("job_cards").select("*, customers(name), machines(type, make, model)").order("created_at", { ascending: false });
+    const { data: j, error: jErr } = await supabase.from("job_cards").select("*, customers(name), machines(type, make, model, key_number)").order("created_at", { ascending: false });
+    const { data: st } = await supabase.from("staff").select("id, name");
+    setStaff(st || []);
     const { data: c } = await supabase.from("customers").select("id, name, phone, email").order("name");
     const { data: m } = await supabase.from("machines").select("id, customer_id, type, make, model, year, vin, key_number");
     if (jErr) setError(jErr.message);
@@ -228,15 +250,37 @@ export default function JobsPage() {
     const todayNZ = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" });
     const { data: existing } = await supabase.from("job_cards").select("id").eq("machine_id", machId).eq("job_date", todayNZ);
     if (existing && existing.length > 0) { setError("There's already a job card for this machine today."); return false; }
+
+    // Don't service a bike twice. An open job on the same machine is almost
+    // always the one to use; a service in the last 60 days is worth knowing
+    // about before starting another. Both ask rather than refuse, because a
+    // second job is sometimes right (a new fault on a bike just serviced).
+    const { data: history } = await supabase.from("job_cards")
+      .select("job_number, status, job_date, serviced_at")
+      .eq("machine_id", machId).order("job_date", { ascending: false }).limit(10);
+    const open = (history || []).find((h) => !DONE.has(h.status));
+    if (open && !window.confirm(
+      `This machine already has job #${open.job_number} open (${statusLabel(open.status)}).\n\nOpen that one instead of starting another? Press Cancel to go back, OK to make a new job anyway.`
+    )) return false;
+    const cutoff = Date.now() - 60 * 86400000;
+    const recent = (history || []).find((h) => h !== open && (h.serviced_at || (DONE.has(h.status) && h.job_date)) &&
+      new Date(h.serviced_at || h.job_date).getTime() >= cutoff);
+    if (recent && !window.confirm(
+      `Heads up: this machine was last done on job #${recent.job_number}, ${new Date(recent.serviced_at || recent.job_date).toLocaleDateString("en-NZ", { day: "numeric", month: "short" })}.\n\nMake a new job anyway?`
+    )) return false;
     const { error } = await supabase.from("job_cards").insert({ customer_id: custId, machine_id: machId, reported_problem: problem, source });
     if (error) { setError(error.message); return false; }
     resetNewJobForm(); setShowNew(false); loadData();
   }
 
-  // Three buckets: not started, in the workshop, finished.
+  // Separate lists, so it's clear who has each bike: not started, being
+  // serviced, with Peni for Presale, waiting for Craig, finished.
   const newJobs = jobs.filter((j) => j.status === "New");
+  const presaleJobs = jobs.filter((j) => j.status === "Presale")
+    .sort((a, b) => new Date(a.serviced_at || a.created_at) - new Date(b.serviced_at || b.created_at));
+  const craigJobs = jobs.filter((j) => j.status === "Ready");
   const doneJobs = jobs.filter((j) => DONE.has(j.status));
-  const openJobs = jobs.filter((j) => j.status !== "New" && !DONE.has(j.status));
+  const openJobs = jobs.filter((j) => !["New", "Presale", "Ready"].includes(j.status) && !DONE.has(j.status));
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
@@ -260,7 +304,7 @@ export default function JobsPage() {
             <>
               <SectionHeading count={newJobs.length}>New</SectionHeading>
               <div className="flex flex-col gap-3">
-                {newJobs.map((j) => (<JobCard key={j.id} j={j} />))}
+                {newJobs.map((j) => (<JobCard key={j.id} j={j} staffName={staffName} />))}
               </div>
             </>
           )}
@@ -269,7 +313,25 @@ export default function JobsPage() {
             <>
               <SectionHeading count={openJobs.length}>In the workshop</SectionHeading>
               <div className="flex flex-col gap-3">
-                {openJobs.map((j) => (<JobCard key={j.id} j={j} />))}
+                {openJobs.map((j) => (<JobCard key={j.id} j={j} staffName={staffName} />))}
+              </div>
+            </>
+          )}
+
+          {presaleJobs.length > 0 && (
+            <div id="presale">
+              <SectionHeading count={presaleJobs.length}>Presale (Peni)</SectionHeading>
+              <div className="flex flex-col gap-3">
+                {presaleJobs.map((j) => (<JobCard key={j.id} j={j} staffName={staffName} />))}
+              </div>
+            </div>
+          )}
+
+          {craigJobs.length > 0 && (
+            <>
+              <SectionHeading count={craigJobs.length}>Waiting for Craig</SectionHeading>
+              <div className="flex flex-col gap-3">
+                {craigJobs.map((j) => (<JobCard key={j.id} j={j} staffName={staffName} />))}
               </div>
             </>
           )}
