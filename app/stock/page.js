@@ -39,6 +39,7 @@ const saveBtn = "rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white
 const cancelBtn = "rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50";
 const money = (n) => (n === null || n === undefined || n === "" ? "" : "$" + Number(n).toLocaleString("en-NZ", { minimumFractionDigits: 0, maximumFractionDigits: 2 }));
 const nzDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "2-digit" }) : "");
+const BLANK_NEW = { type: "ATV", make: "", model: "", year: "", key_number: "", stage: "Workshop", came_in: "", work_done: "", to_do: "", asking_price: "" };
 const machineTitle = (m) => [m?.make, m?.model, m?.year].filter(Boolean).join(" ") || m?.type || "Machine";
 
 export default function StockPage() {
@@ -57,7 +58,8 @@ export default function StockPage() {
   const [ev, setEv] = useState({});
   const [busy, setBusy] = useState("");
   const [adding, setAdding] = useState(false);
-  const [nv, setNv] = useState({ type: "ATV", make: "", model: "", year: "", key_number: "", stage: "Workshop", came_in: "", work_done: "", to_do: "", asking_price: "" });
+  const [nv, setNv] = useState(BLANK_NEW);
+  const [matches, setMatches] = useState(null); // machines already on file with the new key number; null = not checked yet
   const [listFor, setListFor] = useState(null); // stock row id being put on the website
   const [listCat, setListCat] = useState("");
 
@@ -130,8 +132,46 @@ export default function StockPage() {
     load();
   }
 
+  // Adding a machine checks the key number first. Craig added B79 as a new
+  // machine on 24 Nov when it was already on file with job #159 open, so the
+  // job and the stock row ended up on two different records.
   async function addMachine(e) {
     e.preventDefault(); setError(null);
+    const key = nv.key_number.trim();
+    if (key && matches === null) {
+      setBusy("add");
+      const found = await findByKey(key);
+      setBusy("");
+      if (found.error) { setError("Couldn't check the key number: " + found.error); return; }
+      if (found.list.length) { setMatches(found.list); return; }
+    }
+    await createNew();
+  }
+
+  // Machines with the same key number (any case), with their open job and
+  // whether they're already in stock. The stock owner's machines come first.
+  async function findByKey(key) {
+    const pattern = key.replace(/[\\%_]/g, (c) => "\\" + c);
+    const { data: ms, error: e1 } = await supabase.from("machines").select("id, customer_id, type, make, model, year, key_number").ilike("key_number", pattern);
+    if (e1) return { error: e1.message };
+    if (!ms?.length) return { list: [] };
+    const ids = ms.map((m) => m.id);
+    const [{ data: js }, { data: st }] = await Promise.all([
+      supabase.from("job_cards").select("id, job_number, status, machine_id").in("machine_id", ids).not("status", "in", "(Invoiced,Paid)"),
+      supabase.from("stock_items").select("id, stage, machine_id").in("machine_id", ids),
+    ]);
+    const list = ms.map((m) => ({
+      ...m,
+      owner: byId(customers, m.customer_id)?.name || "",
+      job: (js || []).find((j) => j.machine_id === m.id),
+      stock: (st || []).find((x) => x.machine_id === m.id),
+    }));
+    list.sort((a, b) => (b.owner === STOCK_OWNER) - (a.owner === STOCK_OWNER) || !!b.job - !!a.job);
+    return { list };
+  }
+
+  async function createNew() {
+    setError(null);
     if (!nv.make.trim() || !nv.model.trim()) { setError("Make and model are needed."); return; }
     setBusy("add");
     const { data: ownerRow } = await supabase.from("customers").select("id").eq("name", STOCK_OWNER).maybeSingle();
@@ -141,15 +181,36 @@ export default function StockPage() {
       year: year ? Number(year) : null, key_number: nv.key_number.trim() || null,
     }).select("id").single();
     if (mErr) { setBusy(""); setError("Couldn't add the machine: " + mErr.message); return; }
-    const row = { machine_id: m.id, stage: nv.stage, came_in: nv.came_in || null, work_done: nv.work_done.trim() || null, to_do: nv.to_do.trim() || null };
+    await insertStock(m.id, "Added.");
+  }
+
+  // Use a machine that's already on file. Only blank details are filled in
+  // from the form; nothing already on the machine record is overwritten.
+  async function pickExisting(m) {
+    if (m.stock) { setError(`That machine is already in stock (${m.stock.stage}). Search for ${m.key_number} to find it.`); return; }
+    setBusy("add"); setError(null);
+    const fill = {};
+    if (!m.make && nv.make.trim()) fill.make = nv.make.trim();
+    if (!m.model && nv.model.trim()) fill.model = nv.model.trim();
+    if (!m.year && nv.year.trim()) fill.year = Number(nv.year.trim());
+    if (Object.keys(fill).length) {
+      const { error: fErr } = await supabase.from("machines").update(fill).eq("id", m.id);
+      if (fErr) { setBusy(""); setError("Couldn't update the machine: " + fErr.message); return; }
+    }
+    await insertStock(m.id, m.job ? `Added, on the existing machine (job #${m.job.job_number}).` : "Added, on the existing machine.");
+  }
+
+  async function insertStock(machineId, done) {
+    const row = { machine_id: machineId, stage: nv.stage, came_in: nv.came_in || null, work_done: nv.work_done.trim() || null, to_do: nv.to_do.trim() || null };
     if (owner && String(nv.asking_price).trim()) row.asking_price = Number(nv.asking_price);
     const { error: sErr } = await supabase.from("stock_items").insert(row);
     setBusy("");
     if (sErr) { setError(sErr.message); return; }
-    setAdding(false);
-    setNv({ type: "ATV", make: "", model: "", year: "", key_number: "", stage: "Workshop", came_in: "", work_done: "", to_do: "", asking_price: "" });
-    setNote("Added."); load();
+    closeAdd();
+    setNote(done); load();
   }
+
+  function closeAdd() { setAdding(false); setMatches(null); setNv(BLANK_NEW); }
 
   // Owner only: create the public listing from the stock row, with the same
   // price. Photos are added on the For Sale page.
@@ -168,7 +229,10 @@ export default function StockPage() {
   }
 
   const set = (k) => (e) => setEv((v) => ({ ...v, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
-  const setN = (k) => (e) => setNv((v) => ({ ...v, [k]: e.target.value }));
+  const setN = (k) => (e) => {
+    setNv((v) => ({ ...v, [k]: e.target.value }));
+    if (k === "key_number") setMatches(null); // a new key number gets checked again
+  };
 
   // A render function, not a component: a component defined inside this one
   // would be a new type on every render, and the edit boxes would lose focus
@@ -288,10 +352,35 @@ export default function StockPage() {
           </div>
           <textarea value={nv.work_done} onChange={setN("work_done")} rows={2} placeholder="Work done" className={input + " mt-2"} />
           <textarea value={nv.to_do} onChange={setN("to_do")} rows={2} placeholder="Still to do" className={input + " mt-2"} />
-          <div className="mt-3 flex gap-2">
-            <button type="submit" disabled={busy === "add"} className={saveBtn}>{busy === "add" ? "Adding…" : "Add"}</button>
-            <button type="button" onClick={() => setAdding(false)} className={cancelBtn}>Cancel</button>
-          </div>
+          {matches && matches.length > 0 && (
+            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-medium">Key {nv.key_number.trim()} is already on file. Is it one of these?</p>
+              <ul className="mt-2 space-y-2">
+                {matches.map((m) => (
+                  <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2">
+                    <span>
+                      <span className="font-medium">{machineTitle(m)}</span>
+                      {m.owner && <span className="text-zinc-600"> · {m.owner}</span>}
+                      {m.job && <span className="text-zinc-600"> · job #{m.job.job_number} ({m.job.status})</span>}
+                    </span>
+                    {m.stock
+                      ? <span className="text-xs font-medium text-amber-800">Already in stock ({m.stock.stage})</span>
+                      : <button type="button" onClick={() => pickExisting(m)} disabled={busy === "add"} className={saveBtn}>Use this one</button>}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={createNew} disabled={busy === "add"} className={cancelBtn}>No, it's a different machine. Add new</button>
+                <button type="button" onClick={closeAdd} className={cancelBtn}>Cancel</button>
+              </div>
+            </div>
+          )}
+          {!(matches && matches.length > 0) && (
+            <div className="mt-3 flex gap-2">
+              <button type="submit" disabled={busy === "add"} className={saveBtn}>{busy === "add" ? "Checking…" : "Add"}</button>
+              <button type="button" onClick={closeAdd} className={cancelBtn}>Cancel</button>
+            </div>
+          )}
         </form>
       )}
 
