@@ -12,6 +12,11 @@
 // website, and the database refuses anyone else, whatever this page shows.
 // Nothing is deleted from here: a machine leaves stock by being Sold.
 //
+// Selling (migration 0093, Craig's "Problem" email, 25 Nov 2026): "Mark as
+// sold" records the date, the buyer and (owners only) the price in one call,
+// sell_stock_item(). That also moves the bike to the buyer and starts its
+// 12-month service reminder from the sale date. The key number stays on the bike.
+//
 // Edits save on a button, never on blur (see the draft-invoice fix in
 // app/invoices/[id]: autosave was throwing away Craig's edits).
 
@@ -40,6 +45,10 @@ const cancelBtn = "rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medi
 const money = (n) => (n === null || n === undefined || n === "" ? "" : "$" + Number(n).toLocaleString("en-NZ", { minimumFractionDigits: 0, maximumFractionDigits: 2 }));
 const nzDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "2-digit" }) : "");
 const BLANK_NEW = { type: "ATV", make: "", model: "", year: "", key_number: "", stage: "Workshop", came_in: "", work_done: "", to_do: "", asking_price: "" };
+const todayNZ = () => new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" }); // YYYY-MM-DD
+const plusYear = (d) => { const [y, m, day] = d.split("-"); return `${Number(y) + 1}-${m}-${day}`; };
+const daysBetween = (a, b) => Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
+const BLANK_SALE = { sold_at: "", customer_id: "", cq: "", name: "", phone: "", email: "", address: "", price: "", notes: "" };
 const machineTitle = (m) => [m?.make, m?.model, m?.year].filter(Boolean).join(" ") || m?.type || "Machine";
 
 export default function StockPage() {
@@ -62,6 +71,8 @@ export default function StockPage() {
   const [matches, setMatches] = useState(null); // machines already on file with the new key number; null = not checked yet
   const [listFor, setListFor] = useState(null); // stock row id being put on the website
   const [listCat, setListCat] = useState("");
+  const [sellId, setSellId] = useState(null); // stock row id being marked sold
+  const [sv, setSv] = useState(BLANK_SALE);
 
   async function load() {
     setError(null);
@@ -71,7 +82,7 @@ export default function StockPage() {
     const lids = (st || []).map((r) => r.listing_id).filter(Boolean);
     const [{ data: ms }, { data: cs }, { data: js }, { data: ls }] = await Promise.all([
       mids.length ? supabase.from("machines").select("id, customer_id, type, make, model, year, key_number").in("id", mids) : { data: [] },
-      supabase.from("customers").select("id, name").order("name"),
+      supabase.from("customers").select("id, name, phone, email").order("name"),
       mids.length ? supabase.from("job_cards").select("id, job_number, status, machine_id").in("machine_id", mids).not("status", "in", "(Invoiced,Paid)") : { data: [] },
       lids.length ? supabase.from("secondhand_listings").select("id, status, price").in("id", lids) : { data: [] },
     ]);
@@ -85,22 +96,24 @@ export default function StockPage() {
     ...r,
     machine: byId(machines, r.machine_id),
     hire: byId(customers, r.hire_customer_id),
+    buyer: byId(customers, r.sold_to_customer_id),
     job: jobs.find((j) => j.machine_id === r.machine_id),
     listing: byId(listings, r.listing_id),
   })), [rows, machines, customers, jobs, listings]);
 
   const shown = view.filter((r) => {
     if (!q.trim()) return true;
-    const t = [machineTitle(r.machine), r.machine?.key_number, r.work_done, r.to_do, r.notes, r.hire?.name].join(" ").toLowerCase();
+    const t = [machineTitle(r.machine), r.machine?.key_number, r.work_done, r.to_do, r.notes, r.hire?.name, r.buyer?.name].join(" ").toLowerCase();
     return t.includes(q.trim().toLowerCase());
   });
 
   function startEdit(r) {
-    setEditId(r.id); setError(null); setNote(null);
+    setEditId(r.id); setSellId(null); setError(null); setNote(null);
     setEv({
       make: r.machine?.make || "", model: r.machine?.model || "", year: r.machine?.year ? String(r.machine.year) : "", key_number: r.machine?.key_number || "",
       stage: r.stage, came_in: r.came_in || "", ready: r.ready, work_done: r.work_done || "", to_do: r.to_do || "", notes: r.notes || "",
       asking_price: r.asking_price ?? "", hire_customer_id: r.hire_customer_id || "",
+      for_sale_at: r.for_sale_at || "", sold_at: r.sold_at || "", sold_price: r.sold_price ?? "",
     });
   }
 
@@ -115,11 +128,18 @@ export default function StockPage() {
       stage: ev.stage, came_in: ev.came_in || null, ready: !!ev.ready, work_done: ev.work_done.trim() || null,
       to_do: ev.to_do.trim() || null, notes: ev.notes.trim() || null,
       hire_customer_id: ["On hire", "To pick up"].includes(ev.stage) ? (ev.hire_customer_id || null) : r.hire_customer_id,
+      for_sale_at: ev.for_sale_at || null,
     };
+    if (r.stage === "Sold" && ev.stage === "Sold" && ev.sold_at) patch.sold_at = ev.sold_at;
     // Price only goes in the update when it actually changed, so a staff
     // member saving notes doesn't trip the owner-only price rule.
     const price = String(ev.asking_price).trim() === "" ? null : Number(ev.asking_price);
     if (price !== (r.asking_price === null ? null : Number(r.asking_price))) patch.asking_price = price;
+    if (owner && r.stage === "Sold") {
+      const sp = String(ev.sold_price).trim() === "" ? null : Number(ev.sold_price);
+      if (sp !== null && !(sp >= 0)) { setBusy(""); setError("The sale price needs to be a number."); return; }
+      if (sp !== (r.sold_price === null ? null : Number(r.sold_price))) patch.sold_price = sp;
+    }
     const { error: sErr } = await supabase.from("stock_items").update(patch).eq("id", r.id);
     setBusy("");
     if (sErr) { setError(sErr.message); return; }
@@ -212,6 +232,31 @@ export default function StockPage() {
 
   function closeAdd() { setAdding(false); setMatches(null); setNv(BLANK_NEW); }
 
+  function startSell(r) {
+    setSellId(r.id); setEditId(null); setError(null); setNote(null);
+    setSv({ ...BLANK_SALE, sold_at: todayNZ(), price: owner && r.asking_price !== null ? String(r.asking_price) : "", notes: r.notes || "" });
+  }
+
+  async function sellIt(r) {
+    setError(null);
+    if (!sv.sold_at) { setError("Enter the date it sold."); return; }
+    if (!sv.customer_id && !sv.name.trim()) { setError("Enter the buyer's name, or pick them from your customers."); return; }
+    const price = owner && String(sv.price).trim() !== "" ? Number(sv.price) : null;
+    if (price !== null && !(price >= 0)) { setError("The sale price needs to be a number."); return; }
+    setBusy(r.id);
+    const { data: cust, error: e } = await supabase.rpc("sell_stock_item", {
+      p_stock_id: r.id, p_sold_at: sv.sold_at, p_customer_id: sv.customer_id || null,
+      p_name: sv.name, p_phone: sv.phone, p_email: sv.email, p_address: sv.address,
+      p_price: price, p_notes: sv.notes,
+    });
+    setBusy("");
+    if (e) { setError(e.message); return; }
+    const who = sv.customer_id ? byId(customers, sv.customer_id)?.name : sv.name.trim();
+    setSellId(null); setSv(BLANK_SALE);
+    setNote(`Sold to ${who || "the buyer"}. The bike is now under their name, with a service reminder due ${nzDate(plusYear(sv.sold_at))}.`);
+    if (cust) load();
+  }
+
   // Owner only: create the public listing from the stock row, with the same
   // price. Photos are added on the For Sale page.
   async function listOnWebsite(r) {
@@ -228,6 +273,7 @@ export default function StockPage() {
     setListFor(null); setListCat(""); setNote("On the website. Add photos on the For Sale page."); load();
   }
 
+  const setS = (k) => (e) => setSv((v) => ({ ...v, [k]: e.target.value }));
   const set = (k) => (e) => setEv((v) => ({ ...v, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const setN = (k) => (e) => {
     setNv((v) => ({ ...v, [k]: e.target.value }));
@@ -249,7 +295,7 @@ export default function StockPage() {
             <input value={ev.key_number} onChange={set("key_number")} placeholder="Key number" className={input} />
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <select value={ev.stage} onChange={set("stage")} className={input}>{STAGES.map((s) => <option key={s}>{s}</option>)}</select>
+            <select value={ev.stage} onChange={set("stage")} className={input}>{STAGES.filter((s) => s !== "Sold" || r.stage === "Sold").map((s) => <option key={s}>{s}</option>)}</select>
             <label className="flex flex-col text-xs text-zinc-500">Came in<input type="date" value={ev.came_in} onChange={set("came_in")} className={input} /></label>
             {owner ? (
               <label className="flex flex-col text-xs text-zinc-500">Price incl GST<input value={ev.asking_price} onChange={set("asking_price")} inputMode="decimal" placeholder="e.g. 6999" className={input} /></label>
@@ -258,6 +304,18 @@ export default function StockPage() {
             )}
             <label className="flex items-center gap-2 self-end pb-2 text-sm text-zinc-700"><input type="checkbox" checked={!!ev.ready} onChange={set("ready")} className="h-4 w-4" /> Ready to sell</label>
           </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <label className="flex flex-col text-xs text-zinc-500">Up for sale<input type="date" value={ev.for_sale_at} onChange={set("for_sale_at")} className={input} /></label>
+            {r.stage === "Sold" && ev.stage === "Sold" && (
+              <label className="flex flex-col text-xs text-zinc-500">Date sold<input type="date" value={ev.sold_at} onChange={set("sold_at")} className={input} /></label>
+            )}
+            {owner && r.stage === "Sold" && ev.stage === "Sold" && (
+              <label className="flex flex-col text-xs text-zinc-500">Sold for, incl GST<input value={ev.sold_price} onChange={set("sold_price")} inputMode="decimal" className={input} /></label>
+            )}
+          </div>
+          {r.stage === "Sold" && ev.stage !== "Sold" && (
+            <p className="mt-2 text-xs text-amber-800">Taking it out of Sold clears the sale date, but the bike stays under {r.buyer?.name || "the buyer"}&apos;s name. Change the owner on the customer page if the sale fell through.</p>
+          )}
           {["On hire", "To pick up"].includes(ev.stage) && (
             <select value={ev.hire_customer_id} onChange={set("hire_customer_id")} className={input + " mt-2"}>
               <option value="">Who has it on hire?</option>
@@ -274,6 +332,62 @@ export default function StockPage() {
         </li>
       );
     }
+    if (sellId === r.id) {
+      const cq = sv.cq.trim().toLowerCase();
+      const found = cq.length >= 2 ? customers.filter((c) => [c.name, c.phone].join(" ").toLowerCase().includes(cq)).slice(0, 8) : [];
+      const picked = sv.customer_id ? byId(customers, sv.customer_id) : null;
+      return (
+        <li key={r.id} className="rounded-xl border border-emerald-300 bg-white p-4 shadow-sm">
+          <p className="font-semibold text-zinc-900">Sell {machineTitle(m)}{m.key_number ? ` (key ${m.key_number})` : ""}</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <label className="flex flex-col text-xs text-zinc-500">Date sold<input type="date" value={sv.sold_at} max={todayNZ()} onChange={setS("sold_at")} className={input} /></label>
+            {owner && <label className="flex flex-col text-xs text-zinc-500">Sold for, incl GST<input value={sv.price} onChange={setS("price")} inputMode="decimal" placeholder="e.g. 6499" className={input} /></label>}
+            {r.for_sale_at && <p className="self-end pb-2 text-xs text-zinc-500">Up for sale {nzDate(r.for_sale_at)}</p>}
+          </div>
+          <h3 className="mt-3 text-sm font-semibold text-zinc-800">Buyer</h3>
+          {picked ? (
+            <p className="mt-1 flex items-center gap-3 text-sm text-zinc-800">
+              {picked.name}{picked.phone ? ` · ${picked.phone}` : ""}
+              <button type="button" onClick={() => setSv((v) => ({ ...v, customer_id: "" }))} className="text-zinc-500 underline">change</button>
+            </p>
+          ) : (
+            <>
+              <input value={sv.cq} onChange={setS("cq")} placeholder="Already a customer? Search by name or phone" className={input + " mt-1"} />
+              {found.length > 0 && (
+                <ul className="mt-1 divide-y divide-zinc-100 rounded-lg border border-zinc-200">
+                  {found.map((c) => (
+                    <li key={c.id}>
+                      <button type="button" onClick={() => setSv((v) => ({ ...v, customer_id: c.id, cq: "" }))} className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-50">
+                        {c.name}{c.phone ? <span className="text-zinc-500"> · {c.phone}</span> : ""}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-2 text-xs text-zinc-500">Or a new customer:</p>
+              <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <input value={sv.name} onChange={setS("name")} placeholder="Name" className={input} />
+                <input value={sv.phone} onChange={setS("phone")} placeholder="Phone" inputMode="tel" className={input} />
+                <input value={sv.email} onChange={setS("email")} placeholder="Email" inputMode="email" className={input} />
+              </div>
+              <input value={sv.address} onChange={setS("address")} placeholder="Address" className={input + " mt-2"} />
+            </>
+          )}
+          {(picked ? !picked.email : !sv.email.trim()) && (
+            <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              No email: {picked ? `${picked.name} won't` : "they won't"} get the automatic service reminder. They&apos;ll show on the Due list to phone instead.
+              {picked && <> Add an email on their <Link href={`/customers/${picked.id}`} className="underline">customer page</Link>.</>}
+            </p>
+          )}
+          <textarea value={sv.notes} onChange={setS("notes")} rows={2} placeholder="Notes (e.g. trade-in, warranty, what was agreed)" className={input + " mt-3"} />
+          <p className="mt-2 text-xs text-zinc-500">The bike moves to the buyer&apos;s name, with a service reminder due {sv.sold_at ? nzDate(plusYear(sv.sold_at)) : "12 months after the sale"}.{r.listing && r.listing.status === "Available" ? " The website listing changes to Sold." : ""}</p>
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => sellIt(r)} disabled={busy === r.id} className={saveBtn}>{busy === r.id ? "Saving…" : "Mark as sold"}</button>
+            <button onClick={() => { setSellId(null); setSv(BLANK_SALE); }} className={cancelBtn}>Cancel</button>
+          </div>
+        </li>
+      );
+    }
     return (
       <li key={r.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -285,8 +399,16 @@ export default function StockPage() {
             <p className="mt-0.5 text-xs text-zinc-500">
               {r.came_in ? `In ${nzDate(r.came_in)}` : "No date in"}
               {r.hire ? ` · ${r.stage === "On hire" ? "with" : "pick up from"} ${r.hire.name}` : ""}
+              {r.for_sale_at ? ` · up for sale ${nzDate(r.for_sale_at)}` : ""}
               {r.sold_at ? ` · sold ${nzDate(r.sold_at)}` : ""}
+              {r.sold_at && r.for_sale_at ? ` (${daysBetween(r.for_sale_at, r.sold_at)} days)` : ""}
             </p>
+            {r.stage === "Sold" && (r.buyer || (owner && r.sold_price !== null)) && (
+              <p className="mt-0.5 text-sm text-zinc-700">
+                {r.buyer && <>To <Link href={`/customers/${r.buyer.id}`} className="font-medium text-red-600 hover:underline">{r.buyer.name}</Link>{r.buyer.phone ? ` · ${r.buyer.phone}` : ""}</>}
+                {owner && r.sold_price !== null && <span className="font-semibold">{r.buyer ? " · " : ""}sold for {money(r.sold_price)}</span>}
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {r.asking_price !== null && <span className="text-sm font-semibold text-zinc-900">{money(r.asking_price)}</span>}
@@ -312,7 +434,8 @@ export default function StockPage() {
             ) : (
               <button onClick={() => { setListFor(r.id); setListCat(""); }} className="font-medium text-emerald-700 hover:underline">List on website</button>
             ))}
-          <button onClick={() => startEdit(r)} className="ml-auto font-medium text-zinc-600 hover:underline">Edit</button>
+          {r.stage !== "Sold" && <button onClick={() => startSell(r)} className="ml-auto font-medium text-emerald-700 hover:underline">Mark as sold</button>}
+          <button onClick={() => startEdit(r)} className={(r.stage === "Sold" ? "ml-auto " : "") + "font-medium text-zinc-600 hover:underline"}>Edit</button>
         </div>
       </li>
     );
