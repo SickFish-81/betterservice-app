@@ -17,6 +17,11 @@
 // sell_stock_item(). That also moves the bike to the buyer and starts its
 // 12-month service reminder from the sale date. The key number stays on the bike.
 //
+// Removing (migration 0094, Craig's "Removing bike" email, 26 Nov 2026): owners
+// can take a machine out of stock after an "are you sure" step. The machine
+// record goes too if it has never been in the workshop. Sold rows and rows on
+// the website can't be removed from here.
+//
 // Edits save on a button, never on blur (see the draft-invoice fix in
 // app/invoices/[id]: autosave was throwing away Craig's edits).
 
@@ -73,6 +78,7 @@ export default function StockPage() {
   const [listCat, setListCat] = useState("");
   const [sellId, setSellId] = useState(null); // stock row id being marked sold
   const [sv, setSv] = useState(BLANK_SALE);
+  const [removeId, setRemoveId] = useState(null); // stock row waiting on "are you sure"
 
   async function load() {
     setError(null);
@@ -257,6 +263,17 @@ export default function StockPage() {
     if (cust) load();
   }
 
+  async function removeIt(r) {
+    setBusy(r.id); setError(null); setNote(null);
+    const { data, error: e } = await supabase.rpc("remove_stock_item", { p_stock_id: r.id });
+    setBusy(""); setRemoveId(null);
+    if (e) { setError(e.message); return; }
+    setNote(data === "machine_deleted"
+      ? `Removed ${machineTitle(r.machine)} from stock.`
+      : `Removed ${machineTitle(r.machine)} from stock. Its machine record stays, because it has workshop history.`);
+    load();
+  }
+
   // Owner only: create the public listing from the stock row, with the same
   // price. Photos are added on the For Sale page.
   async function listOnWebsite(r) {
@@ -436,7 +453,20 @@ export default function StockPage() {
             ))}
           {r.stage !== "Sold" && <button onClick={() => startSell(r)} className="ml-auto font-medium text-emerald-700 hover:underline">Mark as sold</button>}
           <button onClick={() => startEdit(r)} className={(r.stage === "Sold" ? "ml-auto " : "") + "font-medium text-zinc-600 hover:underline"}>Edit</button>
+          {owner && r.stage !== "Sold" && removeId !== r.id && (
+            <button onClick={() => { setRemoveId(r.id); setError(null); setNote(null); }} className="font-medium text-red-600 hover:underline">Remove</button>
+          )}
         </div>
+        {removeId === r.id && (
+          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <p className="font-medium">Remove {machineTitle(m)}{m.key_number ? ` (key ${m.key_number})` : ""} from stock?</p>
+            <p className="mt-1 text-red-800">This can&apos;t be undone.{r.job ? " The machine stays on file because it has a workshop job." : ""}{r.listing ? " It's on the website, so take it off the For Sale page first." : ""}</p>
+            <div className="mt-3 flex gap-2">
+              <button onClick={() => removeIt(r)} disabled={busy === r.id} className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">{busy === r.id ? "Removing…" : "Yes, remove it"}</button>
+              <button onClick={() => setRemoveId(null)} className={cancelBtn}>Cancel</button>
+            </div>
+          </div>
+        )}
       </li>
     );
   }
