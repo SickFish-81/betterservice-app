@@ -38,12 +38,29 @@
 //
 // An order already marked sent with no booking was ticketed by hand, so the
 // button is not offered for it — and the server refuses it too.
+//
+// PRINTING ON THE IPAD
+//
+// window.print() does nothing in the app opened from its Home Screen icon on an
+// iPad or iPhone: no dialog, no error (Craig, 26 Nov 2026). So on those devices
+// "Print this sheet" hands a PDF of the sheet (lib/labelSheetPdf.js) to the
+// share sheet, which has Print on it. That works from the icon and from Safari
+// alike. The PDF is built as soon as the page has the order, because the share
+// sheet only opens straight from a tap; building it after the tap can take long
+// enough for Safari to refuse. Desktop browsers keep window.print(), which has
+// always worked there.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../../lib/supabaseClient";
 import { tradeApi } from "../../../../lib/flipTrade";
+import { buildLabelSheetPdf, labelSheetFileName } from "../../../../lib/labelSheetPdf";
+
+// iPadOS says it's a Mac, so a touch screen is what gives an iPad away.
+const isAppleTouch = () =>
+  typeof navigator !== "undefined" &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 
 const COLS = "session_id, created_at, invoice_number, name, email, phone, country, address, items, amount_total, shipping_amount, packed_at, consignment_id, tracking_number, label_fetched_at, label_error, shipping_carrier, channel, bill_to, paid_at, shipping_ex_gst";
 
@@ -55,6 +72,65 @@ const BUSINESS = {
   phone: "021 0832 7787",
 };
 
+// What the sheet says, worked out once for the page and the PDF alike.
+function derive(order) {
+  const a = order.address || {};
+  const trade = order.channel === "trade";
+  // A trade order the customer picks up has no address and no courier. The
+  // sheet still prints — it is the pick list — but the top half says who is
+  // collecting instead of pretending there's somewhere to send it.
+  const collect = !!a.collect;
+  // Dropship: the box goes to the dealer's customer, so the sender on our
+  // half of the label is the DEALER — their customer bought from them.
+  // (The courier's own ticket still carries the GoSweetSpot sender.)
+  const dropship = trade && !collect && order.bill_to?.business && order.bill_to.business !== order.name;
+  const sender = dropship
+    ? { name: order.bill_to.business, lines: [], phone: order.bill_to.phone || null }
+    : BUSINESS;
+  const addressLines = (a.formatted || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const orderedLine = "Ordered " +
+    new Date(order.created_at).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" }) +
+    (order.country && order.country !== "NZ" ? ` · ${order.country}` : "");
+  const freightLine = order.tracking_number
+    ? `Consignment ${order.tracking_number}`
+    : collect
+      ? "Collection — no freight"
+      : trade
+        // A trade invoice is often not paid when the box goes, so "of $X
+        // paid" would be untrue. The freight figure is what the packer checks
+        // the ticket against.
+        ? `Trade order · freight at cost ${money(order.shipping_ex_gst)} + GST`
+        : `Freight charged ${money(order.shipping_amount)} of ${money(order.amount_total)} paid`;
+  const tradeFor = trade && order.bill_to?.business && order.bill_to.business !== order.name
+    ? `Trade order for ${order.bill_to.business}` : null;
+  return { a, trade, collect, sender, addressLines, orderedLine, freightLine, tradeFor };
+}
+
+// The same sheet as plain values for lib/labelSheetPdf.js.
+function sheetData(order, labelSrc) {
+  const d = derive(order);
+  return {
+    invoiceNumber: order.invoice_number,
+    labelSrc: labelSrc || null,
+    trackingNumber: order.tracking_number || null,
+    collect: d.collect,
+    name: order.name || order.email || "",
+    addressLines: d.addressLines,
+    addressOneLine: d.a.formatted || "",
+    phone: order.phone || null,
+    note: d.a.note || null,
+    rural: !!d.a.rural,
+    sender: d.sender,
+    tradeFor: d.tradeFor,
+    items: (order.items || []).map((it) => ({ qty: it.qty, name: it.name || it.sku || "", sku: it.sku || "" })),
+    orderedLine: d.orderedLine,
+    freightLine: d.freightLine,
+  };
+}
+
 export default function LabelSheetPage() {
   const { invoice } = useParams();
   const [order, setOrder] = useState(null);
@@ -65,6 +141,10 @@ export default function LabelSheetPage() {
   const [confirming, setConfirming] = useState(false);
   const [booking, setBooking] = useState(false);
   const [bookErr, setBookErr] = useState(null);
+  const [touch, setTouch] = useState(false);       // iPad/iPhone: print by sharing the PDF
+  const [pdfReady, setPdfReady] = useState(false);
+  const [printMsg, setPrintMsg] = useState(null);
+  const pdfFile = useRef(null);
 
   async function load() {
     const { data, error: e } = await supabase
@@ -93,6 +173,53 @@ export default function LabelSheetPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoice]);
 
+  useEffect(() => { setTouch(isAppleTouch()); }, []);
+
+  // Build the PDF whenever what's on the sheet changes (a booking adds the
+  // courier label), so it's ready the moment the button is tapped.
+  useEffect(() => {
+    if (!order || !touch) return;
+    let stale = false;
+    setPdfReady(false);
+    (async () => {
+      try {
+        const doc = await buildLabelSheetPdf(sheetData(order, labelSrc));
+        if (stale) return;
+        pdfFile.current = new File([doc.output("blob")], labelSheetFileName(order.invoice_number), { type: "application/pdf" });
+        setPdfReady(true);
+      } catch (e) {
+        if (!stale) setPrintMsg("Couldn't make the PDF: " + (e?.message || String(e)));
+      }
+    })();
+    return () => { stale = true; };
+  }, [order, labelSrc, touch]);
+
+  async function printSheet() {
+    setPrintMsg(null);
+    if (!touch) { window.print(); return; }
+    const file = pdfFile.current;
+    if (!file) { setPrintMsg("The PDF is still being made. Try again in a second."); return; }
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: `FLIP-${order.invoice_number} label sheet` });
+        return;
+      } catch (e) {
+        if (e?.name === "AbortError") return; // closed the share sheet
+        // Anything else: fall through and open the file instead.
+      }
+    }
+    // No share sheet: open the PDF itself. Print is under the share button
+    // in the iPad's PDF viewer.
+    const url = URL.createObjectURL(file);
+    const w = window.open(url, "_blank");
+    if (!w) {
+      const a = document.createElement("a");
+      a.href = url; a.download = file.name; a.click();
+      setPrintMsg("Saved the sheet to Downloads. Open it from the Files app to print.");
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
   async function book() {
     setBooking(true); setBookErr(null); setConfirming(false);
     const r = await tradeApi({ action: "book", invoice_number: Number(invoice) });
@@ -112,19 +239,7 @@ export default function LabelSheetPage() {
     );
   }
 
-  const a = order.address || {};
-  const trade = order.channel === "trade";
-  // A trade order the customer picks up has no address and no courier. The
-  // sheet still prints — it is the pick list — but the top half says who is
-  // collecting instead of pretending there's somewhere to send it.
-  const collect = !!a.collect;
-  // Dropship: the box goes to the dealer's customer, so the sender on our
-  // half of the label is the DEALER — their customer bought from them.
-  // (The courier's own ticket still carries the GoSweetSpot sender.)
-  const dropship = trade && !collect && order.bill_to?.business && order.bill_to.business !== order.name;
-  const sender = dropship
-    ? { name: order.bill_to.business, lines: [], phone: order.bill_to.phone || null }
-    : BUSINESS;
+  const { a, collect, sender, addressLines, orderedLine, freightLine, tradeFor } = derive(order);
   // What the booking panel can offer. Mirrors what the server will accept;
   // the server is the one that actually decides.
   const overseas = !!order.country && order.country !== "NZ";
@@ -132,11 +247,6 @@ export default function LabelSheetPage() {
   const handTicketed = !booked && !!order.packed_at;
   const canBook = !collect && !overseas && !booked && !order.packed_at;
   const needsLabel = booked && !order.label_fetched_at;
-  const addressLines = (a.formatted || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
   return (
     <>
       {/* Only the sheet reaches the paper. Hiding everything and then
@@ -156,12 +266,19 @@ export default function LabelSheetPage() {
         <div className="mb-4 flex flex-wrap items-center gap-3 print:hidden">
           <Link href="/flip-orders" className="text-sm text-zinc-600 underline">← FLIP orders</Link>
           <button
-            onClick={() => window.print()}
-            className="ml-auto rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700"
+            onClick={printSheet}
+            disabled={touch && !pdfReady}
+            className="ml-auto rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
           >
-            Print this sheet
+            {touch && !pdfReady ? "Getting it ready…" : "Print this sheet"}
           </button>
         </div>
+        {touch && (
+          <p className="-mt-2 mb-4 text-right text-xs text-zinc-500 print:hidden">On the iPad this opens the share menu. Tap Print.</p>
+        )}
+        {printMsg && (
+          <p className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 print:hidden">{printMsg}</p>
+        )}
 
         {/* ------------------------------------------------ the courier booking */}
         <div className="mb-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm print:hidden">
@@ -314,8 +431,8 @@ export default function LabelSheetPage() {
             </p>
             {/* For a dropship, the packer has to know the box goes to someone
                 other than the business on the invoice. */}
-            {trade && order.bill_to?.business && order.bill_to.business !== order.name && (
-              <p className="text-[10pt] text-zinc-600">Trade order for {order.bill_to.business}</p>
+            {tradeFor && (
+              <p className="text-[10pt] text-zinc-600">{tradeFor}</p>
             )}
             {a.note && <p className="mt-1 text-[11pt] font-bold">{a.note}</p>}
 
@@ -331,22 +448,8 @@ export default function LabelSheetPage() {
             </ul>
 
             <div className="mt-auto flex items-end justify-between border-t border-zinc-300 pt-3 text-[9pt] text-zinc-600">
-              <p>
-                Ordered {new Date(order.created_at).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" })}
-                {order.country && order.country !== "NZ" ? ` · ${order.country}` : ""}
-              </p>
-              <p>
-                {order.tracking_number
-                  ? `Consignment ${order.tracking_number}`
-                  : collect
-                    ? "Collection — no freight"
-                    : trade
-                      // A trade invoice is often not paid when the box goes,
-                      // so "of $X paid" would be untrue. The freight figure is
-                      // what the packer checks the ticket against.
-                      ? `Trade order · freight at cost ${money(order.shipping_ex_gst)} + GST`
-                      : `Freight charged ${money(order.shipping_amount)} of ${money(order.amount_total)} paid`}
-              </p>
+              <p>{orderedLine}</p>
+              <p>{freightLine}</p>
             </div>
           </div>
         </div>
