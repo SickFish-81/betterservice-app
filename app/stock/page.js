@@ -26,7 +26,9 @@
 // open job gets a "+ Job card" button that starts one straight from here, for
 // Craig's machines bought to do up and sell. It checks for an open job and a
 // recent service first, the same as the Job Cards page, and the job's source
-// is "Stock".
+// is "Stock". Each item in the "What needs doing" text (split on commas, full
+// stops, semicolons and new lines) also goes on the job as a checklist item,
+// so the mechanic can tick them off.
 //
 // Edits save on a button, never on blur (see the draft-invoice fix in
 // app/invoices/[id]: autosave was throwing away Craig's edits).
@@ -59,6 +61,18 @@ const BLANK_NEW = { type: "ATV", make: "", model: "", year: "", key_number: "", 
 const todayNZ = () => new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Auckland" }); // YYYY-MM-DD
 const plusYear = (d) => { const [y, m, day] = d.split("-"); return `${Number(y) + 1}-${m}-${day}`; };
 const daysBetween = (a, b) => Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
+// "To do: Bald tyres, tail light, seat. Top headlight" -> ["Bald tyres",
+// "Tail light", "Seat", "Top headlight"]. Repeats are dropped (case-blind),
+// and a leading "To do:" is ignored.
+const toChecklist = (text) => {
+  const seen = new Set();
+  return String(text || "")
+    .replace(/^\s*to\s*-?\s*do\s*:?\s*/i, "")
+    .split(/[,;.\n]+/)
+    .map((x) => x.replace(/\s+/g, " ").trim())
+    .filter((x) => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase()))
+    .map((x) => x.charAt(0).toUpperCase() + x.slice(1));
+};
 const BLANK_SALE = { sold_at: "", customer_id: "", cq: "", name: "", phone: "", email: "", address: "", price: "", notes: "" };
 const machineTitle = (m) => [m?.make, m?.model, m?.year].filter(Boolean).join(" ") || m?.type || "Machine";
 
@@ -300,12 +314,20 @@ export default function StockPage() {
       .insert({ customer_id: customerId, machine_id: r.machine_id, reported_problem: jobText.trim() || null, source: "Stock" })
       .select("id, job_number").single();
     if (jErr) { setBusy(""); setError("Couldn't start the job card: " + jErr.message); return; }
+    const items = toChecklist(jobText);
+    let clErr = null;
+    if (items.length) {
+      const { error: e } = await supabase.from("job_checklist_items")
+        .insert(items.map((label, i) => ({ job_card_id: job.id, label, position: i })));
+      clErr = e;
+    }
     // A machine coming back from hire is in the workshop now.
     if (["On hire", "To pick up"].includes(r.stage)) {
       await supabase.from("stock_items").update({ stage: "Workshop" }).eq("id", r.id);
     }
     setBusy(""); setJobFor(null); setJobText("");
-    setNote(`Job #${job.job_number} started for ${machineTitle(r.machine)}.`);
+    setNote(`Job #${job.job_number} started for ${machineTitle(r.machine)}${items.length && !clErr ? `, with ${items.length} checklist item${items.length === 1 ? "" : "s"}` : ""}.`);
+    if (clErr) setError(`Job #${job.job_number} was started, but the checklist didn't save (${clErr.message}). Add the items on the job card.`);
     load();
   }
 
@@ -510,7 +532,17 @@ export default function StockPage() {
           <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
             <p className="font-medium text-zinc-900">New job card for {machineTitle(m)}{m.key_number ? ` (key ${m.key_number})` : ""}</p>
             <textarea value={jobText} onChange={(e) => setJobText(e.target.value)} rows={3} placeholder="What needs doing?" className={input + " mt-2 bg-white"} />
-            <p className="mt-1 text-xs text-zinc-500">Filled in from &ldquo;Still to do&rdquo;. Change it if you like.{["On hire", "To pick up"].includes(r.stage) ? " The machine moves to Workshop." : ""}</p>
+            <p className="mt-1 text-xs text-zinc-500">Filled in from &ldquo;Still to do&rdquo;. Change it if you like. Separate items with commas or full stops.{["On hire", "To pick up"].includes(r.stage) ? " The machine moves to Workshop." : ""}</p>
+            {toChecklist(jobText).length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs font-medium text-zinc-700">Checklist on the job ({toChecklist(jobText).length}):</p>
+                <ul className="mt-1 flex flex-wrap gap-1.5">
+                  {toChecklist(jobText).map((x) => (
+                    <li key={x} className="flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-xs text-zinc-800"><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-sm border border-zinc-400" />{x}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="mt-3 flex gap-2">
               <button onClick={() => createJob(r)} disabled={busy === r.id} className={saveBtn}>{busy === r.id ? "Starting…" : "Start job card"}</button>
               <button onClick={() => setJobFor(null)} className={cancelBtn}>Cancel</button>
