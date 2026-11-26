@@ -2,7 +2,8 @@
 
 // FLIP trade prices — what dealers pay, excluding GST, by price tier.
 //
-// STANDARD is the base list: every product has (or needs) a Standard price.
+// STANDARD (tier id 'standard', shown as "Dealer" since 26 Nov 2026) is the
+// base list: every product has (or needs) a price in it.
 // Every other tier only holds the prices where it differs; a blank cell means
 // "same as Standard", and the page shows what that works out to. So a new
 // tier starts identical to Standard and Craig only types what he wants
@@ -105,7 +106,7 @@ export default function FlipTradePricesPage() {
     setBusy(false);
     if (e) return setError(e.message);
     setNewTier("");
-    setNotice(`${name} added. It's the same as Standard until you type a different price.`);
+    setNotice(`${name} added. It's the same as the Dealer price until you type a different price.`);
     await load();
   }
 
@@ -117,8 +118,8 @@ export default function FlipTradePricesPage() {
         <Link href="/flip-orders/dealers" className="text-sm font-medium text-red-700 underline">Dealers</Link>
       </div>
       <p className="mt-1 text-sm text-zinc-600">
-        What a dealer pays for each product, <b>excluding GST</b>. <b>Standard</b> is the base price. In any
-        other tier, leave a box blank to charge the Standard price. Each dealer is on one tier.
+        What a trade customer pays for each product, <b>excluding GST</b>. <b>Dealer</b> is the base price. In any
+        other tier, leave a box blank to charge the Dealer price. Each dealer is on one tier.
       </p>
 
       {error && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
@@ -156,10 +157,10 @@ export default function FlipTradePricesPage() {
                                 className={`w-24 rounded-lg border px-2 py-1.5 text-right text-sm text-zinc-900 placeholder:text-zinc-300 ${bad ? "border-red-500 bg-red-50" : changed ? "border-amber-400 bg-amber-50" : "border-zinc-300"}`} />
                             </label>
                             {t.id !== "standard" && text.trim() === "" && (
-                              <span className="block text-[11px] text-zinc-400">same as Standard</span>
+                              <span className="block text-[11px] text-zinc-400">same as Dealer</span>
                             )}
                             {t.id === "standard" && text.trim() === "" && (
-                              <span className="block text-[11px] text-amber-700">no Standard price</span>
+                              <span className="block text-[11px] text-amber-700">no Dealer price</span>
                             )}
                           </td>
                         );
@@ -186,7 +187,7 @@ export default function FlipTradePricesPage() {
             </span>
           </div>
           <p className="mt-2 text-xs text-zinc-500">
-            A product with no Standard price can't be ordered on the dealer portal; you can still type a price on an order yourself.
+            A product with no Dealer price can't be ordered on the dealer portal; you can still type a price on an order yourself.
           </p>
         </>
       )}
