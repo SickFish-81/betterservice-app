@@ -22,6 +22,12 @@
 // record goes too if it has never been in the workshop. Sold rows and rows on
 // the website can't be removed from here.
 //
+// Job cards from Stock (migration 0095, Ben, 26 Nov 2026): a machine with no
+// open job gets a "+ Job card" button that starts one straight from here, for
+// Craig's machines bought to do up and sell. It checks for an open job and a
+// recent service first, the same as the Job Cards page, and the job's source
+// is "Stock".
+//
 // Edits save on a button, never on blur (see the draft-invoice fix in
 // app/invoices/[id]: autosave was throwing away Craig's edits).
 
@@ -79,6 +85,8 @@ export default function StockPage() {
   const [sellId, setSellId] = useState(null); // stock row id being marked sold
   const [sv, setSv] = useState(BLANK_SALE);
   const [removeId, setRemoveId] = useState(null); // stock row waiting on "are you sure"
+  const [jobFor, setJobFor] = useState(null);     // stock row a job card is being started for
+  const [jobText, setJobText] = useState("");
 
   async function load() {
     setError(null);
@@ -263,6 +271,44 @@ export default function StockPage() {
     if (cust) load();
   }
 
+  function startJob(r) {
+    setJobFor(r.id); setJobText(r.to_do || ""); setEditId(null); setSellId(null); setRemoveId(null); setError(null); setNote(null);
+  }
+
+  // Start a job card for a stock machine. Same checks as the Job Cards page:
+  // an open job is the one to use, and a service in the last 60 days is worth
+  // a second look before starting another.
+  async function createJob(r) {
+    setBusy(r.id); setError(null);
+    const { data: history, error: hErr } = await supabase.from("job_cards")
+      .select("id, job_number, status, job_date, serviced_at")
+      .eq("machine_id", r.machine_id).order("job_date", { ascending: false }).limit(10);
+    if (hErr) { setBusy(""); setError(hErr.message); return; }
+    const open = (history || []).find((h) => !["Invoiced", "Paid"].includes(h.status));
+    if (open) { setBusy(""); setError(`Job #${open.job_number} is already open for this machine. Use that one.`); load(); return; }
+    const cutoff = Date.now() - 60 * 86400000;
+    const recent = (history || []).find((h) => (h.serviced_at || h.job_date) && new Date(h.serviced_at || h.job_date).getTime() >= cutoff);
+    if (recent && !window.confirm(
+      `Heads up: this machine was last done on job #${recent.job_number}, ${new Date(recent.serviced_at || recent.job_date).toLocaleDateString("en-NZ", { day: "numeric", month: "short" })}.\n\nStart a new job anyway?`
+    )) { setBusy(""); return; }
+    let customerId = r.machine?.customer_id;
+    if (!customerId) {
+      const { data: ownerRow } = await supabase.from("customers").select("id").eq("name", STOCK_OWNER).maybeSingle();
+      customerId = ownerRow?.id || null;
+    }
+    const { data: job, error: jErr } = await supabase.from("job_cards")
+      .insert({ customer_id: customerId, machine_id: r.machine_id, reported_problem: jobText.trim() || null, source: "Stock" })
+      .select("id, job_number").single();
+    if (jErr) { setBusy(""); setError("Couldn't start the job card: " + jErr.message); return; }
+    // A machine coming back from hire is in the workshop now.
+    if (["On hire", "To pick up"].includes(r.stage)) {
+      await supabase.from("stock_items").update({ stage: "Workshop" }).eq("id", r.id);
+    }
+    setBusy(""); setJobFor(null); setJobText("");
+    setNote(`Job #${job.job_number} started for ${machineTitle(r.machine)}.`);
+    load();
+  }
+
   async function removeIt(r) {
     setBusy(r.id); setError(null); setNote(null);
     const { data, error: e } = await supabase.rpc("remove_stock_item", { p_stock_id: r.id });
@@ -438,6 +484,9 @@ export default function StockPage() {
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <label className="flex items-center gap-1.5 text-zinc-700"><input type="checkbox" checked={!!r.ready} onChange={() => toggleReady(r)} className="h-4 w-4" /> Ready</label>
           {r.job && <Link href={`/jobs/${r.job.id}`} className="font-medium text-red-600 hover:underline">Job #{r.job.job_number} · {r.job.status === "Ready" ? "with Craig" : r.job.status}</Link>}
+          {!r.job && r.stage !== "Sold" && jobFor !== r.id && (
+            <button onClick={() => startJob(r)} className="font-medium text-red-600 hover:underline">+ Job card</button>
+          )}
           {r.listing
             ? <span className="text-emerald-700">{r.listing.status === "Available" ? "On the website" : "Website: sold"}{owner && <> · <Link href="/secondhand" className="underline">photos</Link></>}</span>
             : owner && r.stage !== "Sold" && (listFor === r.id ? (
@@ -457,6 +506,17 @@ export default function StockPage() {
             <button onClick={() => { setRemoveId(r.id); setError(null); setNote(null); }} className="font-medium text-red-600 hover:underline">Remove</button>
           )}
         </div>
+        {jobFor === r.id && (
+          <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
+            <p className="font-medium text-zinc-900">New job card for {machineTitle(m)}{m.key_number ? ` (key ${m.key_number})` : ""}</p>
+            <textarea value={jobText} onChange={(e) => setJobText(e.target.value)} rows={3} placeholder="What needs doing?" className={input + " mt-2 bg-white"} />
+            <p className="mt-1 text-xs text-zinc-500">Filled in from &ldquo;Still to do&rdquo;. Change it if you like.{["On hire", "To pick up"].includes(r.stage) ? " The machine moves to Workshop." : ""}</p>
+            <div className="mt-3 flex gap-2">
+              <button onClick={() => createJob(r)} disabled={busy === r.id} className={saveBtn}>{busy === r.id ? "Starting…" : "Start job card"}</button>
+              <button onClick={() => setJobFor(null)} className={cancelBtn}>Cancel</button>
+            </div>
+          </div>
+        )}
         {removeId === r.id && (
           <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
             <p className="font-medium">Remove {machineTitle(m)}{m.key_number ? ` (key ${m.key_number})` : ""} from stock?</p>
