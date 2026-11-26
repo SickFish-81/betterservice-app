@@ -63,12 +63,16 @@ const plusYear = (d) => { const [y, m, day] = d.split("-"); return `${Number(y) 
 const daysBetween = (a, b) => Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
 // "To do: Bald tyres, tail light, seat. Top headlight" -> ["Bald tyres",
 // "Tail light", "Seat", "Top headlight"]. Repeats are dropped (case-blind),
-// and a leading "To do:" is ignored.
+// and a leading "To do:" is ignored. A full stop only splits when a space or
+// the end follows it, so "p.p" stays one item. This is only a first guess:
+// Craig's notes aren't always punctuated the way he means them ("bull bar
+// front left and rear right, h grips"), so the list is editable before the
+// job is made.
 const toChecklist = (text) => {
   const seen = new Set();
   return String(text || "")
     .replace(/^\s*to\s*-?\s*do\s*:?\s*/i, "")
-    .split(/[,;.\n]+/)
+    .split(/[,;\n]+|\.(?=\s|$)/)
     .map((x) => x.replace(/\s+/g, " ").trim())
     .filter((x) => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase()))
     .map((x) => x.charAt(0).toUpperCase() + x.slice(1));
@@ -101,6 +105,8 @@ export default function StockPage() {
   const [removeId, setRemoveId] = useState(null); // stock row waiting on "are you sure"
   const [jobFor, setJobFor] = useState(null);     // stock row a job card is being started for
   const [jobText, setJobText] = useState("");
+  const [jobItems, setJobItems] = useState([]);   // the checklist, editable before the job is made
+  const [itemsEdited, setItemsEdited] = useState(false);
 
   async function load() {
     setError(null);
@@ -286,8 +292,21 @@ export default function StockPage() {
   }
 
   function startJob(r) {
-    setJobFor(r.id); setJobText(r.to_do || ""); setEditId(null); setSellId(null); setRemoveId(null); setError(null); setNote(null);
+    setJobFor(r.id); setJobText(r.to_do || ""); setJobItems(toChecklist(r.to_do)); setItemsEdited(false);
+    setEditId(null); setSellId(null); setRemoveId(null); setError(null); setNote(null);
   }
+
+  // Typing in "What needs doing" rebuilds the checklist, until someone edits
+  // the checklist itself; after that their list is kept.
+  function changeJobText(e) {
+    const t = e.target.value;
+    setJobText(t);
+    if (!itemsEdited) setJobItems(toChecklist(t));
+  }
+  const editItem = (k) => (e) => { const t = e.target.value; setItemsEdited(true); setJobItems((xs) => xs.map((x, n) => (n === k ? t : x))); };
+  const dropItem = (k) => () => { setItemsEdited(true); setJobItems((xs) => xs.filter((_, n) => n !== k)); };
+  const addItem = () => { setItemsEdited(true); setJobItems((xs) => [...xs, ""]); };
+
 
   // Start a job card for a stock machine. Same checks as the Job Cards page:
   // an open job is the one to use, and a service in the last 60 days is worth
@@ -314,7 +333,7 @@ export default function StockPage() {
       .insert({ customer_id: customerId, machine_id: r.machine_id, reported_problem: jobText.trim() || null, source: "Stock" })
       .select("id, job_number").single();
     if (jErr) { setBusy(""); setError("Couldn't start the job card: " + jErr.message); return; }
-    const items = toChecklist(jobText);
+    const items = jobItems.map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean);
     let clErr = null;
     if (items.length) {
       const { error: e } = await supabase.from("job_checklist_items")
@@ -531,18 +550,21 @@ export default function StockPage() {
         {jobFor === r.id && (
           <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
             <p className="font-medium text-zinc-900">New job card for {machineTitle(m)}{m.key_number ? ` (key ${m.key_number})` : ""}</p>
-            <textarea value={jobText} onChange={(e) => setJobText(e.target.value)} rows={3} placeholder="What needs doing?" className={input + " mt-2 bg-white"} />
-            <p className="mt-1 text-xs text-zinc-500">Filled in from &ldquo;Still to do&rdquo;. Change it if you like. Separate items with commas or full stops.{["On hire", "To pick up"].includes(r.stage) ? " The machine moves to Workshop." : ""}</p>
-            {toChecklist(jobText).length > 0 && (
-              <div className="mt-2">
-                <p className="text-xs font-medium text-zinc-700">Checklist on the job ({toChecklist(jobText).length}):</p>
-                <ul className="mt-1 flex flex-wrap gap-1.5">
-                  {toChecklist(jobText).map((x) => (
-                    <li key={x} className="flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-xs text-zinc-800"><span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-sm border border-zinc-400" />{x}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <textarea value={jobText} onChange={changeJobText} rows={3} placeholder="What needs doing?" className={input + " mt-2 bg-white"} />
+            <p className="mt-1 text-xs text-zinc-500">Filled in from &ldquo;Still to do&rdquo;.{["On hire", "To pick up"].includes(r.stage) ? " The machine moves to Workshop." : ""}</p>
+            <div className="mt-3">
+              <p className="text-xs font-medium text-zinc-700">Checklist on the job ({jobItems.filter((x) => x.trim()).length}). Fix any item that isn&apos;t right:</p>
+              <ul className="mt-1 flex flex-col gap-1.5">
+                {jobItems.map((x, k) => (
+                  <li key={k} className="flex items-center gap-2">
+                    <span aria-hidden="true" className="inline-block h-3.5 w-3.5 flex-none rounded-sm border border-zinc-400 bg-white" />
+                    <input value={x} onChange={editItem(k)} aria-label={`Checklist item ${k + 1}`} className="flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 focus:border-red-500 focus:outline-none" />
+                    <button type="button" onClick={dropItem(k)} aria-label={`Remove item ${k + 1}`} className="rounded px-2 py-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800">×</button>
+                  </li>
+                ))}
+              </ul>
+              <button type="button" onClick={addItem} className="mt-2 text-xs font-medium text-red-600 hover:underline">+ Add item</button>
+            </div>
             <div className="mt-3 flex gap-2">
               <button onClick={() => createJob(r)} disabled={busy === r.id} className={saveBtn}>{busy === r.id ? "Starting…" : "Start job card"}</button>
               <button onClick={() => setJobFor(null)} className={cancelBtn}>Cancel</button>
