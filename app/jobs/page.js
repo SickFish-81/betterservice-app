@@ -420,7 +420,10 @@ export default function JobsPage() {
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {machinesForCustomer.map((m) => (
                       <button key={m.id} type="button" onClick={() => fillFromMachine(m)}
-                        className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-700 hover:border-red-300 hover:bg-red-50">
+                        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-700 hover:border-red-300 hover:bg-red-50">
+                        {/* Key number first: Craig's stock is mostly the same few
+                            Honda models, so the key is what tells them apart. */}
+                        {m.key_number && <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">{m.key_number.toUpperCase()}</span>}
                         {[m.year, m.make, m.model].filter(Boolean).join(" ") || m.type}
                       </button>
                     ))}
