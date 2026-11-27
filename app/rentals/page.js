@@ -4,12 +4,11 @@
 // The ten small units, the large shed, the sign space and the car parks, and
 // who is in each one.
 //
-// CAR PARKS (27 Nov 2026, migration 0097). A car park is a rental unit with
-// kind = 'car_park', and its tenancy is billed every so many DAYS instead of
-// monthly: 7 by default, adjustable for a short stay (Ben: "default to a
-// week, but have it adjustable so if they only have 3 days"). A 3-day stay is
-// 3 days with an end date, and gets one invoice. The rate box then holds the
-// charge for one of those periods, not a month's rent.
+// CAR PARKS (27 Nov 2026, migrations 0097 and 0098). A car park is a rental
+// unit with kind = 'car_park'. Its charge is MONTHLY by default (Ben: "default
+// to monthly like all the other invoices he can still adjust"), or every so
+// many days instead: 7 for weekly, 3 for a short stay. The rate box holds the
+// charge for one of those periods.
 //
 // Car parks are billed IN ARREARS: each invoice is made the day after a period
 // ends, for what was used. "Stop" (Ben: "Craig should be able to 'stop' the
@@ -37,16 +36,25 @@ const money = (n) => "$" + Number(n || 0).toFixed(2);
 const gstOf = (inc) => Math.round(Number(inc || 0) * 3 / 23 * 100) / 100;
 const nzDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-NZ") : "");
 
-const empty = { unit_id: "", customer_id: "", monthly_rate_incl_gst: "", power_charge_incl_gst: "", period_days: "7", start_date: "", end_date: "", on_hold: false, notes: "" };
+const empty = { unit_id: "", customer_id: "", monthly_rate_incl_gst: "", power_charge_incl_gst: "", cp_mode: "month", period_days: "7", start_date: "", end_date: "", on_hold: false, notes: "" };
 
 const isCarPark = (u) => u?.kind === "car_park";
 // "every 7 days" reads as "every week" to anyone glancing at it.
-const everyLabel = (days) => (Number(days) === 7 ? "week" : Number(days) === 1 ? "day" : `${days} days`);
+// null (monthly) reads as "month"; 7 days as "week".
+const everyLabel = (days) => (!days ? "month" : Number(days) === 7 ? "week" : Number(days) === 1 ? "day" : `${days} days`);
 // Today in New Zealand. The ISO date in the browser is UTC, which is still
 // yesterday until 1pm in summer, and a stop has to charge up to NZ today.
 const nzToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Auckland" }).format(new Date());
 const daysBetween = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
 const addDays = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+// d + n months the way Postgres does it: 31 Jan + 1 month = 28 Feb.
+const addMonths = (d, n) => {
+  const [y, m, day] = d.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + n, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  first.setUTCDate(Math.min(day, last));
+  return first.toISOString().slice(0, 10);
+};
 
 export default function RentalsPage() {
   const [units, setUnits] = useState([]);
@@ -107,6 +115,7 @@ export default function RentalsPage() {
       unit_id: a.unit_id, customer_id: a.customer_id,
       monthly_rate_incl_gst: String(a.monthly_rate_incl_gst ?? ""),
       power_charge_incl_gst: a.power_charge_incl_gst ? String(a.power_charge_incl_gst) : "",
+      cp_mode: a.period_days ? "days" : "month",
       period_days: a.period_days ? String(a.period_days) : "7",
       start_date: a.start_date || "", end_date: a.end_date || "",
       on_hold: !!a.on_hold, notes: a.notes || "",
@@ -121,8 +130,9 @@ export default function RentalsPage() {
     if (!form.unit_id) return setError("Pick a unit or car park.");
     if (!form.customer_id) return setError("Pick the tenant. Add them under Customers first if they're not listed.");
     const parking = isCarPark(unitById(form.unit_id));
-    const days = Number(form.period_days);
-    if (parking && !(Number.isInteger(days) && days >= 1 && days <= 90)) return setError("Charge every: a whole number of days, 1 to 90 (7 for weekly).");
+    // null = monthly. Only a car park set to "every so many days" has a number.
+    const days = parking && form.cp_mode === "days" ? Number(form.period_days) : null;
+    if (days !== null && !(Number.isInteger(days) && days >= 1 && days <= 90)) return setError("Charge every: a whole number of days, 1 to 90 (7 for weekly).");
     const rate = Number(form.monthly_rate_incl_gst);
     if (!(rate > 0)) return setError(parking ? `Enter what they pay each ${everyLabel(days)}.` : "Enter the monthly rent the tenant pays.");
     const power = form.power_charge_incl_gst === "" ? 0 : Number(form.power_charge_incl_gst);
@@ -139,7 +149,7 @@ export default function RentalsPage() {
       monthly_rate_incl_gst: rate,
       // A car park has no power, and is billed by days; a unit is monthly.
       power_charge_incl_gst: parking ? 0 : Number(form.power_charge_incl_gst) || 0,
-      period_days: parking ? days : null,
+      period_days: days,
       in_arrears: parking,
       start_date: form.start_date,
       end_date: form.end_date || null,
@@ -200,13 +210,22 @@ export default function RentalsPage() {
   // What a stop will charge for the period running today, worked out the same
   // way the database does, so Craig sees the figure before he presses it.
   function stopPreview(a) {
-    const days = Number(a.period_days) || 7;
     const t = nzToday();
-    const k = Math.floor(daysBetween(a.start_date, t) / days);
-    const ps = addDays(a.start_date, k * days);
+    let ps, end;
+    if (a.period_days) {
+      const n = Number(a.period_days);
+      ps = addDays(a.start_date, Math.floor(daysBetween(a.start_date, t) / n) * n);
+      end = addDays(ps, n - 1);
+    } else {
+      let k = 0;
+      while (addMonths(a.start_date, k + 1) <= t) k++;
+      ps = addMonths(a.start_date, k);
+      end = addDays(addMonths(a.start_date, k + 1), -1);
+    }
+    const days = daysBetween(ps, end) + 1;   // this period's length: the days in THIS month
     const used = daysBetween(ps, t) + 1;
     const rate = Number(a.monthly_rate_incl_gst) || 0;
-    return { days, used, amount: used < days ? Math.round(rate * used / days * 100) / 100 : rate };
+    return { days, used, label: everyLabel(a.period_days), amount: used < days ? Math.round(rate * used / days * 100) / 100 : rate };
   }
 
   async function stopParking(u, a) {
@@ -214,7 +233,7 @@ export default function RentalsPage() {
     const p = stopPreview(a);
     const charge = p.used < p.days
       ? `${p.used} of ${p.days} days, about ${money(p.amount)}`
-      : `the full ${everyLabel(p.days)}, ${money(p.amount)}`;
+      : `the full ${p.label}, ${money(p.amount)}`;
     if (!window.confirm(
       `Stop ${u.name} for ${who} now?\n\nThey'll be charged up to today: ${charge}. Any earlier period not invoiced yet goes on too.\n\nThe invoice waits under Awaiting approval for you to check and send.`
     )) return;
@@ -250,7 +269,7 @@ export default function RentalsPage() {
   }
 
   const formParking = isCarPark(unitById(form.unit_id));
-  const formDays = Number(form.period_days) || 7;
+  const formDays = formParking && form.cp_mode === "days" ? Number(form.period_days) || 7 : null;
   const rate = Number(form.monthly_rate_incl_gst) || 0;
   const powerAmt = formParking ? 0 : Number(form.power_charge_incl_gst) || 0;
   const billTotal = rate + powerAmt;
@@ -268,7 +287,7 @@ export default function RentalsPage() {
   const peerRates = agreements
     .filter((a) => a.id !== editingId && Number(a.monthly_rate_incl_gst) > 0)
     .filter((a) => formParking
-      ? a.rental_units?.kind === "car_park" && Number(a.period_days) === formDays
+      ? a.rental_units?.kind === "car_park" && (a.period_days ?? null) === formDays
       : a.rental_units?.kind !== "car_park")
     .map((a) => Number(a.monthly_rate_incl_gst))
     .sort((x, y) => x - y);
@@ -292,7 +311,7 @@ export default function RentalsPage() {
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Rentals</h1>
       <p className="mt-1 text-zinc-600">
         {tab === "units"
-          ? "The storage units, the shed and the car parks. Units are invoiced monthly, three days before each month starts. Car parks are invoiced after each week (or whatever length is set) for the days used, and Stop charges up to today. Every invoice waits under Awaiting approval until Craig sends it."
+          ? "The storage units, the shed and the car parks. Units are invoiced monthly, three days before each month starts. Car parks are invoiced after each month (or every so many days, if set) for the days used, and Stop charges up to today. Every invoice waits under Awaiting approval until Craig sends it."
           : "Gear hired out by the day. Paid when it goes out or comes back, not on account."}
       </p>
 
@@ -338,9 +357,17 @@ export default function RentalsPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {formParking ? (
             <>
-              <label className="text-xs font-medium text-zinc-600">Charge every (days)
-                <input value={form.period_days} onChange={set("period_days")} type="number" step="1" min="1" max="90"
-                       placeholder="7" className={input} />
+              <label className="text-xs font-medium text-zinc-600">Charge
+                <div className="flex gap-2">
+                  <select value={form.cp_mode} onChange={set("cp_mode")} className={input}>
+                    <option value="month">Monthly</option>
+                    <option value="days">Every … days</option>
+                  </select>
+                  {form.cp_mode === "days" && (
+                    <input value={form.period_days} onChange={set("period_days")} type="number" step="1" min="1" max="90"
+                           placeholder="7" aria-label="Number of days" className={input + " max-w-[6rem]"} />
+                  )}
+                </div>
               </label>
               <label className="text-xs font-medium text-zinc-600">Charge each {everyLabel(formDays)} (GST inclusive)
                 <input value={form.monthly_rate_incl_gst} onChange={set("monthly_rate_incl_gst")} type="number" step="0.01" min="0"
@@ -362,7 +389,7 @@ export default function RentalsPage() {
         </div>
         {formParking && (
           <p className="-mt-1 text-xs text-zinc-500">
-            7 = weekly. Charged after each period, for the days used. When they leave, press <strong>stop</strong> on the car park and they&apos;re charged up to today.
+            Monthly unless you pick a number of days (7 = weekly). Charged after each period, for the days used. When they leave, press <strong>stop</strong> on the car park and they&apos;re charged up to today.
           </p>
         )}
         {billTotal > 0 && (
