@@ -1,7 +1,22 @@
 "use client";
 
 // Betterservice — Rentals
-// The ten small units and the large shed, and who is in each one.
+// The ten small units, the large shed, the sign space and the car parks, and
+// who is in each one.
+//
+// CAR PARKS (27 Nov 2026, migration 0097). A car park is a rental unit with
+// kind = 'car_park', and its tenancy is billed every so many DAYS instead of
+// monthly: 7 by default, adjustable for a short stay (Ben: "default to a
+// week, but have it adjustable so if they only have 3 days"). A 3-day stay is
+// 3 days with an end date, and gets one invoice. The rate box then holds the
+// charge for one of those periods, not a month's rent.
+//
+// Car parks are billed IN ARREARS: each invoice is made the day after a period
+// ends, for what was used. "Stop" (Ben: "Craig should be able to 'stop' the
+// rental on the spot, and it charge up to that time") ends the parking today
+// and makes the last invoice there and then, for the days so far: 3 days of a
+// $50 week is $21.42. stop_rental() in the database does the work; this page
+// then files the invoice's PDF, so it's ready under Awaiting approval.
 //
 // The rent held here is what the tenant actually pays: GST-INCLUSIVE, because
 // that is what their automatic payment is set to. The invoice generator
@@ -22,7 +37,16 @@ const money = (n) => "$" + Number(n || 0).toFixed(2);
 const gstOf = (inc) => Math.round(Number(inc || 0) * 3 / 23 * 100) / 100;
 const nzDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-NZ") : "");
 
-const empty = { unit_id: "", customer_id: "", monthly_rate_incl_gst: "", power_charge_incl_gst: "", start_date: "", end_date: "", on_hold: false, notes: "" };
+const empty = { unit_id: "", customer_id: "", monthly_rate_incl_gst: "", power_charge_incl_gst: "", period_days: "7", start_date: "", end_date: "", on_hold: false, notes: "" };
+
+const isCarPark = (u) => u?.kind === "car_park";
+// "every 7 days" reads as "every week" to anyone glancing at it.
+const everyLabel = (days) => (Number(days) === 7 ? "week" : Number(days) === 1 ? "day" : `${days} days`);
+// Today in New Zealand. The ISO date in the browser is UTC, which is still
+// yesterday until 1pm in summer, and a stop has to charge up to NZ today.
+const nzToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Auckland" }).format(new Date());
+const daysBetween = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+const addDays = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
 
 export default function RentalsPage() {
   const [units, setUnits] = useState([]);
@@ -34,8 +58,11 @@ export default function RentalsPage() {
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("units");
   const [newUnit, setNewUnit] = useState({ name: "", description: "" });
-  const [addingUnit, setAddingUnit] = useState(false);
+  const [addingUnit, setAddingUnit] = useState(null); // null, "unit" or "car_park"
+  const unitById = (id) => units.find((u) => u.id === id);
   const [pending, setPending] = useState(0);
+  const [notice, setNotice] = useState(null);
+  const [stopping, setStopping] = useState(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   // How many rent invoices are prepared but not yet sent. Shown on the tab so
@@ -54,7 +81,7 @@ export default function RentalsPage() {
     setLoading(true);
     const [u, a, c] = await Promise.all([
       supabase.from("rental_units").select("*").order("name"),
-      supabase.from("rental_agreements").select("*, customers(name), rental_units(name)"),
+      supabase.from("rental_agreements").select("*, customers(name), rental_units(name, kind)"),
       supabase.from("customers").select("id, name").order("name"),
     ]);
     if (u.error || a.error || c.error) setError((u.error || a.error || c.error).message);
@@ -80,6 +107,7 @@ export default function RentalsPage() {
       unit_id: a.unit_id, customer_id: a.customer_id,
       monthly_rate_incl_gst: String(a.monthly_rate_incl_gst ?? ""),
       power_charge_incl_gst: a.power_charge_incl_gst ? String(a.power_charge_incl_gst) : "",
+      period_days: a.period_days ? String(a.period_days) : "7",
       start_date: a.start_date || "", end_date: a.end_date || "",
       on_hold: !!a.on_hold, notes: a.notes || "",
     });
@@ -90,10 +118,13 @@ export default function RentalsPage() {
   async function save(e) {
     e.preventDefault();
     setError(null);
-    if (!form.unit_id) return setError("Pick a unit.");
+    if (!form.unit_id) return setError("Pick a unit or car park.");
     if (!form.customer_id) return setError("Pick the tenant. Add them under Customers first if they're not listed.");
+    const parking = isCarPark(unitById(form.unit_id));
+    const days = Number(form.period_days);
+    if (parking && !(Number.isInteger(days) && days >= 1 && days <= 90)) return setError("Charge every: a whole number of days, 1 to 90 (7 for weekly).");
     const rate = Number(form.monthly_rate_incl_gst);
-    if (!(rate > 0)) return setError("Enter the monthly rent the tenant pays.");
+    if (!(rate > 0)) return setError(parking ? `Enter what they pay each ${everyLabel(days)}.` : "Enter the monthly rent the tenant pays.");
     const power = form.power_charge_incl_gst === "" ? 0 : Number(form.power_charge_incl_gst);
     if (!Number.isFinite(power) || power < 0) return setError("Power charge must be a number, or leave it blank.");
     if (!form.start_date) return setError("Enter the date the tenancy starts.");
@@ -106,7 +137,10 @@ export default function RentalsPage() {
       unit_id: form.unit_id,
       customer_id: form.customer_id,
       monthly_rate_incl_gst: rate,
-      power_charge_incl_gst: Number(form.power_charge_incl_gst) || 0,
+      // A car park has no power, and is billed by days; a unit is monthly.
+      power_charge_incl_gst: parking ? 0 : Number(form.power_charge_incl_gst) || 0,
+      period_days: parking ? days : null,
+      in_arrears: parking,
       start_date: form.start_date,
       end_date: form.end_date || null,
       on_hold: !!form.on_hold,
@@ -140,17 +174,18 @@ export default function RentalsPage() {
     e.preventDefault();
     setError(null);
     const name = newUnit.name.trim();
-    if (!name) return setError("Give the unit a name.");
+    const kind = addingUnit === "car_park" ? "car_park" : "unit";
+    if (!name) return setError(kind === "car_park" ? "Give the car park a name, e.g. Car park 1." : "Give the unit a name.");
     const { error } = await supabase.from("rental_units")
-      .insert({ name, description: newUnit.description.trim() || null });
+      .insert({ name, kind, description: newUnit.description.trim() || null });
     if (error) {
       setError(error.message.includes("duplicate") || error.message.includes("unique")
-        ? `There's already a unit called "${name}".`
+        ? `There's already a unit or car park called "${name}".`
         : error.message);
       return;
     }
     setNewUnit({ name: "", description: "" });
-    setAddingUnit(false);
+    setAddingUnit(null);
     load();
   }
 
@@ -162,14 +197,62 @@ export default function RentalsPage() {
     load();
   }
 
+  // What a stop will charge for the period running today, worked out the same
+  // way the database does, so Craig sees the figure before he presses it.
+  function stopPreview(a) {
+    const days = Number(a.period_days) || 7;
+    const t = nzToday();
+    const k = Math.floor(daysBetween(a.start_date, t) / days);
+    const ps = addDays(a.start_date, k * days);
+    const used = daysBetween(ps, t) + 1;
+    const rate = Number(a.monthly_rate_incl_gst) || 0;
+    return { days, used, amount: used < days ? Math.round(rate * used / days * 100) / 100 : rate };
+  }
+
+  async function stopParking(u, a) {
+    const who = a.customers?.company_name || a.customers?.name || "this tenant";
+    const p = stopPreview(a);
+    const charge = p.used < p.days
+      ? `${p.used} of ${p.days} days, about ${money(p.amount)}`
+      : `the full ${everyLabel(p.days)}, ${money(p.amount)}`;
+    if (!window.confirm(
+      `Stop ${u.name} for ${who} now?\n\nThey'll be charged up to today: ${charge}. Any earlier period not invoiced yet goes on too.\n\nThe invoice waits under Awaiting approval for you to check and send.`
+    )) return;
+    setError(null); setNotice(null); setStopping(a.id);
+    const { data: made, error } = await supabase.rpc("stop_rental", { p_agreement_id: a.id });
+    if (error) { setStopping(null); setError(error.message); return; }
+
+    // File each new invoice's PDF now, so it can be approved straight away
+    // rather than after tonight's run.
+    const { data: { session } } = await supabase.auth.getSession();
+    const unfiled = [];
+    for (const inv of made || []) {
+      const { data: res, error: fErr } = await supabase.functions.invoke("generate-rental-invoices", {
+        body: { rebuildInvoiceId: inv.id, accessToken: session?.access_token || null },
+      });
+      if (fErr || res?.error) unfiled.push("#" + String(inv.invoice_number).padStart(5, "0"));
+    }
+    setStopping(null);
+    const total = (made || []).reduce((t, i) => t + Number(i.total || 0), 0);
+    setNotice(
+      (made || []).length === 0
+        ? `${u.name} stopped. There was nothing left to charge.`
+        : `${u.name} stopped. ${(made || []).length === 1 ? "Invoice" : (made || []).length + " invoices"} for ${money(total)} waiting under Awaiting approval.` +
+          (unfiled.length ? ` The PDF for ${unfiled.join(", ")} didn't build; tonight's run will file it.` : "")
+    );
+    load();
+  }
+
   async function toggleHold(a) {
     const { error } = await supabase.from("rental_agreements").update({ on_hold: !a.on_hold }).eq("id", a.id);
     if (error) setError(error.message);
     load();
   }
 
+  const formParking = isCarPark(unitById(form.unit_id));
+  const formDays = Number(form.period_days) || 7;
   const rate = Number(form.monthly_rate_incl_gst) || 0;
-  const powerAmt = Number(form.power_charge_incl_gst) || 0;
+  const powerAmt = formParking ? 0 : Number(form.power_charge_incl_gst) || 0;
   const billTotal = rate + powerAmt;
   const gst = billTotal > 0 ? gstOf(billTotal) : 0;
 
@@ -178,32 +261,43 @@ export default function RentalsPage() {
   // how Unit 3 was invoiced at $115 for a month whose rent is $498.33. The
   // generator can't catch it: $115 is a perfectly valid number. Catching it has
   // to happen here, while the person who knows the real rent is looking at it.
+  //
+  // Only like is compared with like: a unit's rent with the other units', and a
+  // car park's charge with car parks billed over the same number of days. A
+  // week's parking next to a month's rent would always look wrong.
   const peerRates = agreements
     .filter((a) => a.id !== editingId && Number(a.monthly_rate_incl_gst) > 0)
+    .filter((a) => formParking
+      ? a.rental_units?.kind === "car_park" && Number(a.period_days) === formDays
+      : a.rental_units?.kind !== "car_park")
     .map((a) => Number(a.monthly_rate_incl_gst))
     .sort((x, y) => x - y);
   const peerMedian = peerRates.length ? peerRates[Math.floor(peerRates.length / 2)] : 0;
   const asMonthly = (rate * 52) / 12;           // what this would be, if it were a week's rent
-  const looksWeekly = peerMedian > 0 && rate > 0 && Math.abs(asMonthly - peerMedian) <= peerMedian * 0.15;
+  const looksWeekly = !formParking && peerMedian > 0 && rate > 0 && Math.abs(asMonthly - peerMedian) <= peerMedian * 0.15;
   const wayOff = peerMedian > 0 && rate > 0 && (rate < peerMedian * 0.6 || rate > peerMedian * 1.6);
   const rateWarning = !wayOff
     ? null
     : looksWeekly
       ? `${money(rate)} looks like a WEEKLY rent. The other units are around ${money(peerMedian)} a month — and ${money(rate)} a week works out to ${money(asMonthly)} a month.`
-      : `${money(rate)} is a long way from the other units, which are around ${money(peerMedian)} a month.`;
-  const vacant = units.filter((u) => !currentFor(u.id)).length;
+      : formParking
+        ? `${money(rate)} is a long way from the other car parks, which are around ${money(peerMedian)} every ${everyLabel(formDays)}.`
+        : `${money(rate)} is a long way from the other units, which are around ${money(peerMedian)} a month.`;
+  const plainUnits = units.filter((u) => !isCarPark(u));
+  const carParks = units.filter(isCarPark);
+  const vacantIn = (list) => list.filter((u) => !currentFor(u.id)).length;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Rentals</h1>
       <p className="mt-1 text-zinc-600">
         {tab === "units"
-          ? "The storage units and the shed. Rent is prepared automatically three days before each period starts — then waits under Awaiting approval until Craig sends it."
+          ? "The storage units, the shed and the car parks. Units are invoiced monthly, three days before each month starts. Car parks are invoiced after each week (or whatever length is set) for the days used, and Stop charges up to today. Every invoice waits under Awaiting approval until Craig sends it."
           : "Gear hired out by the day. Paid when it goes out or comes back, not on account."}
       </p>
 
       <div className="mt-5 flex gap-1 border-b border-zinc-200">
-        {[["units", "Storage units"], ["hireage", "Hireage"], ["approvals", pending ? `Awaiting approval (${pending})` : "Awaiting approval"]].map(([k, lbl]) => (
+        {[["units", "Units & car parks"], ["hireage", "Hireage"], ["approvals", pending ? `Awaiting approval (${pending})` : "Awaiting approval"]].map(([k, lbl]) => (
           <button key={k} onClick={() => setTab(k)}
             className={"-mb-px border-b-2 px-4 py-2 text-sm font-medium " +
               (tab === k ? "border-red-600 text-red-700" : "border-transparent text-zinc-500 hover:text-zinc-800")}>
@@ -222,8 +316,15 @@ export default function RentalsPage() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <select value={form.unit_id} onChange={set("unit_id")} className={input}>
-            <option value="">Which unit…</option>
-            {units.filter((u) => u.active || u.id === form.unit_id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            <option value="">Which unit or car park…</option>
+            <optgroup label="Units">
+              {plainUnits.filter((u) => u.active || u.id === form.unit_id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </optgroup>
+            {carParks.length > 0 && (
+              <optgroup label="Car parks">
+                {carParks.filter((u) => u.active || u.id === form.unit_id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </optgroup>
+            )}
           </select>
           <select value={form.customer_id} onChange={set("customer_id")} className={input}>
             <option value="">Which tenant…</option>
@@ -235,18 +336,38 @@ export default function RentalsPage() {
         </p>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="text-xs font-medium text-zinc-600">Monthly rent (GST inclusive)
-            <input value={form.monthly_rate_incl_gst} onChange={set("monthly_rate_incl_gst")} type="number" step="0.01" min="0"
-                   placeholder="what the tenant pays" className={input} />
-          </label>
-          <label className="text-xs font-medium text-zinc-600">Power each month (GST inclusive, optional)
-            <input value={form.power_charge_incl_gst} onChange={set("power_charge_incl_gst")} type="number" step="0.01" min="0"
-                   placeholder="leave blank if none" className={input} />
-          </label>
+          {formParking ? (
+            <>
+              <label className="text-xs font-medium text-zinc-600">Charge every (days)
+                <input value={form.period_days} onChange={set("period_days")} type="number" step="1" min="1" max="90"
+                       placeholder="7" className={input} />
+              </label>
+              <label className="text-xs font-medium text-zinc-600">Charge each {everyLabel(formDays)} (GST inclusive)
+                <input value={form.monthly_rate_incl_gst} onChange={set("monthly_rate_incl_gst")} type="number" step="0.01" min="0"
+                       placeholder="what they pay" className={input} />
+              </label>
+            </>
+          ) : (
+            <>
+              <label className="text-xs font-medium text-zinc-600">Monthly rent (GST inclusive)
+                <input value={form.monthly_rate_incl_gst} onChange={set("monthly_rate_incl_gst")} type="number" step="0.01" min="0"
+                       placeholder="what the tenant pays" className={input} />
+              </label>
+              <label className="text-xs font-medium text-zinc-600">Power each month (GST inclusive, optional)
+                <input value={form.power_charge_incl_gst} onChange={set("power_charge_incl_gst")} type="number" step="0.01" min="0"
+                       placeholder="leave blank if none" className={input} />
+              </label>
+            </>
+          )}
         </div>
+        {formParking && (
+          <p className="-mt-1 text-xs text-zinc-500">
+            7 = weekly. Charged after each period, for the days used. When they leave, press <strong>stop</strong> on the car park and they&apos;re charged up to today.
+          </p>
+        )}
         {billTotal > 0 && (
           <p className="-mt-1 text-xs text-zinc-500">
-            Invoiced each month: {money(billTotal - gst)} + {money(gst)} GST = <span className="font-medium text-zinc-700">{money(billTotal)}</span>
+            Invoiced each {formParking ? everyLabel(formDays) : "month"}: {money(billTotal - gst)} + {money(gst)} GST = <span className="font-medium text-zinc-700">{money(billTotal)}</span>
             {powerAmt > 0 && <> · shown as two lines, rent {money(rate)} and power {money(powerAmt)}</>}
           </p>
         )}
@@ -278,38 +399,45 @@ export default function RentalsPage() {
         </div>
       </form>
 
+      {notice && <p className="mt-4 text-sm text-emerald-700">{notice}</p>}
       {error && <p className="mt-4 text-sm text-red-600">Error: {error}</p>}
 
-      <div className="mt-8">
+      {[
+        { kind: "unit", title: "The units", list: plainUnits, add: "+ add a unit", placeholder: "e.g. Unit 11, Sign Space", button: "Add unit" },
+        { kind: "car_park", title: "Car parks", list: carParks, add: "+ add a car park", placeholder: "e.g. Car park 1", button: "Add car park" },
+      ].map((sec) => (
+      <div key={sec.kind} className="mt-8">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="font-semibold text-zinc-900">The units</h2>
+          <h2 className="font-semibold text-zinc-900">{sec.title}</h2>
           <div className="flex items-baseline gap-3">
-            <p className="text-sm text-zinc-500">{units.length - vacant} let · {vacant} vacant</p>
-            <button onClick={() => { setAddingUnit((v) => !v); setError(null); }} className="text-sm text-zinc-600 underline hover:text-zinc-900">
-              {addingUnit ? "cancel" : "+ add a unit"}
+            {sec.list.length > 0 && <p className="text-sm text-zinc-500">{sec.list.length - vacantIn(sec.list)} let · {vacantIn(sec.list)} vacant</p>}
+            <button onClick={() => { setAddingUnit((v) => (v === sec.kind ? null : sec.kind)); setNewUnit({ name: "", description: "" }); setError(null); }} className="text-sm text-zinc-600 underline hover:text-zinc-900">
+              {addingUnit === sec.kind ? "cancel" : sec.add}
             </button>
           </div>
         </div>
 
-        {addingUnit && (
+        {addingUnit === sec.kind && (
           <form onSubmit={addUnit} className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
             <label className="min-w-[10rem] flex-1 text-xs font-medium text-zinc-600">Name
               <input value={newUnit.name} onChange={(e) => setNewUnit((v) => ({ ...v, name: e.target.value }))}
-                     placeholder="e.g. Unit 11, Sign Space" className={input} />
+                     placeholder={sec.placeholder} className={input} />
             </label>
             <label className="min-w-[10rem] flex-1 text-xs font-medium text-zinc-600">Description
               <input value={newUnit.description} onChange={(e) => setNewUnit((v) => ({ ...v, description: e.target.value }))}
                      placeholder="optional" className={input} />
             </label>
-            <button type="submit" className="rounded-lg bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-700">Add unit</button>
+            <button type="submit" className="rounded-lg bg-zinc-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-zinc-700">{sec.button}</button>
           </form>
         )}
 
         {loading ? (
           <p className="mt-4 text-zinc-500">Loading…</p>
+        ) : sec.list.length === 0 ? (
+          <p className="mt-3 text-sm text-zinc-500">None yet.</p>
         ) : (
           <ul className="mt-3 divide-y divide-zinc-100 overflow-hidden rounded-xl border border-zinc-200 bg-white">
-            {units.map((u) => {
+            {sec.list.map((u) => {
               const a = currentFor(u.id);
               const upcoming = !!a && a.start_date > today;
               return (
@@ -326,11 +454,18 @@ export default function RentalsPage() {
                     </p>
                     <p className="truncate text-sm text-zinc-500">
                       {a
-                        ? `${a.customers?.company_name ? a.customers?.name + " · " : ""}${money(Number(a.monthly_rate_incl_gst) + Number(a.power_charge_incl_gst || 0))}/month${Number(a.power_charge_incl_gst) > 0 ? ` (incl ${money(a.power_charge_incl_gst)} power)` : ""} · ${upcoming ? "starts" : "since"} ${nzDate(a.start_date)} · ${a.end_date ? "ends " + nzDate(a.end_date) : "open-ended"}`
+                        ? `${a.customers?.company_name ? a.customers?.name + " · " : ""}${money(Number(a.monthly_rate_incl_gst) + Number(a.power_charge_incl_gst || 0))}/${a.period_days ? everyLabel(a.period_days) : "month"}${a.in_arrears ? ", charged after" : ""}${Number(a.power_charge_incl_gst) > 0 ? ` (incl ${money(a.power_charge_incl_gst)} power)` : ""} · ${upcoming ? "starts" : "since"} ${nzDate(a.start_date)} · ${a.end_date ? "ends " + nzDate(a.end_date) : "open-ended"}`
                         : "No tenant"}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3 text-xs">
+                    {a && a.in_arrears && a.start_date <= nzToday() && (!a.end_date || a.end_date > nzToday()) && (
+                      <button onClick={() => stopParking(u, a)} disabled={stopping === a.id}
+                              className="rounded-md border border-red-300 px-2 py-1 font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
+                        {stopping === a.id ? "stopping…" : "stop"}
+                      </button>
+                    )}
+                    {a && a.in_arrears && a.end_date === nzToday() && <span className="text-zinc-500">stopped today</span>}
                     {a && <button onClick={() => startEdit(a)} className="text-zinc-600 hover:underline">edit</button>}
                     {a && <button onClick={() => toggleHold(a)} className="text-zinc-600 hover:underline">{a.on_hold ? "resume" : "hold"}</button>}
                     {a && <button onClick={() => removeAgreement(a)} className="text-red-500 hover:underline">remove</button>}
@@ -342,6 +477,7 @@ export default function RentalsPage() {
           </ul>
         )}
       </div>
+      ))}
       </>
       )}
     </main>

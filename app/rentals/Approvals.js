@@ -63,7 +63,7 @@ export default function Approvals() {
     const [inv, st] = await Promise.all([
       supabase
         .from("invoices")
-        .select("id, invoice_number, total, issued_date, due_date, period_start, pdf_url, customers(name, company_name, email), rental_agreements(rental_units(name))")
+        .select("id, invoice_number, total, issued_date, due_date, period_start, pdf_url, customers(name, company_name, email), rental_agreements(in_arrears, rental_units(name))")
         .eq("kind", "rental")
         .eq("sent", false)
         .order("period_start", { ascending: true }),
@@ -235,7 +235,10 @@ export default function Approvals() {
 
           <ul className="mt-4 flex flex-col gap-3">
             {invoices.map((inv) => {
-              const late = inv.period_start && inv.period_start <= todayISO();
+              // A car park is charged AFTER it's used (migration 0097), so its
+              // period has always started. That isn't late; it's the point.
+              const arrears = !!inv.rental_agreements?.in_arrears;
+              const late = !arrears && inv.period_start && inv.period_start <= todayISO();
               const noEmail = !inv.customers?.email;
               return (
                 <li key={inv.id}
@@ -247,7 +250,7 @@ export default function Approvals() {
                     <p className="text-lg font-bold text-zinc-900">{money(inv.total)}</p>
                   </div>
                   <p className="mt-0.5 text-sm text-zinc-600">
-                    {invNo(inv.invoice_number)} · period starts {nzDate(inv.period_start)} · due {nzDate(inv.due_date)}
+                    {invNo(inv.invoice_number)} · {arrears ? "parking from" : "period starts"} {nzDate(inv.period_start)} · due {nzDate(inv.due_date)}
                   </p>
 
                   {late && (
@@ -312,25 +315,32 @@ export default function Approvals() {
                 <dd className="text-base font-semibold text-zinc-900">{nzDate(confirming.due_date)}</dd>
               </div>
               <div className="flex items-baseline justify-between gap-3 px-3 py-2.5">
-                <dt className="text-sm text-zinc-600">Rent period starts</dt>
+                <dt className="text-sm text-zinc-600">{confirming.rental_agreements?.in_arrears ? "Parking from" : "Rent period starts"}</dt>
                 <dd className="text-base font-semibold text-zinc-900">{nzDate(confirming.period_start)}</dd>
               </div>
             </dl>
 
             {/* The three-day gap in words, every time, rather than something to
                 remember. This is the bit that gets miscounted. */}
+            {confirming.rental_agreements?.in_arrears ? (
+              <p className="mt-3 text-sm text-zinc-600">
+                Parking is charged after it&apos;s used, for the days shown on the invoice. Issued{" "}
+                {nzDate(confirming.issued_date)}, due {nzDate(confirming.due_date)}.
+              </p>
+            ) : (
             <p className="mt-3 text-sm text-zinc-600">
               Rent is invoiced three days before the period starts, and is due on the day it starts — so it can be
               paid before the period begins. Issued {nzDate(confirming.issued_date)}, due{" "}
               {nzDate(confirming.due_date)}.
             </p>
+            )}
 
-            {confirming.due_date !== confirming.period_start && (
+            {!confirming.rental_agreements?.in_arrears && confirming.due_date !== confirming.period_start && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 Heads up: the due date isn&apos;t the day the period starts. Check it&apos;s meant to be.
               </p>
             )}
-            {confirming.period_start && confirming.period_start <= todayISO() && (
+            {!confirming.rental_agreements?.in_arrears && confirming.period_start && confirming.period_start <= todayISO() && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 This period has already started, so this invoice is going out late.
               </p>
