@@ -239,7 +239,8 @@ export default function InvoicesPage() {
           {tab("unpaid", "Outstanding")}
           {tab("all", "All")}
         </div>
-        <span className="text-sm text-zinc-600">Outstanding: <span className="font-semibold text-red-700">{money(outstanding)}</span></span>
+        <span className="text-sm text-zinc-600">Outstanding: <span className="font-semibold text-red-700">{money(outstanding)}</span>
+          {" · "}<Link href="/invoices/overdue" className="font-medium text-red-600 underline">Overdue reminders</Link></span>
       </div>
 
       {error && <p className="mt-4 text-sm text-red-600" role="alert">{error}</p>}
